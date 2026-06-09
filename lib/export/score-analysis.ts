@@ -4,7 +4,7 @@
  * plus a Summary sheet with per-assessment means and the score distribution.
  */
 
-import * as XLSX from "xlsx";
+import { XLSX } from "./sheet-utils";
 import type { ScoreAnalysisInput } from "./types";
 
 export function buildScoreAnalysisWorkbook(input: ScoreAnalysisInput): XLSX.WorkBook {

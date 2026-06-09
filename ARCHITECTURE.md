@@ -171,18 +171,34 @@ report (`passed` is false on any hard-fail):
 
 ## Excel export (Section 9)
 
-`lib/export/` builds three workbooks with SheetJS:
+`lib/export/` builds three workbooks. Generation uses **`xlsx-js-style`** (a
+drop-in SheetJS fork) so cell fills are written; the upstream community `xlsx`
+build silently drops styles on write. Import/parsing still uses `xlsx`.
 
-- **Item Analysis** — one sheet per assessment; the four stats + ratings and a
-  **single canonical `Remove?` / `Reason` pair** (ending the column-naming
-  drift). Headers exported as `ITEM_ANALYSIS_HEADERS`.
+- **Item Analysis** — reconciled to the exact `MCQ_Item_Analysis` layout:
+  - a **`README & Summary`** sheet (title, purpose, then one row per assessment
+    with participant/item/row counts, the discrimination group size,
+    Good/Review/Flag tallies and median statistics — header exported as
+    `ITEM_ANALYSIS_SUMMARY_HEADERS`);
+  - one sheet **per assessment** with row 1 title, row 2 meta
+    (`Participants | Items | Rows analysed | Upper/Lower group size`), row 3
+    reading guide, two blank rows, the **20-column header on row 6**
+    (`ITEM_ANALYSIS_HEADERS`, including a **single** `Remove Item?` /
+    `Reason for removing item` pair), then one row per item from row 7.
+  - The five rating columns (P-Value, Item-Total, Point-Biserial, Discrimination
+    ratings and Overall Item Review) carry **green/amber/red fills** per
+    Good/Review/Flag (`RATING_STYLES`).
+  - `assembleItemAnalysis(...)` joins engine `ItemStat[]` with response-level
+    facts to derive Presented/Answered counts and average response time, and the
+    per-assessment participant/row counts and group size.
 - **Overall Score Analysis** — a `Scores` sheet (raw + % per assessment and
   overall) and a `Summary` sheet (per-assessment means + distribution).
 - **Grades** — a `Grades` sheet (section + overall grades) and a `Distribution`
   sheet.
 
 `workbookToBuffer` serialises for download/storage. `tests/export.test.ts`
-asserts sheet names, header structure and xlsx round-trip.
+asserts the exact layout, the README & Summary sheet, the rating fills, average
+response time from the real sample export, and xlsx round-trip.
 
 ## What is stubbed / deferred
 
@@ -208,13 +224,16 @@ asserts sheet names, header structure and xlsx round-trip.
    numbers required breaking ties by the full total descending. This is
    documented in `lib/engine/stats.ts` and is the only detail beyond the spec's
    wording needed for exact parity.
-3. **SheetJS source.** The spec's CDN tarball for `xlsx` is blocked by the
-   environment's network policy, so the package is pinned to the public npm
-   registry build (`xlsx@0.18.5`). Same library, same API.
-4. **Export column order** is the new canonical layout; the exact legacy
-   template column order should be reconciled against the real
-   `MCQ_Item_Analysis` / `MCQ_Overall_Score_Analysis` files when available
-   (noted in `lib/export/index.ts`).
+3. **SheetJS source + styled writer.** The spec's CDN tarball for `xlsx` is
+   blocked by the environment's network policy, so reading uses the public npm
+   registry build (`xlsx@0.18.5`). The community build cannot *write* cell
+   styles, so the colour-coded item-analysis fills are generated with
+   `xlsx-js-style` — a drop-in SheetJS fork with the identical `XLSX.utils` API.
+4. **Item-analysis layout** is reconciled to the exact `MCQ_Item_Analysis` file
+   (20-column header, title/meta/guide preamble, README & Summary sheet, rating
+   fills). The `MCQ_Overall_Score_Analysis` and grades workbooks still use a
+   sensible canonical layout to be reconciled against their real templates when
+   available.
 
 ## Running things
 

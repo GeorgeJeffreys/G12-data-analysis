@@ -3,7 +3,7 @@
  * grade-distribution summary.
  */
 
-import * as XLSX from "xlsx";
+import { XLSX } from "./sheet-utils";
 import type { GradesInput } from "./types";
 
 export function buildGradesWorkbook(input: GradesInput): XLSX.WorkBook {
