@@ -1,3 +1,236 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* ── Design tokens (ported from design/hf.jsx) ─────────────────────────────── */
+:root {
+  --paper: #ffffff;
+  --canvas: #fbfcfd;
+  --tint: #e9eef3;
+  --tint2: #e2e8ee;
+  --line: #e9ecf0;
+  --line2: #d5dbe1;
+  --ink: #1f2a31;
+  --ink2: #58656d;
+  --ink3: #97a1a9;
+  --pink: #c12c68;
+  --pink-hover: #a82357;
+  --pink-soft: #fbe7ef;
+  --pink-soft2: #fdf3f7;
+  --slate: #37454e;
+  --cream: #e9edf1;
+  --bar: #8b959d;
+  --bar-fill: #e3e7ea;
+  --good: #2f7d52;
+  --good-soft: #e7f1ea;
+  --warn: #946c1a;
+  --warn-soft: #f4eed9;
+  --bad: #c0392b;
+  --bad-soft: #f7e7e4;
+
+  /* font families come from next/font (variables set on <html>) */
+  --font-ui: var(--font-sofia), system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+  --font-script: var(--font-yellowtail), cursive;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* ── Reusable primitives (mirrors hf-* classes) ────────────────────────────── */
+.hf-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+}
+.hf-h1 {
+  font-size: 23px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  line-height: 1.1;
+}
+.hf-h2 {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.2px;
+}
+.hf-lbl {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--ink3);
+}
+.hf-sub {
+  font-size: 12.5px;
+  color: var(--ink2);
+}
+.hf-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(44, 55, 57, 0.03), 0 2px 8px rgba(44, 55, 57, 0.04);
+}
+
+/* buttons */
+.hf-btn {
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 1px solid var(--line2);
+  background: var(--paper);
+  color: var(--ink);
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  transition: 0.15s;
+}
+.hf-btn:hover:not(:disabled) {
+  border-color: var(--ink3);
+  background: var(--tint);
+}
+.hf-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.hf-btn.pri {
+  background: var(--pink);
+  border-color: var(--pink);
+  color: #fff;
+  box-shadow: 0 1px 2px rgba(193, 44, 104, 0.3);
+}
+.hf-btn.pri:hover:not(:disabled) {
+  background: var(--pink-hover);
+  border-color: var(--pink-hover);
+}
+.hf-btn.danger {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.hf-btn.danger:hover:not(:disabled) {
+  background: var(--bad-soft);
+}
+.hf-btn.ghost {
+  border-color: transparent;
+  color: var(--ink2);
+  background: transparent;
+  padding: 8px 9px;
+}
+.hf-btn.ghost:hover:not(:disabled) {
+  background: var(--tint2);
+}
+
+/* chips */
+.hf-chip {
+  font-size: 11.5px;
+  font-weight: 500;
+  border: 1px solid var(--line2);
+  border-radius: 999px;
+  padding: 4px 11px;
+  color: var(--ink2);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  background: var(--paper);
+  cursor: pointer;
+  transition: 0.12s;
+}
+.hf-chip:hover {
+  border-color: var(--ink3);
+}
+.hf-chip.on {
+  border-color: var(--pink);
+  color: var(--pink);
+  background: var(--pink-soft);
+  font-weight: 700;
+}
+
+/* fields / inputs */
+.hf-field {
+  border: 1px solid var(--line2);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 9px 11px;
+  font-size: 12.5px;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hf-field::placeholder {
+  color: var(--ink3);
+}
+.hf-input {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  border: 1px solid var(--line2);
+  border-radius: 7px;
+  background: var(--paper);
+  padding: 6px 9px;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: right;
+  width: 74px;
+  outline: none;
+  transition: 0.12s;
+}
+.hf-input:focus {
+  border-color: var(--pink);
+  box-shadow: 0 0 0 3px var(--pink-soft);
+}
+
+/* tables */
+.hf-th {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--ink3);
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line2);
+  white-space: nowrap;
+  background: var(--tint);
+}
+.hf-td {
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+tr.hf-hover:hover {
+  background: var(--pink-soft2);
+}
+
+/* focus visibility for accessibility */
+.hf-btn:focus-visible,
+.hf-chip:focus-visible,
+a:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
