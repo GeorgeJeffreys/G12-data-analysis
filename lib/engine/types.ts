@@ -23,6 +23,7 @@ export interface ResponseRecord {
 export interface ItemMeta {
   itemId: string;
   assessmentId: string;
+  wording?: string | null;
   majorElement?: string | null;
   subElement?: string | null;
   demandLevel?: string | null;
@@ -51,6 +52,7 @@ export interface ItemStat {
   /** Worst-of-four summary rating. */
   overallReview: QualityRating;
   /** Optional carried-through metadata. */
+  wording?: string | null;
   majorElement?: string | null;
   subElement?: string | null;
   demandLevel?: string | null;

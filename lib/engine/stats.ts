@@ -218,6 +218,7 @@ export function computeItemStats(
         discrimination: round(disc, 3),
         discRating,
         overallReview,
+        wording: meta?.wording ?? null,
         majorElement: meta?.majorElement ?? null,
         subElement: meta?.subElement ?? null,
         demandLevel: meta?.demandLevel ?? null,
