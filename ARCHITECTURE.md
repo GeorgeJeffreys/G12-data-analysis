@@ -5,20 +5,24 @@ computation engine and its swap point, the validation gates, and exactly what is
 stubbed. The source of truth for *intent* is `G12pp_Exam_Suite_Design_Spec.md`;
 this document describes the *implementation*.
 
-> **Scope note.** Per the kickoff, only the parts that do **not** depend on the
-> visual design are built: the database schema, the computation engine and the
-> ingest/export logic. There is one minimal placeholder route (`app/page.tsx`)
-> and no other UI. Screens wait on the design mockup.
+> **Scope note.** The backend (schema, parity-verified engine, ingest/export)
+> and the **six-screen front end** are both built. The UI runs entirely against
+> an in-memory `DataProvider` seeded from real engine output — **no Supabase,
+> no live database** yet (see "Frontend (UI)" below).
 
 ## Stack
 
 - **Next.js 14 (App Router) + TypeScript (strict)** — see `tsconfig.json`
   (`strict`, `noUncheckedIndexedAccess`).
-- **Tailwind** — configured, unused beyond the placeholder.
+- **Tailwind** + ported design-system CSS (`app/globals.css`) and tokens
+  (`lib/ui/tokens.ts`). Fonts via `next/font`: **Sofia Sans** (UI), **IBM Plex
+  Mono** (data), **Yellowtail** (the script “A” mark) — matching the Claude
+  Design hi-fi in `design/`.
+- **recharts** for the score-distribution histogram and breakdown charts.
 - **Supabase** (Postgres/Auth/Storage/RLS) — env-var-based clients in
-  `lib/supabase/`. No keys committed; see `.env.example`.
-- **SheetJS (`xlsx`)** for Excel I/O.
-- **Vitest** for tests. `npm test` runs 211 tests, all passing.
+  `lib/supabase/`. Not yet wired to the UI. No keys committed; see `.env.example`.
+- **SheetJS (`xlsx`) / `xlsx-js-style`** for Excel I/O.
+- **Vitest** for tests. `npm test` runs 214 tests, all passing.
 
 ## Repository layout
 
@@ -200,16 +204,78 @@ build silently drops styles on write. Import/parsing still uses `xlsx`.
 asserts the exact layout, the README & Summary sheet, the rating fills, average
 response time from the real sample export, and xlsx round-trip.
 
-## What is stubbed / deferred
+## Frontend (UI) and the DataProvider
+
+The six-screen flow is built against a single repository abstraction, the
+**`DataProvider`** (`lib/data/provider.ts`) — the same discipline as the engine.
+Components import only this interface and the read-model types in
+`lib/data/types.ts`; they never touch the engine, ingest, export or Supabase
+directly.
+
+### Swap point
+
+`InMemoryDataProvider` (`lib/data/in-memory-provider.ts`) seeds itself from
+**genuine engine output** and keeps decisions (exclusions, boundaries, locks) in
+memory. To go live: implement `DataProvider` backed by Supabase (queries + the
+`SECURITY DEFINER` RPCs from migration 0001) and construct it in
+`lib/data/context.tsx` instead of the in-memory one — **no screen or component
+changes**.
+
+### Seeding with real data
+
+`scripts/build-seed.mts` (run via `npm run seed`) runs the **real ingest +
+engine** over `data/sample_qm_export.xlsx` and writes `lib/data/seed.generated.json`
+(5 assessments, 193 items, 18 participants). The provider ships that to the
+client and recomputes scores / distributions / grades **through the engine** on
+every exclusion, boundary drag and lock — so the item-review KPIs, the live
+histogram, the boundary band counts and the grade matrix are all real computed
+numbers, not hand-typed mocks. Reactivity is via `useSyncExternalStore`
+(`lib/data/context.tsx`).
+
+### Screens (routes)
+
+| # | Screen | Route |
+| - | --- | --- |
+| 01 | Cycles dashboard | `/` |
+| 02 | Cycle overview | `/cycles/[cycleId]` |
+| 03 | Ingest & validate | `/cycles/[cycleId]/ingest` |
+| 04 | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
+| 05 | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
+| 06 | Grades & sign-off | `/cycles/[cycleId]/grades` |
+
+Shared shell (`components/shell/`): nav rail, top bar, and the pipeline stepper
+shown on every cycle screen. Design system (`components/ui/`): buttons, chips,
+KPI/stat blocks, quality bars, status marks, dense tables, and the recharts
+histogram + breakdown bars — all ported from `design/hf.jsx`.
+
+### What is mocked in the UI (honestly labelled)
+
+- **No Supabase / no persistence.** Exclusions, boundaries and locks live in the
+  in-memory provider and **reset on reload**.
+- **Auth / roles.** A current user is mocked with the Lead role
+  (`InMemoryDataProvider.user`, marked `// MOCK:`). Role-gated controls (Lock is
+  Lead-only) read from it so real auth slots in later.
+- **Prior cycles + cross-cycle comparisons.** There is only one real cycle. Prior
+  cycles are clearly-labelled `MOCK` rows; the "vs Jan 2026" boundary comparison
+  is driven by a labelled fixture behind a `SHOW_CROSS_CYCLE` flag and tagged
+  `MOCK` in the UI — no delta is computed against invented numbers as if real.
+- **Duplicate-resolution** is detected by the real validator; the resolution
+  action is a provider **stub** (records the choice, no row mutation). The sample
+  export has no duplicates, so the panel doesn't appear on the live cycle.
+- **"Start new cycle"** is a no-op (needs the database).
+- **Quality index** (the 0–100 bar in item review) is a transparent composite of
+  the four engine ratings (`scripts/build-seed.mts` `qualityIndex`), not a
+  fabricated statistic.
+
+## What is stubbed / deferred (backend)
 
 - **The engine itself is the stub.** It is a faithful TS implementation, kept
   strictly behind `ComputationEngine` so the validated Python can replace it
   with zero caller changes (see the swap point above).
-- **No UI** beyond the placeholder route — screens wait on the design mockup.
-- **No auth wiring / middleware** beyond the Supabase client factories. Session
-  refresh middleware and the actual sign-in screen come with the UI.
+- **No auth wiring / middleware** beyond the Supabase client factories, and the
+  Supabase-backed `DataProvider` is not written yet (the in-memory one stands in).
 - **Server actions / RPC callers** for the transition functions are not written
-  yet (they are UI-driven); the database functions they will call exist.
+  yet; the database functions they will call exist.
 - **Certificates, essay marking, cross-cycle analytics, multi-workspace** —
   out of MVP scope (Section 7), and the schema is designed not to need rework.
 
@@ -234,12 +300,20 @@ response time from the real sample export, and xlsx round-trip.
    fills). The `MCQ_Overall_Score_Analysis` and grades workbooks still use a
    sensible canonical layout to be reconciled against their real templates when
    available.
+5. **Demand-tag gate severity.** The "every item has a demand-level tag" gate is
+   classified as a **warning** (fixable, evidence-for-review), not a hard fail —
+   matching the design's treatment (hard-fail is reserved for duplicates /
+   schema / encoding / survey leakage) and keeping a clean sample export
+   validating so the seeded cycle is coherent. Behaviour only; the ingest
+   interface is unchanged.
 
 ## Running things
 
 ```bash
 npm install
-npm test          # 211 tests incl. the 177-item parity gate
+npm run dev       # the app (in-memory provider, real engine)
+npm run seed      # regenerate lib/data/seed.generated.json from the sample export
+npm test          # 214 tests incl. the 177-item parity gate
 npm run typecheck # tsc --noEmit, strict
 npm run build     # next build
 ```
