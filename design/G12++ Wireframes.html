@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>G12++ Exam Processing Suite — Wireframes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; }
+  * { -webkit-font-smoothing: antialiased; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="wire.jsx"></script>
+<script type="text/babel" src="spineA.jsx"></script>
+<script type="text/babel" src="spineB.jsx"></script>
+<script type="text/babel" src="explore.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+function App() {
+  return (
+    <DesignCanvas>
+      {/* ── THE FLOW: 6 screens, one approach each ───────────────── */}
+      <DCSection id="flow" title="The flow — 6 screens, one approach each"
+        subtitle="Walk left → right: how an assessment lead moves a cycle from raw export to locked grades. Hybrid nav, quality meters, sticky-rail review and drag boundaries are all applied here.">
+        <DCArtboard id="s1" label="01 · Cycles dashboard" width={1180} height={760}><ScreenCycles /></DCArtboard>
+        <DCArtboard id="s2" label="02 · Cycle overview" width={1180} height={760}><ScreenOverview /></DCArtboard>
+        <DCArtboard id="s3" label="03 · Ingest & validate" width={1180} height={760}><ScreenIngest /></DCArtboard>
+        <DCArtboard id="s4" label="04 · Item review & scoring  ·  hero" width={1180} height={820}><ScreenReview /></DCArtboard>
+        <DCArtboard id="s5" label="05 · Scoring & grade boundaries" width={1180} height={760}><ScreenBoundaries /></DCArtboard>
+        <DCArtboard id="s6" label="06 · Grades & sign-off" width={1180} height={760}><ScreenGrades /></DCArtboard>
+      </DCSection>
+
+      {/* ── NAV MODEL ────────────────────────────────────────────── */}
+      <DCSection id="nav" title="Exploration · Navigation model"
+        subtitle="How the whole tool is structured. 3 distinct shells.">
+        <DCArtboard id="n1" label="A · Sidebar" width={460} height={320}><NavSidebar /></DCArtboard>
+        <DCArtboard id="n2" label="B · Pipeline stepper" width={460} height={320}><NavStepper /></DCArtboard>
+        <DCArtboard id="n3" label="C · Hybrid" width={460} height={320}><NavHybrid /></DCArtboard>
+      </DCSection>
+
+      {/* ── QUALITY RATING ───────────────────────────────────────── */}
+      <DCSection id="quality" title="Exploration · The three quality ratings"
+        subtitle="good / review / poor — how loudly should they read? 4 treatments.">
+        <DCArtboard id="q1" label="A · Colour badges" width={300} height={210}><QualBadge /></DCArtboard>
+        <DCArtboard id="q2" label="B · Shape + label" width={300} height={210}><QualShape /></DCArtboard>
+        <DCArtboard id="q3" label="C · Typographic" width={300} height={210}><QualType /></DCArtboard>
+        <DCArtboard id="q4" label="D · Quality meter" width={300} height={210}><QualMeter /></DCArtboard>
+      </DCSection>
+
+      {/* ── ITEM-REVIEW LAYOUT ───────────────────────────────────── */}
+      <DCSection id="layout" title="Exploration · Item-review & stats layout"
+        subtitle="Dense table + psychometrics that update on exclude. 3 arrangements.">
+        <DCArtboard id="l1" label="A · Sticky right rail" width={520} height={340}><LayoutRail /></DCArtboard>
+        <DCArtboard id="l2" label="B · Expanding drawer" width={520} height={340}><LayoutDrawer /></DCArtboard>
+        <DCArtboard id="l3" label="C · Master–detail" width={520} height={340}><LayoutSplit /></DCArtboard>
+      </DCSection>
+
+      {/* ── BOUNDARY INTERACTION ─────────────────────────────────── */}
+      <DCSection id="bound" title="Exploration · Grade-boundary interaction"
+        subtitle="Setting cut-points on the distribution. 3 input methods.">
+        <DCArtboard id="b1" label="A · Drag handles" width={440} height={300}><BoundDrag /></DCArtboard>
+        <DCArtboard id="b2" label="B · Numeric entry" width={440} height={300}><BoundNumeric /></DCArtboard>
+        <DCArtboard id="b3" label="C · Slider track" width={440} height={300}><BoundSlider /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

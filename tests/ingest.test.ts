@@ -94,6 +94,13 @@ describe("validation report (Section 10 gates)", () => {
     expect(byId.get("no_leak")!.status).toBe("pass");
   });
 
+  it("treats missing demand tags as a non-blocking warning", () => {
+    const demand = validationReport.checks.find((c) => c.id === "demand_tag")!;
+    expect(["pass", "warn"]).toContain(demand.status);
+    // No hard-fail on the sample → progression is allowed.
+    expect(validationReport.passed).toBe(true);
+  });
+
   it("reports sensible stats", () => {
     expect(validationReport.stats.mcqRows).toBe(cleanedResponses.length);
     expect(validationReport.stats.assessments).toBeGreaterThanOrEqual(5);
