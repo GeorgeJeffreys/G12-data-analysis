@@ -21,19 +21,27 @@ import {
   type DuplicateStrategy,
   type GradeBandRow,
   type GradesModel,
+  type GradingDefaultsModel,
   type IngestModel,
   type ItemRow,
   type ReviewModel,
 } from "./types";
+import {
+  classify,
+  defaultGradingConfig,
+  starsFor,
+  type GradingConfig,
+  DEFAULT_PERFORMANCE_TARGETS,
+  DEFAULT_AWARD_TARGETS,
+} from "./grading";
 
 const seed = seedJson as unknown as Seed;
 const engine = getEngine();
 
-type Cuts = { A: number; B: number; C: number; D: number };
 interface BoundaryState {
   mode: BoundaryMode;
-  cuts: Cuts;
-  targets: Cuts;
+  cuts: number[];
+  targets: number[];
 }
 
 // --- small numeric helpers ---------------------------------------------------
@@ -55,16 +63,6 @@ function round(x: number, d = 1): number {
   const f = 10 ** d;
   return Math.round(x * f) / f;
 }
-function gradeFor(pct: number, cuts: Cuts): string {
-  if (pct >= cuts.A) return "A";
-  if (pct >= cuts.B) return "B";
-  if (pct >= cuts.C) return "C";
-  if (pct >= cuts.D) return "D";
-  return "E";
-}
-
-const DEFAULT_OVERALL_CUTS: Cuts = { A: 78, B: 64, C: 50, D: 38 };
-const DEFAULT_TARGETS: Cuts = { A: 13, B: 24, C: 32, D: 20 };
 
 export class InMemoryDataProvider implements DataProvider {
   private version = 0;
@@ -75,6 +73,7 @@ export class InMemoryDataProvider implements DataProvider {
   private reasons = new Map<string, string>(); // cycle:assessment:item -> reason
   private boundaries = new Map<string, BoundaryState>(); // cycle:scope -> state
   private locked = new Set<string>();
+  private grading: GradingConfig = defaultGradingConfig();
 
   private readonly user: CurrentUser = {
     id: "u-lead",
@@ -126,14 +125,28 @@ export class InMemoryDataProvider implements DataProvider {
     const scores = engine.computeScores(this.responsesOf(a), excluded);
     return new Map(scores.map((s) => [s.participantId, { raw: s.raw, itemsSeen: s.itemsSeen, pct: s.pct }]));
   }
-  private boundaryState(cycleId: string, scope: string, defaults: Cuts): BoundaryState {
-    return (
-      this.boundaries.get(`${cycleId}:${scope}`) ?? {
-        mode: "cuts",
-        cuts: { ...defaults },
-        targets: { ...DEFAULT_TARGETS },
-      }
-    );
+  /** Levels + default cuts/targets for a scope (assessment → performance, overall → award). */
+  private schemeFor(scope: string): { levels: string[]; cuts: number[]; targets: number[]; isAward: boolean } {
+    if (scope === "overall") {
+      return {
+        levels: this.grading.awardLevels,
+        cuts: this.grading.awardCuts,
+        targets: DEFAULT_AWARD_TARGETS,
+        isAward: true,
+      };
+    }
+    return {
+      levels: this.grading.performanceLevels,
+      cuts: this.grading.performanceCuts,
+      targets: DEFAULT_PERFORMANCE_TARGETS,
+      isAward: false,
+    };
+  }
+  private boundaryState(cycleId: string, scope: string): BoundaryState {
+    const existing = this.boundaries.get(`${cycleId}:${scope}`);
+    if (existing) return existing;
+    const s = this.schemeFor(scope);
+    return { mode: "cuts", cuts: [...s.cuts], targets: [...s.targets] };
   }
 
   private assessmentRefs(cycleId: string): AssessmentRef[] {
@@ -338,9 +351,9 @@ export class InMemoryDataProvider implements DataProvider {
     ];
     const scopeLabel = scopes.find((s) => s.id === scope)?.label ?? "Overall";
 
-    const defaults =
-      scope === "overall" ? DEFAULT_OVERALL_CUTS : this.assessment(scope)?.defaultCuts ?? DEFAULT_OVERALL_CUTS;
-    const st = this.boundaryState(cycleId, scope, defaults);
+    const scheme = this.schemeFor(scope);
+    const levels = scheme.levels;
+    const st = this.boundaryState(cycleId, scope);
 
     const pcts = this.scopePcts(cycleId, scope);
     const n = pcts.length;
@@ -355,11 +368,11 @@ export class InMemoryDataProvider implements DataProvider {
     for (let s = 100; s >= 0; s--) atAbove[s] = atAbove[s + 1]! + counts[s]!;
     const atOrAbove = (cut: number) => atAbove[Math.max(0, Math.min(100, Math.round(cut)))]!;
 
-    const cutsFromTargets = (t: Cuts): Cuts => {
+    // Solve cut-points from cumulative-from-top cohort-% targets.
+    const cutsFromTargets = (t: number[]): number[] => {
       let cum = 0;
-      const out: Cuts = { A: 0, B: 0, C: 0, D: 0 };
-      (["A", "B", "C", "D"] as const).forEach((g) => {
-        cum += Number(t[g]) || 0;
+      return t.map((share) => {
+        cum += Number(share) || 0;
         const want = (cum / 100) * n;
         let best = 0;
         let bd = Infinity;
@@ -370,25 +383,26 @@ export class InMemoryDataProvider implements DataProvider {
             best = s;
           }
         }
-        out[g] = best;
+        return best;
       });
-      return out;
     };
 
     const effCuts = st.mode === "cuts" ? st.cuts : cutsFromTargets(st.targets);
-    const bandStudents = {
-      A: atOrAbove(effCuts.A),
-      B: atOrAbove(effCuts.B) - atOrAbove(effCuts.A),
-      C: atOrAbove(effCuts.C) - atOrAbove(effCuts.B),
-      D: atOrAbove(effCuts.D) - atOrAbove(effCuts.C),
-      E: n - atOrAbove(effCuts.D),
-    };
-    const bands: GradeBandRow[] = (["A", "B", "C", "D", "E"] as const).map((g) => ({
-      grade: g,
-      cut: g === "E" ? null : effCuts[g],
-      students: bandStudents[g],
-      pct: n ? round((bandStudents[g] / n) * 100, 1) : 0,
-    }));
+    const last = levels.length - 1;
+    // Students per band, top → bottom; the lowest band is the remainder.
+    const bands: GradeBandRow[] = levels.map((level, i) => {
+      let students: number;
+      if (i === 0) students = atOrAbove(effCuts[0] ?? 0);
+      else if (i === last) students = n - atOrAbove(effCuts[i - 1] ?? 0);
+      else students = atOrAbove(effCuts[i] ?? 0) - atOrAbove(effCuts[i - 1] ?? 0);
+      return {
+        level,
+        stars: scheme.isAward ? null : starsFor(level, this.grading.starMap),
+        cut: i === last ? null : effCuts[i] ?? null,
+        students,
+        pct: n ? round((students / n) * 100, 1) : 0,
+      };
+    });
 
     // 51 two-point bins for the chart
     const histogram = new Array(51).fill(0) as number[];
@@ -419,7 +433,9 @@ export class InMemoryDataProvider implements DataProvider {
       scopeLabel,
       scopes,
       mode: st.mode,
+      isAward: scheme.isAward,
       histogram,
+      levels,
       cuts: effCuts,
       targets: st.targets,
       bands,
@@ -436,60 +452,82 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── grades & sign-off ───────────────────────────────────────────────────--
+  /** Per-participant overall percentage = total raw / total max across assessments. */
+  private overallPctByParticipant(cycleId: string): Map<string, number> {
+    const totals = new Map<string, { raw: number; seen: number }>();
+    for (const a of seed.liveCycle.assessments) {
+      for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
+        const t = totals.get(pid) ?? { raw: 0, seen: 0 };
+        t.raw += v.raw;
+        t.seen += v.itemsSeen;
+        totals.set(pid, t);
+      }
+    }
+    const out = new Map<string, number>();
+    for (const [pid, t] of totals) out.set(pid, t.seen ? (t.raw / t.seen) * 100 : 0);
+    return out;
+  }
+
   getGrades(cycleId: string): GradesModel | null {
     if (cycleId !== seed.liveCycle.id) return null;
     const refs = this.assessmentRefs(cycleId);
+    const perfLevels = this.grading.performanceLevels;
+    const awardLevels = this.grading.awardLevels;
 
-    // per-assessment pct maps + cuts
+    // per-assessment pct maps + effective cut-points
     const pctMaps = new Map<string, Map<string, number>>();
-    const cutsByScope = new Map<string, Cuts>();
+    const cutsByScope = new Map<string, number[]>();
     for (const a of seed.liveCycle.assessments) {
       const m = new Map<string, number>();
       for (const [pid, v] of this.pctByParticipant(cycleId, a)) m.set(pid, v.pct);
       pctMaps.set(a.id, m);
-      cutsByScope.set(a.id, this.boundaryState(cycleId, a.id, a.defaultCuts).cuts);
+      cutsByScope.set(a.id, this.boundaryState(cycleId, a.id).cuts);
     }
-    const overallCuts = this.boundaryState(cycleId, "overall", DEFAULT_OVERALL_CUTS).cuts;
-    const overallPcts = new Map<string, number>();
-    {
-      const totals = new Map<string, { raw: number; seen: number }>();
-      for (const a of seed.liveCycle.assessments) {
-        for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
-          const t = totals.get(pid) ?? { raw: 0, seen: 0 };
-          t.raw += v.raw;
-          t.seen += v.itemsSeen;
-          totals.set(pid, t);
-        }
-      }
-      for (const [pid, t] of totals) overallPcts.set(pid, t.seen ? (t.raw / t.seen) * 100 : 0);
-    }
+    const awardCuts = this.boundaryState(cycleId, "overall").cuts;
+    const overallPcts = this.overallPctByParticipant(cycleId);
 
     const rows = seed.liveCycle.participants.map((p) => {
-      const grades: Record<string, string> = {};
+      const grades: Record<string, { level: string; stars: string }> = {};
       for (const a of seed.liveCycle.assessments) {
         const pct = pctMaps.get(a.id)?.get(p.id);
-        grades[a.id] = pct === undefined ? "–" : gradeFor(pct, cutsByScope.get(a.id)!);
+        const level = pct === undefined ? "" : classify(pct, perfLevels, cutsByScope.get(a.id)!);
+        grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
       }
       const op = overallPcts.get(p.id);
       return {
         id: p.id,
         label: p.label,
         grades,
-        overall: op === undefined ? "–" : gradeFor(op, overallCuts),
+        award: op === undefined ? "" : classify(op, awardLevels, awardCuts),
       };
     });
 
     const distCounts = new Map<string, number>();
-    for (const r of rows) distCounts.set(r.overall, (distCounts.get(r.overall) ?? 0) + 1);
-    const distribution = ["A", "B", "C", "D", "E"].map((g) => ({ grade: g, count: distCounts.get(g) ?? 0 }));
+    for (const r of rows) distCounts.set(r.award, (distCounts.get(r.award) ?? 0) + 1);
+    const distribution = awardLevels.map((level) => ({ level, count: distCounts.get(level) ?? 0 }));
 
     return {
       cycleId,
       assessments: refs,
       rows,
       distribution,
+      awardLevels,
+      starMap: this.grading.starMap,
+      performanceLevels: perfLevels,
       locked: this.locked.has(cycleId),
       canLock: this.user.role === "lead_admin" && !this.locked.has(cycleId),
+    };
+  }
+
+  getGradingDefaults(): GradingDefaultsModel {
+    return {
+      performanceLevels: this.grading.performanceLevels,
+      starMap: this.grading.starMap,
+      awardLevels: this.grading.awardLevels,
+      performanceCuts: this.grading.performanceCuts,
+      awardCuts: this.grading.awardCuts,
+      // CONFIRM: award derivation is the placeholder rule (see lib/data/grading.ts).
+      awardRuleUnconfirmed: true,
     };
   }
 
@@ -517,29 +555,40 @@ export class InMemoryDataProvider implements DataProvider {
 
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void {
     if (this.locked.has(cycleId)) return;
-    const defaults =
-      scope === "overall" ? DEFAULT_OVERALL_CUTS : this.assessment(scope)?.defaultCuts ?? DEFAULT_OVERALL_CUTS;
     const key = `${cycleId}:${scope}`;
-    const cur = this.boundaries.get(key) ?? {
-      mode: "cuts" as BoundaryMode,
-      cuts: { ...defaults },
-      targets: { ...DEFAULT_TARGETS },
-    };
-    const next: BoundaryState = {
-      mode: input.mode ?? cur.mode,
-      cuts: { ...cur.cuts, ...(input.cuts ?? {}) },
-      targets: { ...cur.targets, ...(input.targets ?? {}) },
-    };
-    // keep cut-points ordered A > B > C > D within [1, 99]
-    const order = ["A", "B", "C", "D"] as const;
-    for (let i = 0; i < order.length; i++) {
-      const g = order[i]!;
-      const v = Math.max(0, Math.min(100, Math.round(next.cuts[g])));
-      const hi = i > 0 ? next.cuts[order[i - 1]!]! - 1 : 99;
-      const lo = i < 3 ? next.cuts[order[i + 1]!]! + 1 : 1;
-      next.cuts[g] = Math.max(lo, Math.min(hi, v));
+    const cur = this.boundaryState(cycleId, scope);
+
+    const cuts = input.cuts ? [...input.cuts] : [...cur.cuts];
+    if (input.cutIndex != null && input.cutValue != null) cuts[input.cutIndex] = input.cutValue;
+    const targets = input.targets ? [...input.targets] : [...cur.targets];
+    if (input.targetIndex != null && input.targetValue != null) targets[input.targetIndex] = input.targetValue;
+
+    // Keep cut-points strictly descending (cuts[0] highest) within [1, 99].
+    for (let i = 0; i < cuts.length; i++) {
+      const v = Math.max(0, Math.min(100, Math.round(cuts[i] ?? 0)));
+      const hi = i > 0 ? (cuts[i - 1] ?? 100) - 1 : 99;
+      const lo = i < cuts.length - 1 ? (cuts[i + 1] ?? 0) + 1 : 1;
+      cuts[i] = Math.max(lo, Math.min(hi, v));
     }
-    this.boundaries.set(key, next);
+
+    this.boundaries.set(key, { mode: input.mode ?? cur.mode, cuts, targets });
+    this.bump();
+  }
+
+  setGradingDefaults(patch: Partial<GradingConfig>): void {
+    this.grading = {
+      ...this.grading,
+      ...patch,
+      starMap: { ...this.grading.starMap, ...(patch.starMap ?? {}) },
+    };
+    // Drop any boundary state that no longer matches the new band count so it
+    // re-derives from the updated defaults.
+    const perfLen = this.grading.performanceLevels.length - 1;
+    const awardLen = this.grading.awardLevels.length - 1;
+    for (const [key, st] of [...this.boundaries.entries()]) {
+      const isAward = key.endsWith(":overall");
+      if (st.cuts.length !== (isAward ? awardLen : perfLen)) this.boundaries.delete(key);
+    }
     this.bump();
   }
 

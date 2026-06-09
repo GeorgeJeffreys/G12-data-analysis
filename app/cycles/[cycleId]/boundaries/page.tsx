@@ -3,29 +3,33 @@
 /**
  * Screen 05 — Scoring & grade boundaries (human gate 2). Interactive dual mode:
  * "Fix boundaries" (drag/type cut-points → live student counts) and
- * "Fix cohort %" (type target shares → solve cut-points). All counts come from
- * the provider/engine over the real cohort. The cross-cycle comparison is a
- * clearly-labelled mock (no prior cycle exists yet).
+ * "Fix cohort %" (type target shares → solve cut-points). Per assessment the
+ * bands are the four performance levels (three cut-points); the Overall scope is
+ * the four-band award classification. All counts come from the provider/engine
+ * over the real cohort. The cross-cycle comparison is a clearly-labelled mock.
  */
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
+import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
 import { Button, StatBlock } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 
-// MOCK: there is no prior cycle. Cross-cycle comparison is driven by this
-// labelled fixture and gated by SHOW_CROSS_CYCLE so it's trivial to switch to
-// real data later. Never presented as if it were computed from real history.
+// MOCK: there is no prior cycle. Cross-cycle comparison is driven by these
+// labelled fixtures and gated by SHOW_CROSS_CYCLE so it's trivial to switch to
+// real data later. Never presented as if computed from real history.
 const SHOW_CROSS_CYCLE = true;
-const MOCK_PRIOR = {
-  name: "Jan 2026",
-  aCut: 74,
-  mix: { A: 11.2, B: 25.1, C: 33.4, D: 18.9, E: 11.4 } as Record<string, number>,
-};
+const MOCK_PRIOR_NAME = "Jan 2026";
+const MOCK_PRIOR_TOP_CUT = 74;
+const MOCK_PRIOR_MIX_PERFORMANCE = [12, 28, 38, 22]; // % per band, top → bottom
+const MOCK_PRIOR_MIX_AWARD = [9, 24, 34, 33];
 
-const GRADES = ["A", "B", "C", "D", "E"] as const;
+function shortLabel(level: string, isAward: boolean, stars: string | null): string {
+  if (isAward) return AWARD_SHORT[level] ?? level;
+  return stars && stars.length ? stars : "—";
+}
 
 export default function BoundariesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -41,11 +45,15 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
     );
   }
 
-  const setCut = (g: string, v: number) => provider.setBoundary(cycleId, scope, { cuts: { [g]: v } });
+  const setCut = (index: number, v: number) =>
+    provider.setBoundary(cycleId, scope, { cutIndex: index, cutValue: v });
   const setMode = (mode: "cuts" | "pct") => provider.setBoundary(cycleId, scope, { mode });
-  const setTarget = (g: string, v: number) => provider.setBoundary(cycleId, scope, { targets: { [g]: v } });
+  const setTarget = (index: number, v: number) =>
+    provider.setBoundary(cycleId, scope, { targetIndex: index, targetValue: v });
 
-  const eTarget = 100 - (model.targets.A + model.targets.B + model.targets.C + model.targets.D);
+  const targetSum = model.targets.reduce((a, b) => a + (Number(b) || 0), 0);
+  const remainder = 100 - targetSum;
+  const mockMix = model.isAward ? MOCK_PRIOR_MIX_AWARD : MOCK_PRIOR_MIX_PERFORMANCE;
 
   const seg = (val: "cuts" | "pct", label: string, sub: string) => (
     <button
@@ -109,11 +117,14 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
-            <div className="hf-h1">Set grade boundaries</div>
+            <div className="hf-h1">{model.isAward ? "Set overall award boundaries" : "Set grade boundaries"}</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 560 }}>
+              {model.isAward
+                ? "Classify each student's overall score into an award level. "
+                : ""}
               {model.mode === "cuts"
                 ? "Drag a cut-point on the curve, or type a score. Student counts update as you move."
-                : "Type the share of students you want in each grade. We solve for the nearest cut-points that achieve it."}
+                : "Type the share of students you want in each level. We solve for the nearest cut-points that achieve it."}
             </div>
           </div>
           <div style={{ display: "flex", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 380, flex: "0 0 auto" }}>
@@ -138,7 +149,14 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                 )}
               </span>
             </div>
-            <BoundaryChart histogram={model.histogram} cuts={model.cuts} draggable={model.mode === "cuts"} onDrag={setCut} />
+            <BoundaryChart
+              histogram={model.histogram}
+              cuts={model.cuts}
+              bands={model.bands}
+              isAward={model.isAward}
+              draggable={model.mode === "cuts"}
+              onDrag={setCut}
+            />
             <div style={{ display: "flex", gap: 30, marginTop: 22, paddingTop: 18, borderTop: `1px solid ${H.line}` }}>
               <StatBlock n={`${model.stats.mean}%`} label="Cohort mean" />
               <StatBlock n={String(model.stats.median)} label="Median" />
@@ -156,13 +174,13 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </div>
 
           {/* table card */}
-          <div className="hf-card" style={{ flex: "0 0 440px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div className="hf-card" style={{ flex: "0 0 480px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
               <thead>
                 <tr>
-                  <th className="hf-th">Grade</th>
+                  <th className="hf-th">{model.isAward ? "Award level" : "Performance level"}</th>
                   <th className="hf-th" style={{ textAlign: "right" }}>
-                    Cut-point ≥{model.mode === "pct" && <span style={{ color: H.pink, marginLeft: 5 }}>auto</span>}
+                    Cut ≥{model.mode === "pct" && <span style={{ color: H.pink, marginLeft: 5 }}>auto</span>}
                   </th>
                   <th className="hf-th" style={{ textAlign: "right" }}>Students</th>
                   <th className="hf-th" style={{ textAlign: "right" }}>
@@ -171,21 +189,28 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                 </tr>
               </thead>
               <tbody>
-                {model.bands.map((b) => {
-                  const isE = b.grade === "E";
+                {model.bands.map((b, i) => {
+                  const isLowest = b.cut === null;
                   return (
-                    <tr key={b.grade}>
+                    <tr key={b.level}>
                       <td className="hf-td">
-                        <span style={{ width: 27, height: 27, border: `1px solid ${H.line2}`, borderRadius: 7, display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontFamily: "var(--font-mono)" }}>
-                          {b.grade}
-                        </span>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          {b.stars !== null && (
+                            <span className="hf-mono" style={{ fontSize: 12, color: H.pink, fontWeight: 700, width: 24, letterSpacing: 1 }}>
+                              {b.stars || "·"}
+                            </span>
+                          )}
+                          <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.15 }}>
+                            {model.isAward ? AWARD_SHORT[b.level] ?? b.level : b.level}
+                          </span>
+                        </div>
                       </td>
                       <td className="hf-td" style={{ textAlign: "right" }}>
-                        {isE ? (
-                          <span className="hf-sub hf-mono">below D</span>
+                        {isLowest ? (
+                          <span className="hf-sub hf-mono">remainder</span>
                         ) : model.mode === "cuts" ? (
                           <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
-                            <CutInput value={b.cut ?? 0} onCommit={(v) => setCut(b.grade, v)} />
+                            <CutInput value={b.cut ?? 0} onCommit={(v) => setCut(i, v)} />
                             <span className="hf-sub">%</span>
                           </span>
                         ) : (
@@ -196,13 +221,9 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                         {Math.round(b.students).toLocaleString()}
                       </td>
                       <td className="hf-td" style={{ textAlign: "right" }}>
-                        {model.mode === "pct" && !isE ? (
+                        {model.mode === "pct" && !isLowest ? (
                           <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
-                            <CutInput
-                              value={model.targets[b.grade as "A" | "B" | "C" | "D"]}
-                              width={58}
-                              onCommit={(v) => setTarget(b.grade, v)}
-                            />
+                            <CutInput value={model.targets[i] ?? 0} width={58} onCommit={(v) => setTarget(i, v)} />
                             <span className="hf-sub">%</span>
                           </span>
                         ) : (
@@ -218,16 +239,16 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             {SHOW_CROSS_CYCLE && (
               <div style={{ padding: "16px 18px 10px", borderTop: `1px solid ${H.line}` }}>
                 <div className="hf-lbl" style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                  Grade mix vs {MOCK_PRIOR.name}
+                  Mix vs {MOCK_PRIOR_NAME}
                   <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.5 }}>MOCK</span>
                 </div>
                 <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: 70 }}>
-                  {GRADES.map((g) => {
-                    const nowPct = model.n ? (model.bands.find((b) => b.grade === g)!.students / model.n) * 100 : 0;
-                    const last = MOCK_PRIOR.mix[g]!;
+                  {model.bands.map((b, i) => {
+                    const nowPct = b.pct;
+                    const last = mockMix[i] ?? 0;
                     const delta = nowPct - last;
                     return (
-                      <div key={g} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 }}>
+                      <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 }} title={b.level}>
                         <span className="hf-mono" style={{ fontSize: 9.5, color: Math.abs(delta) < 0.5 ? H.ink3 : H.ink2 }}>
                           {delta >= 0 ? "+" : ""}{delta.toFixed(1)}
                         </span>
@@ -235,7 +256,9 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                           <div style={{ width: 12, height: `${Math.max(4, (nowPct / 50) * 100)}%`, background: H.ink2, borderRadius: "2px 2px 0 0" }} />
                           <div style={{ width: 12, height: `${Math.max(4, (last / 50) * 100)}%`, border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
                         </div>
-                        <span className="hf-mono" style={{ fontSize: 10, fontWeight: 700 }}>{g}</span>
+                        <span className="hf-mono" style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3 }}>
+                          {shortLabel(b.level, model.isAward, b.stars).slice(0, 4)}
+                        </span>
                       </div>
                     );
                   })}
@@ -245,7 +268,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                     <span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />Now
                   </span>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{MOCK_PRIOR.name} (mock)
+                    <span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{MOCK_PRIOR_NAME} (mock)
                   </span>
                 </div>
               </div>
@@ -253,22 +276,22 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
             <div style={{ display: "flex", alignItems: "center", padding: "11px 14px", gap: 9, borderTop: `1px solid ${H.line}`, background: H.tint, marginTop: "auto" }}>
               {model.mode === "pct" ? (
-                eTarget < 0 ? (
+                remainder < 0 ? (
                   <>
                     <Mark kind="fail" size={15} />
-                    <span style={{ fontSize: 11.5, color: H.bad }}>Targets exceed 100%. Reduce a band — E is currently {eTarget}%.</span>
+                    <span style={{ fontSize: 11.5, color: H.bad }}>Targets exceed 100%. Reduce a band — the lowest is currently {remainder}%.</span>
                   </>
                 ) : (
                   <>
                     <Mark kind="warn" size={15} />
-                    <span className="hf-sub" style={{ fontSize: 11.5 }}>E takes the remainder ({eTarget}%). Scores are discrete, so achieved % can differ slightly from target.</span>
+                    <span className="hf-sub" style={{ fontSize: 11.5 }}>The lowest band takes the remainder ({remainder}%). Scores are discrete, so achieved % can differ slightly from target.</span>
                   </>
                 )
               ) : (
                 <>
                   <Mark kind="warn" size={15} />
                   <span className="hf-sub" style={{ fontSize: 11.5 }}>
-                    A-cut is {model.cuts.A - MOCK_PRIOR.aCut >= 0 ? "+" : ""}{model.cuts.A - MOCK_PRIOR.aCut} pts vs {MOCK_PRIOR.name} (mock) — confirm intended before continuing.
+                    Top cut is {(model.cuts[0] ?? 0) - MOCK_PRIOR_TOP_CUT >= 0 ? "+" : ""}{(model.cuts[0] ?? 0) - MOCK_PRIOR_TOP_CUT} pts vs {MOCK_PRIOR_NAME} (mock) — confirm intended before continuing.
                   </span>
                 </>
               )}
@@ -303,32 +326,38 @@ function CutInput({ value, width = 74, onCommit }: { value: number; width?: numb
 function BoundaryChart({
   histogram,
   cuts,
+  bands,
+  isAward,
   draggable,
   onDrag,
 }: {
   histogram: number[];
-  cuts: { A: number; B: number; C: number; D: number };
+  cuts: number[];
+  bands: { level: string; stars: string | null }[];
+  isAward: boolean;
   draggable: boolean;
-  onDrag: (key: string, v: number) => void;
+  onDrag: (index: number, v: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const max = Math.max(1, ...histogram);
-  const BAND_FILL: Record<string, number> = { A: 0.06, B: 0, C: 0.045, D: 0, E: 0.03 };
-  const regions = [
-    { g: "E", from: 0, to: cuts.D },
-    { g: "D", from: cuts.D, to: cuts.C },
-    { g: "C", from: cuts.C, to: cuts.B },
-    { g: "B", from: cuts.B, to: cuts.A },
-    { g: "A", from: cuts.A, to: 100 },
-  ];
-  const startDrag = (key: string) => (e: React.PointerEvent) => {
+  const last = bands.length - 1;
+  // band i (top→bottom): from = cuts[i] (or 0 if lowest), to = cuts[i-1] (or 100 if top)
+  const regions = bands.map((b, i) => ({
+    level: b.level,
+    label: isAward ? (AWARD_SHORT[b.level] ?? b.level) : b.stars || "—",
+    from: i === last ? 0 : cuts[i] ?? 0,
+    to: i === 0 ? 100 : cuts[i - 1] ?? 100,
+    opacity: i % 2 === 0 ? 0.06 : 0.02,
+  }));
+
+  const startDrag = (index: number) => (e: React.PointerEvent) => {
     if (!draggable || !ref.current) return;
     e.preventDefault();
     const rect = ref.current.getBoundingClientRect();
     const move = (ev: PointerEvent) => {
       let v = Math.round(((ev.clientX - rect.left) / rect.width) * 100);
       v = Math.max(0, Math.min(100, v));
-      onDrag(key, v);
+      onDrag(index, v);
     };
     const up = () => {
       document.removeEventListener("pointermove", move);
@@ -341,11 +370,14 @@ function BoundaryChart({
   return (
     <div ref={ref} style={{ position: "relative", height: 196, userSelect: "none" }}>
       {regions.map((r) => (
-        <div key={r.g} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: BAND_FILL[r.g] }} />
+        <div key={r.level} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: r.opacity }} />
       ))}
       {regions.map((r) => (
-        <div key={r.g + "l"} style={{ position: "absolute", top: 4, left: `${(r.from + r.to) / 2}%`, transform: "translateX(-50%)", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: 13, color: H.ink2 }}>
-          {r.g}
+        <div
+          key={r.level + "l"}
+          style={{ position: "absolute", top: 4, left: `${(r.from + r.to) / 2}%`, transform: "translateX(-50%)", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: isAward ? 9.5 : 12, color: H.ink2, whiteSpace: "nowrap" }}
+        >
+          {r.label}
         </div>
       ))}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 22, top: 0, display: "flex", alignItems: "flex-end", gap: 1 }}>
@@ -354,11 +386,11 @@ function BoundaryChart({
         ))}
       </div>
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 22, height: 1.5, background: H.line2 }} />
-      {(["D", "C", "B", "A"] as const).map((k) => (
-        <div key={k} style={{ position: "absolute", top: 0, bottom: 22, left: `${cuts[k]}%`, width: 0 }}>
+      {cuts.map((cut, i) => (
+        <div key={i} style={{ position: "absolute", top: 0, bottom: 22, left: `${cut}%`, width: 0 }}>
           <div style={{ position: "absolute", top: 0, bottom: 0, borderLeft: `2px dashed ${H.pink}` }} />
           <div
-            onPointerDown={startDrag(k)}
+            onPointerDown={startDrag(i)}
             title={draggable ? "Drag" : "Computed from target %"}
             style={{
               position: "absolute",
@@ -380,7 +412,7 @@ function BoundaryChart({
               boxShadow: "0 2px 6px rgba(193,44,104,.3)",
             }}
           >
-            {cuts[k]}
+            {cut}
           </div>
         </div>
       ))}

@@ -110,7 +110,11 @@ export interface ReviewModel {
 }
 
 export interface GradeBandRow {
-  grade: string;
+  /** Named level (e.g. "Exceeds expectations" or "Distinction award"). */
+  level: string;
+  /** Star string for performance bands; null for award bands. */
+  stars: string | null;
+  /** Minimum score for this band; null for the lowest (remainder) band. */
   cut: number | null;
   students: number;
   pct: number;
@@ -129,29 +133,58 @@ export interface BoundaryModel {
   scopeLabel: string;
   scopes: BoundaryScopeRef[];
   mode: BoundaryMode;
+  /** True when the scope is the overall award (different vocabulary). */
+  isAward: boolean;
   histogram: number[]; // 51 two-point bins (0..100), participant counts
-  cuts: { A: number; B: number; C: number; D: number };
-  targets: { A: number; B: number; C: number; D: number };
+  /** Levels, best → lowest (length L). */
+  levels: string[];
+  /** Cut-points, length L−1: cuts[i] is the min score for levels[i]. */
+  cuts: number[];
+  /** Cohort-% targets for the top L−1 bands (pct mode). */
+  targets: number[];
   bands: GradeBandRow[];
   stats: { mean: number; median: number; sd: number; itemsScored: number; excluded: number };
   n: number;
   locked: boolean;
 }
 
+export interface GradeCell {
+  level: string;
+  stars: string;
+}
+
 export interface GradeMatrixRow {
   id: string;
   label: string;
-  grades: Record<string, string>;
-  overall: string;
+  /** Per-assessment performance level + stars, keyed by assessment id. */
+  grades: Record<string, GradeCell>;
+  /** Overall award level. */
+  award: string;
 }
 
 export interface GradesModel {
   cycleId: string;
   assessments: AssessmentRef[];
   rows: GradeMatrixRow[];
-  distribution: { grade: string; count: number }[];
+  /** Distribution over the award levels. */
+  distribution: { level: string; count: number }[];
+  awardLevels: string[];
+  /** Performance level → stars, for the matrix legend. */
+  starMap: Record<string, string>;
+  performanceLevels: string[];
   locked: boolean;
   canLock: boolean;
 }
 
 export type DuplicateStrategy = "keep_latest" | "keep_first" | "exclude";
+
+// --- Settings → grading defaults --------------------------------------------
+export interface GradingDefaultsModel {
+  performanceLevels: string[];
+  starMap: Record<string, string>;
+  awardLevels: string[];
+  performanceCuts: number[];
+  awardCuts: number[];
+  /** True when the award-derivation rule is still the unverified placeholder. */
+  awardRuleUnconfirmed: boolean;
+}

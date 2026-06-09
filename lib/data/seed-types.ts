@@ -50,8 +50,6 @@ export interface SeedAssessment {
   stageIndex: number;
   items: SeedItem[];
   responses: SeedResponse[];
-  /** Seeded default grade cut-points (percent) for A/B/C/D. */
-  defaultCuts: { A: number; B: number; C: number; D: number };
 }
 
 export interface SeedParticipant {

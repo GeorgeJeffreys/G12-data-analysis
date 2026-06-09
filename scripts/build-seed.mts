@@ -173,7 +173,6 @@ function main() {
       stageIndex: 2, // all assessments are validated and ready for review
       items,
       responses: seedResponses,
-      defaultCuts: { A: 78, B: 64, C: 50, D: 38 },
       // carry order for sorting below
       ...( { _order: info.order } as object ),
     } as SeedAssessment & { _order: number });

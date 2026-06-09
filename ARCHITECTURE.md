@@ -242,11 +242,36 @@ numbers, not hand-typed mocks. Reactivity is via `useSyncExternalStore`
 | 04 | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
 | 05 | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
 | 06 | Grades & sign-off | `/cycles/[cycleId]/grades` |
+| —  | Settings → Grading defaults | `/settings` |
 
 Shared shell (`components/shell/`): nav rail, top bar, and the pipeline stepper
 shown on every cycle screen. Design system (`components/ui/`): buttons, chips,
 KPI/stat blocks, quality bars, status marks, dense tables, and the recharts
 histogram + breakdown bars — all ported from `design/hf.jsx`.
+
+### Grade vocabulary (the real named levels)
+
+The A–E placeholder from the batch-1 screens is replaced everywhere by the
+production vocabulary (`lib/data/grading.ts`), and the schemes are generalised so
+nothing hardcodes band names or counts:
+
+- **Per-assessment performance level** (best → lowest): *Outstanding
+  performance*, *Exceeds expectations*, *Meets expectations*, *Doesn't yet meet
+  expectations* — **four bands → three cut-points**. Star mapping for reports:
+  `***` / `**` / `*` / `` (blank).
+- **Overall award** (best → lowest): *Distinction award*, *Advanced achievement
+  award*, *Secondary achievement award*, *No Award* — a **separate four-band
+  classification** with its own cut-points.
+- A grading scheme is `{ levels[], cuts[] }` where `cuts[i]` is the minimum score
+  for `levels[i]` and the lowest level is the remainder. `BoundaryModel`
+  carries `levels`, a `cuts` array and `isAward`; `GradesModel` carries
+  per-assessment `{ level, stars }` cells plus the overall `award`.
+- **Labels, star mapping and default cut-points are configurable** in Settings →
+  Grading defaults (`getGradingDefaults` / `setGradingDefaults`).
+- **`// CONFIRM:` the overall-award derivation rule is a placeholder** — the real
+  rule isn't in the source files. The default classifies the overall score into
+  the four awards by configurable cut-point; the Settings screen surfaces this as
+  an "Unverified rule" warning. Confirm with the assessment team before go-live.
 
 ### What is mocked in the UI (honestly labelled)
 

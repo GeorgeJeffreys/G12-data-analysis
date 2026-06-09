@@ -14,15 +14,15 @@ const NAV = [
   { k: "Cycles", href: "/", d: "M3 4h10v3H3zM3 9h10v3H3z" },
   { k: "Assessments", href: "/", d: "M4 3h6l2 2v8H4z" },
   { k: "Audit log", href: "/", d: "M4 3h8v10H4zM6 6h4M6 8.5h4" },
-  { k: "Settings", href: "/", d: "M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" },
+  { k: "Settings", href: "/settings", d: "M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" },
 ];
 
 export function NavRail() {
   const pathname = usePathname();
   const provider = useProvider();
   const user = provider.getCurrentUser();
-  // Only "Cycles" is a real destination in this build.
-  const activeKey = "Cycles";
+  // Cycles and Settings are the real destinations in this build.
+  const activeKey = pathname.startsWith("/settings") ? "Settings" : "Cycles";
 
   return (
     <nav
@@ -59,7 +59,7 @@ export function NavRail() {
         <span style={{ fontFamily: "var(--font-script)", fontSize: 22, lineHeight: 1, marginTop: 4 }}>A</span>
       </Link>
       {NAV.map((it) => {
-        const on = it.k === activeKey && (pathname === "/" || pathname.startsWith("/cycles"));
+        const on = it.k === activeKey;
         return (
           <Link
             key={it.k}

@@ -13,7 +13,8 @@ import { Shell } from "@/components/shell/Shell";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
-import type { GradesModel } from "@/lib/data/types";
+import { AWARD_SHORT } from "@/lib/data/grading";
+import type { GradeCell, GradesModel } from "@/lib/data/types";
 
 export default function GradesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -78,9 +79,22 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             </div>
           </div>
           <div className="hf-card" style={{ padding: "13px 18px", display: "flex", gap: 18, alignItems: "center" }}>
-            <span className="hf-lbl">Overall distribution</span>
-            <MiniGradeBars data={model.distribution} />
+            <span className="hf-lbl">Award distribution</span>
+            <MiniGradeBars data={model.distribution.map((d) => ({ label: AWARD_SHORT[d.level] ?? d.level, count: d.count }))} />
           </div>
+        </div>
+
+        {/* stars legend */}
+        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="hf-lbl">Performance levels</span>
+          {model.performanceLevels.map((lvl) => (
+            <span key={lvl} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: H.ink2 }}>
+              <span className="hf-mono" style={{ color: H.pink, fontWeight: 700, letterSpacing: 1, minWidth: 18 }}>
+                {model.starMap[lvl] || "·"}
+              </span>
+              {lvl}
+            </span>
+          ))}
         </div>
 
         {model.locked && (
@@ -113,13 +127,16 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                     <span className="hf-mono" style={{ fontSize: 11, color: H.ink3, marginRight: 10 }}>{r.id}</span>
                     <span style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</span>
                   </td>
-                  {model.assessments.map((a) => (
-                    <td key={a.id} className="hf-td" style={{ textAlign: "center" }}>
-                      <GradeBadge g={r.grades[a.id] ?? "–"} />
-                    </td>
-                  ))}
+                  {model.assessments.map((a) => {
+                    const cell = r.grades[a.id];
+                    return (
+                      <td key={a.id} className="hf-td" style={{ textAlign: "center" }}>
+                        <StarBadge cell={cell} />
+                      </td>
+                    );
+                  })}
                   <td className="hf-td" style={{ textAlign: "center" }}>
-                    <GradeBadge g={r.overall} big />
+                    <AwardBadge award={r.award} />
                   </td>
                 </tr>
               ))}
@@ -162,25 +179,55 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   );
 }
 
-function GradeBadge({ g, big }: { g: string; big?: boolean }) {
+/** Per-assessment cell: the star rating, with the full level as a tooltip. */
+function StarBadge({ cell }: { cell?: GradeCell }) {
+  const stars = cell?.stars ?? "";
+  const level = cell?.level ?? "—";
   return (
     <span
+      title={level}
+      className="hf-mono"
       style={{
-        width: big ? 30 : 23,
-        height: big ? 30 : 23,
-        border: `1px solid ${big ? H.pink : H.line2}`,
-        borderRadius: 7,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
+        minWidth: 34,
+        height: 23,
+        borderRadius: 7,
+        border: `1px solid ${H.line2}`,
+        background: H.paper,
+        color: stars ? H.pink : H.ink3,
         fontWeight: 700,
-        fontFamily: "var(--font-mono)",
-        fontSize: big ? 14 : 11.5,
-        background: big ? H.pink : H.paper,
-        color: big ? "#fff" : H.ink,
+        fontSize: 12,
+        letterSpacing: 1.5,
       }}
     >
-      {g}
+      {stars || "·"}
+    </span>
+  );
+}
+
+/** Overall award pill (compact label, full award as tooltip). */
+function AwardBadge({ award }: { award: string }) {
+  const isNoAward = award === "No Award" || award === "";
+  return (
+    <span
+      title={award}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "4px 10px",
+        height: 24,
+        borderRadius: 999,
+        fontWeight: 700,
+        fontSize: 11,
+        background: isNoAward ? H.tint2 : H.pink,
+        color: isNoAward ? H.ink2 : "#fff",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {AWARD_SHORT[award] ?? award ?? "—"}
     </span>
   );
 }
@@ -195,10 +242,10 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 function exportCsv(model: GradesModel) {
-  const header = ["Participant ID", "Participant", ...model.assessments.map((a) => a.name), "Overall"];
+  const header = ["Participant ID", "Participant", ...model.assessments.map((a) => a.name), "Overall award"];
   const lines = [header.join(",")];
   for (const r of model.rows) {
-    const cells = [r.id, r.label, ...model.assessments.map((a) => r.grades[a.id] ?? ""), r.overall];
+    const cells = [r.id, r.label, ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""), r.award];
     lines.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","));
   }
   downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "grades_may_2026.csv");
@@ -213,9 +260,9 @@ async function exportExcel(model: GradesModel) {
     participants: model.rows.map((r) => ({ id: r.id, label: r.label })),
     grades: [
       ...model.rows.flatMap((r) =>
-        model.assessments.map((a) => ({ participantId: r.id, scope: a.id, gradeLabel: r.grades[a.id] ?? null, score: null })),
+        model.assessments.map((a) => ({ participantId: r.id, scope: a.id, gradeLabel: r.grades[a.id]?.level ?? null, score: null })),
       ),
-      ...model.rows.map((r) => ({ participantId: r.id, scope: "overall", gradeLabel: r.overall, score: null })),
+      ...model.rows.map((r) => ({ participantId: r.id, scope: "overall", gradeLabel: r.award, score: null })),
     ],
   });
   const buf = workbookToBuffer(wb);

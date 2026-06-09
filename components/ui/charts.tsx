@@ -67,18 +67,18 @@ export function BreakdownBars({ items }: { items: BreakItem[] }) {
   );
 }
 
-/** Compact vertical A–E grade-distribution bars. */
-export function MiniGradeBars({ data }: { data: { grade: string; count: number }[] }) {
+/** Compact vertical grade/award distribution bars. */
+export function MiniGradeBars({ data }: { data: { label: string; count: number }[] }) {
   const max = Math.max(1, ...data.map((d) => d.count));
   return (
-    <div style={{ display: "flex", gap: 14, alignItems: "flex-end" }}>
+    <div style={{ display: "flex", gap: 12, alignItems: "flex-end" }}>
       {data.map((d) => (
-        <div key={d.grade} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }}>
-          <div style={{ width: 20, height: 44, background: H.tint2, borderRadius: 4, display: "flex", alignItems: "flex-end" }}>
+        <div key={d.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5 }} title={d.label}>
+          <div style={{ width: 18, height: 44, background: H.tint2, borderRadius: 4, display: "flex", alignItems: "flex-end" }}>
             <div style={{ width: "100%", height: `${(d.count / max) * 100}%`, background: H.bar, borderRadius: 4 }} />
           </div>
-          <span className="hf-mono" style={{ fontSize: 10, fontWeight: 700 }}>
-            {d.grade}
+          <span style={{ fontSize: 9, fontWeight: 700, color: H.ink2, maxWidth: 52, textAlign: "center", lineHeight: 1.05 }}>
+            {d.label}
           </span>
           <span className="hf-mono" style={{ fontSize: 9.5, color: H.ink3 }}>
             {d.count}

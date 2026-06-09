@@ -23,15 +23,25 @@ import type {
   CycleSummary,
   DuplicateStrategy,
   GradesModel,
+  GradingDefaultsModel,
   IngestModel,
   ReviewModel,
   BoundaryModel,
 } from "./types";
+import type { GradingConfig } from "./grading";
 
 export interface SetBoundaryInput {
   mode?: BoundaryMode;
-  cuts?: Partial<{ A: number; B: number; C: number; D: number }>;
-  targets?: Partial<{ A: number; B: number; C: number; D: number }>;
+  /** Replace the whole cut-point array. */
+  cuts?: number[];
+  /** Replace the whole target-% array. */
+  targets?: number[];
+  /** Update a single cut-point (drag / type). */
+  cutIndex?: number;
+  cutValue?: number;
+  /** Update a single target %. */
+  targetIndex?: number;
+  targetValue?: number;
 }
 
 export interface DataProvider {
@@ -45,6 +55,7 @@ export interface DataProvider {
   getReview(cycleId: string, assessmentId: string): ReviewModel | null;
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null;
   getGrades(cycleId: string): GradesModel | null;
+  getGradingDefaults(): GradingDefaultsModel;
 
   // writes
   setItemExcluded(
@@ -55,6 +66,7 @@ export interface DataProvider {
     reason?: string | null,
   ): void;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
+  setGradingDefaults(patch: Partial<GradingConfig>): void;
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void;
   lockCycle(cycleId: string): void;
   unlockCycle(cycleId: string): void;
