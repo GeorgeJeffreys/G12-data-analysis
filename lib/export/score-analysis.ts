@@ -1,77 +1,415 @@
 /**
- * Overall Score Analysis workbook (mirrors `MCQ_Overall_Score_Analysis`):
- * a Scores sheet with each participant's raw and % per assessment and overall,
- * plus a Summary sheet with per-assessment means and the score distribution.
+ * Overall Score Analysis workbook — reconciled to the canonical
+ * `MCQ_Overall_Score_Analysis` template (Section 9). Five sheets:
+ *   1. Overall Scores Summary       — KPI blocks + per-assessment / major-element
+ *                                     / demand-level summaries.
+ *   2. Overall Scores by Assessment — one row per participant × assessment.
+ *   3. Overall Scores by Major Element
+ *   4. Overall Scores by Demand Level
+ *   5. Analysis                     — per-assessment distinct counts + mean score.
+ *
+ * Every score uses RETAINED items only: cohort-excluded items and per-student
+ * (participant, item) exclusions are both dropped upstream by `assembleScoreAnalysis`
+ * (which mirrors the engine's scoring), so a participant's total and percentage
+ * are computed over exactly the items that counted toward their score.
  */
 
-import { XLSX } from "./sheet-utils";
-import type { ScoreAnalysisInput } from "./types";
+import {
+  XLSX,
+  HEADER_STYLE,
+  TITLE_STYLE,
+  META_STYLE,
+  GUIDE_STYLE,
+  styleCell,
+  roundOrNull,
+} from "./sheet-utils";
+import type {
+  AssembleScoreAnalysisArgs,
+  ScoreAnalysisInput,
+  ScoredItemResponse,
+} from "./types";
+import { perStudentKey, perStudentSet } from "@/lib/engine";
+
+export const SCORE_ANALYSIS_SHEETS = [
+  "Overall Scores Summary",
+  "Overall Scores by Assessment",
+  "Overall Scores by Major Element",
+  "Overall Scores by Demand Level",
+  "Analysis",
+] as const;
+
+const DEFAULT_RUN_NOTE =
+  "Scores use retained items only — cohort-excluded items and per-student technical " +
+  "exclusions are both dropped (the same score run the engine uses for grading).";
+
+// ── assembler ────────────────────────────────────────────────────────────────
+
+/**
+ * Build `ScoreAnalysisInput` from engine primitives, dropping both exclusion
+ * kinds so only retained responses remain.
+ */
+export function assembleScoreAnalysis(args: AssembleScoreAnalysisArgs): ScoreAnalysisInput {
+  const { assessments, participants, responses, items } = args;
+  const cohortExcluded = new Set(args.excludedItemIds ?? []);
+  const psExcluded = perStudentSet(args.perStudentExcluded);
+  const itemMeta = new Map(items.map((i) => [i.itemId, i]));
+
+  const scoredResponses: ScoredItemResponse[] = [];
+  for (const r of responses) {
+    if (cohortExcluded.has(r.itemId)) continue;
+    if (psExcluded.size && psExcluded.has(perStudentKey(r.participantId, r.itemId))) continue;
+    const meta = itemMeta.get(r.itemId);
+    scoredResponses.push({
+      participantId: r.participantId,
+      assessmentId: r.assessmentId,
+      itemId: r.itemId,
+      majorElement: meta?.majorElement ?? null,
+      demandLevel: meta?.demandLevel ?? null,
+      score: r.score,
+      maxScore: meta?.maxScore ?? 1,
+    });
+  }
+
+  return {
+    assessments,
+    participants,
+    scoredResponses,
+    scoreRunNote: args.scoreRunNote ?? DEFAULT_RUN_NOTE,
+  };
+}
+
+// ── aggregation helpers ──────────────────────────────────────────────────────
+
+interface Agg {
+  score: number;
+  max: number;
+}
+function emptyAgg(): Agg {
+  return { score: 0, max: 0 };
+}
+function add(agg: Agg, r: ScoredItemResponse): void {
+  agg.score += r.score;
+  agg.max += r.maxScore;
+}
+function pct(agg: Agg): number | null {
+  return agg.max > 0 ? roundOrNull((agg.score / agg.max) * 100, 2) : null;
+}
+
+function mean(xs: number[]): number | null {
+  return xs.length ? roundOrNull(xs.reduce((a, b) => a + b, 0) / xs.length, 2) : null;
+}
+
+// ── sheet builders ───────────────────────────────────────────────────────────
+
+const BY_ASSESSMENT_HEADER = [
+  "AssessmentName",
+  "ParticipantID",
+  "ParticipantFullName",
+  "ParticipantScore",
+  "AssessmentTotalScore",
+  "ParticipantScorePercentage",
+];
+const BY_MAJOR_HEADER = [
+  "AssessmentName",
+  "QuestionMajorElement",
+  "ParticipantID",
+  "ParticipantFullName",
+  "ParticipantScore",
+  "MajorElementTotalScore",
+  "ParticipantScorePercentage",
+];
+const BY_DEMAND_HEADER = [
+  "AssessmentName",
+  "DemandLevel",
+  "ParticipantID",
+  "ParticipantFullName",
+  "ParticipantScore",
+  "DemandLevelTotalScore",
+  "ParticipantScorePercentage",
+];
+const ANALYSIS_HEADER = [
+  "AssessmentName",
+  "Distinct Count of Questions",
+  "Average of AnswerScore",
+  "Distinct Count of Participants",
+];
+const ASSESSMENT_SUMMARY_HEADER = [
+  "AssessmentName",
+  "AssessmentTotalScore",
+  "NumberOfParticipants",
+  "AverageOfParticipantScores",
+  "LowestParticipantScore",
+  "HighestParticipantScore",
+];
+
+function styleHeaderRow(ws: XLSX.WorkSheet, row: number, ncols: number): void {
+  for (let c = 0; c < ncols; c++) styleCell(ws, row, c, HEADER_STYLE);
+}
+
+function buildSummarySheet(input: ScoreAnalysisInput): XLSX.WorkSheet {
+  const { assessments, participants, scoredResponses } = input;
+  const nameById = new Map(assessments.map((a) => [a.id, a.name]));
+
+  // Per-assessment: per-participant score aggregates + the assessment total.
+  const perAssessment = new Map<string, Map<string, Agg>>(); // asmId -> pid -> agg
+  const assessmentTotal = new Map<string, Set<string>>(); // asmId -> distinct itemIds
+  const assessmentMax = new Map<string, Map<string, number>>(); // asmId -> itemId -> maxScore
+  for (const r of scoredResponses) {
+    let byP = perAssessment.get(r.assessmentId);
+    if (!byP) perAssessment.set(r.assessmentId, (byP = new Map()));
+    let agg = byP.get(r.participantId);
+    if (!agg) byP.set(r.participantId, (agg = emptyAgg()));
+    add(agg, r);
+    let items = assessmentTotal.get(r.assessmentId);
+    if (!items) assessmentTotal.set(r.assessmentId, (items = new Set()));
+    items.add(r.itemId);
+    let maxes = assessmentMax.get(r.assessmentId);
+    if (!maxes) assessmentMax.set(r.assessmentId, (maxes = new Map()));
+    if (!maxes.has(r.itemId)) maxes.set(r.itemId, r.maxScore);
+  }
+
+  // KPIs.
+  const overallByP = new Map<string, Agg>();
+  for (const r of scoredResponses) {
+    let agg = overallByP.get(r.participantId);
+    if (!agg) overallByP.set(r.participantId, (agg = emptyAgg()));
+    add(agg, r);
+  }
+  const participantCount = overallByP.size;
+
+  let highestAssessment = { name: "—", mean: -Infinity };
+  for (const a of assessments) {
+    const byP = perAssessment.get(a.id);
+    if (!byP || byP.size === 0) continue;
+    const m = mean([...byP.values()].map((g) => g.score)) ?? 0;
+    if (m > highestAssessment.mean) highestAssessment = { name: a.name, mean: m };
+  }
+  let highestParticipant = { id: "—", pct: -Infinity };
+  const labelById = new Map(participants.map((p) => [p.id, p.label]));
+  for (const [pid, agg] of overallByP) {
+    const p = pct(agg) ?? -Infinity;
+    if (p > highestParticipant.pct) highestParticipant = { id: labelById.get(pid) ?? pid, pct: p };
+  }
+
+  const aoa: (string | number | null)[][] = [];
+  aoa[0] = ["MCQ Overall Scores - Summary"];
+  aoa[2] = [
+    "This sheet contains an MCQ overall score summary for assessments, major elements, demand level, and participants.",
+  ];
+  aoa[4] = ["Number of Assessments", assessments.length, null, "Highest Assessment", highestAssessment.name];
+  aoa[5] = ["Number of Participants", participantCount, null, "Highest Participant", highestParticipant.id];
+  aoa[8] = ["MCQ score summary of all participants for each assessment"];
+  aoa[9] = [...ASSESSMENT_SUMMARY_HEADER];
+
+  let row = 10;
+  for (const a of assessments) {
+    const byP = perAssessment.get(a.id);
+    const scores = byP ? [...byP.values()].map((g) => g.score) : [];
+    const total = [...(assessmentMax.get(a.id)?.values() ?? [])].reduce((s, m) => s + m, 0);
+    aoa[row++] = [
+      a.name,
+      total,
+      byP?.size ?? 0,
+      mean(scores),
+      scores.length ? Math.min(...scores) : null,
+      scores.length ? Math.max(...scores) : null,
+    ];
+  }
+
+  // Major-element summary block.
+  row += 1;
+  aoa[row++] = ["MCQ score summary of all participants for each major element"];
+  const majorHeaderRow = row;
+  aoa[row++] = ["QuestionMajorElement", "TotalScore", "NumberOfParticipants", "AverageOfParticipantScores", "LowestParticipantScore", "HighestParticipantScore"];
+  row = appendGroupSummary(aoa, row, scoredResponses, (r) => r.majorElement);
+
+  // Demand-level summary block.
+  row += 1;
+  aoa[row++] = ["MCQ score summary of all participants for each demand level"];
+  const demandHeaderRow = row;
+  aoa[row++] = ["DemandLevel", "TotalScore", "NumberOfParticipants", "AverageOfParticipantScores", "LowestParticipantScore", "HighestParticipantScore"];
+  appendGroupSummary(aoa, row, scoredResponses, (r) => r.demandLevel);
+
+  void nameById;
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  styleCell(ws, 0, 0, TITLE_STYLE);
+  styleCell(ws, 2, 0, META_STYLE);
+  styleCell(ws, 8, 0, GUIDE_STYLE);
+  styleHeaderRow(ws, 9, ASSESSMENT_SUMMARY_HEADER.length);
+  styleHeaderRow(ws, majorHeaderRow, 6);
+  styleHeaderRow(ws, demandHeaderRow, 6);
+  ws["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 18 }];
+  return ws;
+}
+
+/** Append a group summary block (TotalScore / participants / avg / lo / hi). */
+function appendGroupSummary(
+  aoa: (string | number | null)[][],
+  startRow: number,
+  scored: ScoredItemResponse[],
+  keyOf: (r: ScoredItemResponse) => string | null,
+): number {
+  const byKey = new Map<string, { perP: Map<string, Agg>; items: Map<string, number> }>();
+  const order: string[] = [];
+  for (const r of scored) {
+    const k = keyOf(r);
+    if (k == null) continue;
+    let g = byKey.get(k);
+    if (!g) {
+      byKey.set(k, (g = { perP: new Map(), items: new Map() }));
+      order.push(k);
+    }
+    let agg = g.perP.get(r.participantId);
+    if (!agg) g.perP.set(r.participantId, (agg = emptyAgg()));
+    add(agg, r);
+    if (!g.items.has(r.itemId)) g.items.set(r.itemId, r.maxScore);
+  }
+  order.sort();
+  let row = startRow;
+  for (const k of order) {
+    const g = byKey.get(k)!;
+    const scores = [...g.perP.values()].map((a) => a.score);
+    const total = [...g.items.values()].reduce((s, m) => s + m, 0);
+    aoa[row++] = [
+      k,
+      total,
+      g.perP.size,
+      mean(scores),
+      scores.length ? Math.min(...scores) : null,
+      scores.length ? Math.max(...scores) : null,
+    ];
+  }
+  return row;
+}
+
+interface BreakdownSpec {
+  title: string;
+  description: string;
+  note: string;
+  header: string[];
+  keyOf: (r: ScoredItemResponse) => string | null;
+}
+
+/** Generic per-participant breakdown sheet (assessment / major / demand). */
+function buildBreakdownSheet(input: ScoreAnalysisInput, spec: BreakdownSpec): XLSX.WorkSheet {
+  const { assessments, participants, scoredResponses } = input;
+  const nameById = new Map(assessments.map((a) => [a.id, a.name]));
+  const labelById = new Map(participants.map((p) => [p.id, p.label]));
+  const asmOrder = new Map(assessments.map((a, i) => [a.id, i]));
+  const pOrder = new Map(participants.map((p, i) => [p.id, i]));
+
+  // group by assessment + breakdown key + participant
+  const groups = new Map<string, Agg>(); // `${asm}␟${key}␟${pid}`
+  for (const r of scoredResponses) {
+    const k = spec.keyOf(r);
+    if (k == null) continue;
+    const gk = `${r.assessmentId}␟${k}␟${r.participantId}`;
+    let agg = groups.get(gk);
+    if (!agg) groups.set(gk, (agg = emptyAgg()));
+    add(agg, r);
+  }
+
+  const rows = [...groups.entries()].map(([gk, agg]) => {
+    const [asmId, key, pid] = gk.split("␟") as [string, string, string];
+    return { asmId, key, pid, agg };
+  });
+  rows.sort(
+    (a, b) =>
+      (asmOrder.get(a.asmId)! - asmOrder.get(b.asmId)!) ||
+      a.key.localeCompare(b.key) ||
+      (pOrder.get(a.pid)! - pOrder.get(b.pid)!),
+  );
+
+  const hasBreakdownKey = spec.header.length === 7; // major/demand sheets carry the key column
+  const aoa: (string | number | null)[][] = [];
+  aoa[0] = [spec.title];
+  aoa[2] = [spec.description];
+  aoa[3] = [spec.note];
+  aoa[5] = [...spec.header];
+  let r = 6;
+  for (const row of rows) {
+    const base: (string | number | null)[] = [nameById.get(row.asmId) ?? row.asmId];
+    if (hasBreakdownKey) base.push(row.key);
+    base.push(row.pid, labelById.get(row.pid) ?? row.pid, row.agg.score, row.agg.max, pct(row.agg));
+    aoa[r++] = base;
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  styleCell(ws, 0, 0, TITLE_STYLE);
+  styleCell(ws, 2, 0, META_STYLE);
+  styleCell(ws, 3, 0, GUIDE_STYLE);
+  styleHeaderRow(ws, 5, spec.header.length);
+  ws["!cols"] = spec.header.map((h) => ({ wch: h.length > 18 ? 26 : 18 }));
+  return ws;
+}
+
+function buildAnalysisSheet(input: ScoreAnalysisInput): XLSX.WorkSheet {
+  const { assessments, scoredResponses } = input;
+  const stats = new Map<string, { items: Set<string>; participants: Set<string>; scoreSum: number; n: number }>();
+  for (const r of scoredResponses) {
+    let s = stats.get(r.assessmentId);
+    if (!s) stats.set(r.assessmentId, (s = { items: new Set(), participants: new Set(), scoreSum: 0, n: 0 }));
+    s.items.add(r.itemId);
+    s.participants.add(r.participantId);
+    s.scoreSum += r.score;
+    s.n += 1;
+  }
+  const aoa: (string | number | null)[][] = [];
+  aoa[0] = ["MCQ Overall Scores - Analysis"];
+  aoa[2] = [...ANALYSIS_HEADER];
+  let row = 3;
+  for (const a of assessments) {
+    const s = stats.get(a.id);
+    aoa[row++] = [
+      a.name,
+      s?.items.size ?? 0,
+      s && s.n > 0 ? roundOrNull(s.scoreSum / s.n, 3) : null,
+      s?.participants.size ?? 0,
+    ];
+  }
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  styleCell(ws, 0, 0, TITLE_STYLE);
+  styleHeaderRow(ws, 2, ANALYSIS_HEADER.length);
+  ws["!cols"] = [{ wch: 28 }, { wch: 24 }, { wch: 22 }, { wch: 24 }];
+  return ws;
+}
 
 export function buildScoreAnalysisWorkbook(input: ScoreAnalysisInput): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
-  const { assessments, participants, scores, rollUp } = input;
-
-  // index scores by participant + assessment
-  const byKey = new Map(scores.map((s) => [`${s.participantId} ${s.assessmentId}`, s]));
-
-  // --- Scores sheet ---------------------------------------------------------
-  const header: string[] = ["Participant"];
-  for (const a of assessments) {
-    header.push(`${a.name} Raw`, `${a.name} %`);
-  }
-  header.push("Overall Raw", "Overall %");
-
-  const rows: (string | number | null)[][] = [header];
-
-  for (const p of participants) {
-    const row: (string | number | null)[] = [p.label];
-    let overallRaw = 0;
-    let overallMaxPct = 0;
-    let counted = 0;
-    for (const a of assessments) {
-      const s = byKey.get(`${p.id} ${a.id}`);
-      if (s) {
-        row.push(s.raw, s.pct);
-        overallRaw += s.raw;
-        overallMaxPct += s.pct;
-        counted += 1;
-      } else {
-        row.push(null, null);
-      }
-    }
-    row.push(
-      counted > 0 ? Math.round(overallRaw * 1000) / 1000 : null,
-      counted > 0 ? Math.round((overallMaxPct / counted) * 100) / 100 : null,
-    );
-    rows.push(row);
-  }
-
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), "Scores");
-
-  // --- Summary sheet --------------------------------------------------------
-  const summaryRows: (string | number)[][] = [
-    ["Assessment", "Participants", "Mean Raw", "Mean %"],
-  ];
-  const nameById = new Map(assessments.map((a) => [a.id, a.name]));
-  if (rollUp) {
-    for (const a of rollUp.byAssessment) {
-      summaryRows.push([
-        nameById.get(a.assessmentId) ?? a.assessmentId,
-        a.participants,
-        a.meanRaw,
-        a.meanPct,
-      ]);
-    }
-    summaryRows.push([]);
-    summaryRows.push(["Score distribution (overall %)", "", "", ""]);
-    summaryRows.push(["From", "To", "Count", ""]);
-    for (const b of rollUp.distribution) {
-      summaryRows.push([b.from, b.to, b.count, ""]);
-    }
-  }
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summaryRows), "Summary");
-
+  XLSX.utils.book_append_sheet(wb, buildSummarySheet(input), SCORE_ANALYSIS_SHEETS[0]);
+  XLSX.utils.book_append_sheet(
+    wb,
+    buildBreakdownSheet(input, {
+      title: "MCQ Overall Scores - Assessment Level",
+      description: "This sheet contains the MCQ overall score for all students per assessments.",
+      note: "Note: Use the slicers to filter by students or assessments",
+      header: BY_ASSESSMENT_HEADER,
+      keyOf: () => "all",
+    }),
+    SCORE_ANALYSIS_SHEETS[1],
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    buildBreakdownSheet(input, {
+      title: "MCQ Overall Scores - Major Element Level",
+      description: "This sheet contains the MCQ overall score for all students per major element.",
+      note: "Note: Use the slicers to filter by students, assessments or major elements.",
+      header: BY_MAJOR_HEADER,
+      keyOf: (r) => r.majorElement,
+    }),
+    SCORE_ANALYSIS_SHEETS[2],
+  );
+  XLSX.utils.book_append_sheet(
+    wb,
+    buildBreakdownSheet(input, {
+      title: "MCQ Overall Scores - Demand Level",
+      description: "This sheet contains the MCQ overall score for all students per demand level.",
+      note: "Note: Use the slicers to filter by students, assessments or demand level.",
+      header: BY_DEMAND_HEADER,
+      keyOf: (r) => r.demandLevel,
+    }),
+    SCORE_ANALYSIS_SHEETS[3],
+  );
+  XLSX.utils.book_append_sheet(wb, buildAnalysisSheet(input), SCORE_ANALYSIS_SHEETS[4]);
   return wb;
 }
-
-export const SCORE_ANALYSIS_FIXED_HEADERS = ["Participant"] as const;
