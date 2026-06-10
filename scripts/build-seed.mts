@@ -1,0 +1,240 @@
+/**
+ * Build the in-memory provider's seed by running the REAL ingest + engine over
+ * data/sample_qm_export.xlsx. Output: lib/data/seed.generated.json.
+ *
+ * Run with:  npx tsx scripts/build-seed.mts
+ *
+ * This keeps the browser from parsing the 1.3 MB xlsx and ships genuine computed
+ * numbers (item stats, scores, distributions) to the client. Re-run whenever the
+ * sample data or the engine changes; commit the result.
+ */
+
+import { readFileSync, writeFileSync } from "node:fs";
+import { parseExport, ingestAndClean } from "../lib/ingest/index";
+import type { CleanResponse } from "../lib/ingest/types";
+import { getEngine, ENGINE_VERSION } from "../lib/engine/index";
+import type { ItemMeta, QualityRating, ResponseRecord } from "../lib/engine";
+import type {
+  Seed,
+  SeedAssessment,
+  SeedItem,
+  SeedResponse,
+} from "../lib/data/seed-types";
+
+const engine = getEngine();
+
+// Map the raw Questionmark assessment names to clean display names + order.
+interface NameInfo {
+  name: string;
+  shortName: string;
+  rtl: boolean;
+  order: number;
+}
+function classify(rawName: string): NameInfo | null {
+  if (/[؀-ۿ]/.test(rawName))
+    return { name: "Arabic as a 1st Language", shortName: "Arabic 1st Lang", rtl: true, order: 3 };
+  if (/Applicable Math/i.test(rawName))
+    return { name: "Applicable Math", shortName: "Applicable Math", rtl: false, order: 0 };
+  if (/English/i.test(rawName))
+    return { name: "English as a 2nd Language", shortName: "English 2nd Lang", rtl: false, order: 1 };
+  if (/Scientific/i.test(rawName))
+    return { name: "Scientific Thinking", shortName: "Scientific", rtl: false, order: 2 };
+  if (/Life Success/i.test(rawName))
+    return { name: "Life Success Skills", shortName: "Life Skills", rtl: false, order: 4 };
+  return null;
+}
+
+const RATING_SCORE: Record<QualityRating, number> = { Good: 1, Review: 0.55, Flag: 0.12 };
+/** Transparent 0–100 quality index: mean of the four per-stat rating scores. */
+function qualityIndex(stat: {
+  pRating: QualityRating;
+  itRating: QualityRating;
+  pbRating: QualityRating;
+  discRating: QualityRating;
+}): number {
+  const avg =
+    (RATING_SCORE[stat.pRating] +
+      RATING_SCORE[stat.itRating] +
+      RATING_SCORE[stat.pbRating] +
+      RATING_SCORE[stat.discRating]) /
+    4;
+  return Math.round(avg * 100);
+}
+
+function main() {
+  const file = readFileSync("data/sample_qm_export.xlsx");
+  const { rows } = parseExport(file);
+  const { cleanedResponses, validationReport } = ingestAndClean(rows);
+
+  // Group cleaned responses by raw assessment name.
+  const byRaw = new Map<string, CleanResponse[]>();
+  for (const r of cleanedResponses) {
+    const bucket = byRaw.get(r.assessmentName) ?? [];
+    bucket.push(r);
+    byRaw.set(r.assessmentName, bucket);
+  }
+
+  // Stable participant ids → friendly labels (no PII; pseudonyms only).
+  const participantOrder: string[] = [];
+  for (const r of cleanedResponses) {
+    if (!participantOrder.includes(r.participantPseudonym)) participantOrder.push(r.participantPseudonym);
+  }
+  participantOrder.sort();
+  const participants = participantOrder.map((id, i) => ({
+    id,
+    label: `Student ${String(i + 1).padStart(2, "0")}`,
+  }));
+
+  const assessments: SeedAssessment[] = [];
+
+  for (const [rawName, recs] of byRaw) {
+    const info = classify(rawName);
+    if (!info) continue;
+    const assessmentId = info.name;
+
+    // Distinct items (first occurrence) with metadata.
+    const itemMetaMap = new Map<string, ItemMeta>();
+    for (const r of recs) {
+      if (!itemMetaMap.has(r.qmQuestionId)) {
+        itemMetaMap.set(r.qmQuestionId, {
+          itemId: r.qmQuestionId,
+          assessmentId,
+          wording: r.wording,
+          majorElement: r.majorElement,
+          subElement: r.subElement,
+          demandLevel: r.demandLevel ?? null,
+          maxScore: r.maxScore,
+        });
+      }
+    }
+    const itemMetas = [...itemMetaMap.values()];
+
+    const responses: ResponseRecord[] = recs.map((r) => ({
+      participantId: r.participantPseudonym,
+      itemId: r.qmQuestionId,
+      assessmentId,
+      score: r.answerScore,
+    }));
+
+    const stats = engine.computeItemStats({ responses, items: itemMetas });
+    const statById = new Map(stats.map((s) => [s.itemId, s]));
+
+    // Per-item presented/answered/avg response time from the cleaned rows.
+    interface Agg { presented: number; answered: number; timeSum: number; timeCount: number }
+    const agg = new Map<string, Agg>();
+    for (const r of recs) {
+      let a = agg.get(r.qmQuestionId);
+      if (!a) { a = { presented: 0, answered: 0, timeSum: 0, timeCount: 0 }; agg.set(r.qmQuestionId, a); }
+      a.presented += 1;
+      if (r.answerGiven) a.answered += 1;
+      if (r.responseTime !== null && Number.isFinite(r.responseTime)) {
+        a.timeSum += r.responseTime;
+        a.timeCount += 1;
+      }
+    }
+
+    const items: SeedItem[] = itemMetas.map((m) => {
+      const s = statById.get(m.itemId)!;
+      const a = agg.get(m.itemId);
+      return {
+        id: m.itemId,
+        wording: m.wording ?? null,
+        major: m.majorElement ?? null,
+        sub: m.subElement ?? null,
+        demand: m.demandLevel ?? null,
+        maxScore: m.maxScore ?? 1,
+        participantsAnswered: a?.answered ?? s.n,
+        participantsPresented: a?.presented ?? s.n,
+        avgResponseTime: a && a.timeCount > 0 ? Math.round((a.timeSum / a.timeCount) * 10) / 10 : null,
+        pValue: s.pValue,
+        pRating: s.pRating,
+        itemTotal: s.itemTotal,
+        itRating: s.itRating,
+        pointBiserial: s.pointBiserial,
+        pbRating: s.pbRating,
+        discrimination: s.discrimination,
+        discRating: s.discRating,
+        overallReview: s.overallReview,
+        qualityIndex: qualityIndex(s),
+      };
+    });
+
+    const seedResponses: SeedResponse[] = responses.map((r) => ({
+      p: r.participantId,
+      i: r.itemId,
+      s: r.score,
+    }));
+
+    assessments.push({
+      id: assessmentId,
+      name: info.name,
+      shortName: info.shortName,
+      rtl: info.rtl,
+      stageIndex: 2, // all assessments are validated and ready for review
+      items,
+      responses: seedResponses,
+      // carry order for sorting below
+      ...( { _order: info.order } as object ),
+    } as SeedAssessment & { _order: number });
+  }
+
+  assessments.sort(
+    (a, b) => (a as unknown as { _order: number })._order - (b as unknown as { _order: number })._order,
+  );
+  for (const a of assessments) delete (a as unknown as { _order?: number })._order;
+
+  // Cleaned-data preview: first 5 participants × first few items of assessment 1.
+  const first = assessments[0]!;
+  const previewItems = first.items.slice(0, 4).map((it) => it.id);
+  const scoreLookup = new Map<string, number>();
+  for (const r of first.responses) scoreLookup.set(`${r.p}:${r.i}`, r.s);
+  const previewParticipants = participants
+    .filter((p) => first.responses.some((r) => r.p === p.id))
+    .slice(0, 5);
+  const preview = {
+    headers: ["ID", "Q1", "Q2", "Q3", "Q4", "…"],
+    rows: previewParticipants.map((p) => [
+      p.label,
+      ...previewItems.map((i) => {
+        const v = scoreLookup.get(`${p.id}:${i}`);
+        return v === undefined ? "—" : v;
+      }),
+      "…",
+    ]),
+  };
+
+  const seed: Seed = {
+    generatedAt: new Date().toISOString(),
+    engineVersion: ENGINE_VERSION,
+    liveCycle: {
+      id: "may-2026",
+      name: "May 2026",
+      region: "eu-west",
+      startedAt: "2026-05-14",
+      lastActivity: "2h ago",
+      stageIndex: 2, // Review
+      fileName: "exam_export_may26.xlsx",
+      fileSizeMB: 1.3,
+      uploadedAgo: "2h ago",
+      validation: validationReport,
+      preview,
+      duplicates: validationReport.checks.find((c) => c.id === "duplicates")?.count ?? 0,
+      participants,
+      assessments,
+    },
+    priorCycles: [
+      { id: "jan-2026", name: "January 2026", stageIndex: 6, stepsDone: 7, participants: 4503, assessments: 5, lastActivity: "12 Feb 2026", locked: true, mock: true },
+      { id: "nov-2025", name: "November 2025", stageIndex: 6, stepsDone: 7, participants: 4390, assessments: 4, lastActivity: "03 Dec 2025", locked: true, mock: true },
+      { id: "may-2025", name: "May 2025", stageIndex: 6, stepsDone: 7, participants: 4201, assessments: 4, lastActivity: "11 Jun 2025", locked: true, mock: true },
+    ],
+  };
+
+  writeFileSync("lib/data/seed.generated.json", JSON.stringify(seed));
+  const totalItems = assessments.reduce((n, a) => n + a.items.length, 0);
+  console.log(
+    `Seed written: ${assessments.length} assessments, ${totalItems} items, ` +
+      `${participants.length} participants, validation passed=${validationReport.passed}`,
+  );
+}
+
+main();

@@ -1,0 +1,97 @@
+/**
+ * Assemble the ready-to-render `ItemAnalysisInput` from engine statistics and
+ * response-level facts. Derives the per-item Presented/Answered counts and
+ * average response time (which the engine's stats do not carry), and the
+ * per-assessment participant/row counts and discrimination group size.
+ */
+
+import type { ItemStat } from "@/lib/engine";
+import { roundOrNull } from "./sheet-utils";
+import type {
+  AssembleItemAnalysisArgs,
+  ItemAnalysisBlock,
+  ItemAnalysisInput,
+  ItemAnalysisRow,
+  ItemResponseFact,
+} from "./types";
+
+interface ItemFactAgg {
+  presented: number;
+  answered: number;
+  timeSum: number;
+  timeCount: number;
+}
+
+export function assembleItemAnalysis(args: AssembleItemAnalysisArgs): ItemAnalysisInput {
+  const { cycleName, assessments, stats, facts, reviews } = args;
+
+  // Group stats and facts by assessment.
+  const statsByAssessment = new Map<string, ItemStat[]>();
+  for (const s of stats) {
+    const bucket = statsByAssessment.get(s.assessmentId) ?? [];
+    bucket.push(s);
+    statsByAssessment.set(s.assessmentId, bucket);
+  }
+
+  const factsByAssessment = new Map<string, ItemResponseFact[]>();
+  for (const f of facts) {
+    const bucket = factsByAssessment.get(f.assessmentId) ?? [];
+    bucket.push(f);
+    factsByAssessment.set(f.assessmentId, bucket);
+  }
+
+  const blocks: ItemAnalysisBlock[] = [];
+
+  for (const assessment of assessments) {
+    const aStats = statsByAssessment.get(assessment.id) ?? [];
+    const aFacts = factsByAssessment.get(assessment.id) ?? [];
+
+    // Per-item aggregation of facts.
+    const perItem = new Map<string, ItemFactAgg>();
+    const participants = new Set<string>();
+    for (const f of aFacts) {
+      participants.add(f.participantId);
+      let agg = perItem.get(f.itemId);
+      if (!agg) {
+        agg = { presented: 0, answered: 0, timeSum: 0, timeCount: 0 };
+        perItem.set(f.itemId, agg);
+      }
+      agg.presented += 1;
+      if (f.answered) agg.answered += 1;
+      if (f.responseTime !== null && Number.isFinite(f.responseTime)) {
+        agg.timeSum += f.responseTime;
+        agg.timeCount += 1;
+      }
+    }
+
+    const rows: ItemAnalysisRow[] = aStats.map((stat) => {
+      const agg = perItem.get(stat.itemId);
+      const review = reviews?.[stat.itemId];
+      const presented = agg?.presented ?? stat.n;
+      const answered = agg?.answered ?? stat.n;
+      const avgResponseTime =
+        agg && agg.timeCount > 0 ? roundOrNull(agg.timeSum / agg.timeCount, 1) : null;
+      return {
+        stat,
+        participantsPresented: presented,
+        participantsAnswered: answered,
+        avgResponseTime,
+        notes: review?.notes ?? null,
+        exclude: review?.exclude ?? false,
+        removeReason: review?.reason ?? null,
+      };
+    });
+
+    const participantCount = participants.size;
+    blocks.push({
+      id: assessment.id,
+      name: assessment.name,
+      participants: participantCount,
+      rowsAnalysed: aFacts.length,
+      groupSize: Math.max(1, Math.round(participantCount / 3)),
+      rows,
+    });
+  }
+
+  return { cycleName, blocks };
+}
