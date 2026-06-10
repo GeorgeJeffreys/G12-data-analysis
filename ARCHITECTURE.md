@@ -234,20 +234,60 @@ numbers, not hand-typed mocks. Reactivity is via `useSyncExternalStore`
 
 ### Screens (routes)
 
-| # | Screen | Route |
-| - | --- | --- |
-| 01 | Cycles dashboard | `/` |
-| 02 | Cycle overview | `/cycles/[cycleId]` |
-| 03 | Ingest & validate | `/cycles/[cycleId]/ingest` |
-| 04 | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
-| 05 | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
-| 06 | Grades & sign-off | `/cycles/[cycleId]/grades` |
-| —  | Settings → Grading defaults | `/settings` |
+The left nav rail splits into three areas — **Cycles**, **Analytics**,
+**Settings** — each with a secondary tab bar (subnav). Entry screens sit outside
+the shell.
 
-Shared shell (`components/shell/`): nav rail, top bar, and the pipeline stepper
-shown on every cycle screen. Design system (`components/ui/`): buttons, chips,
-KPI/stat blocks, quality bars, status marks, dense tables, and the recharts
-histogram + breakdown bars — all ported from `design/hf.jsx`.
+| Area | Screen | Route |
+| --- | --- | --- |
+| Entry | Sign-in (mocked Microsoft) | `/signin` |
+| Entry | Access denied | `/access-denied` |
+| Cycles | Cycles dashboard | `/` |
+| Cycles | New cycle | `/cycles/new` |
+| Cycles | Cycle overview (Pipeline) | `/cycles/[cycleId]` |
+| Cycles | Ingest & validate | `/cycles/[cycleId]/ingest` |
+| Cycles | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
+| Cycles | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
+| Cycles | Grades & sign-off | `/cycles/[cycleId]/grades` |
+| Cycles | Audit log | `/cycles/[cycleId]/audit` |
+| Cycles | Certificates / documents | `/cycles/[cycleId]/documents` |
+| Analytics | Trends | `/analytics` |
+| Analytics | Compare cycles | `/analytics/compare` |
+| Settings | Users & access | `/settings/users` |
+| Settings | Roles & permissions | `/settings/roles` |
+| Settings | Configuration | `/settings/config` |
+
+Shared shell (`components/shell/`): three-area nav rail, top bar, the secondary
+subnav (`lib/ui/subnav.ts`) and the pipeline stepper on cycle screens. Design
+system (`components/ui/`): buttons, chips, KPI/stat blocks, quality bars, status
+marks + badges, avatars, toggles/checkboxes, dense tables, recharts histogram +
+breakdown bars, and the analytics sparkline / stacked-award column — all ported
+from the batch-1 and batch-2 design (`design/hf*.jsx`).
+
+### Admin, audit & analytics (provider-backed, mostly MOCK)
+
+- **Users & access / Roles & permissions** read-models + mutations live in the
+  provider (`getMembers`, `getRoles`, `inviteMember`, `setMemberRole`,
+  `removeMember`, `createRole`, `renameRole`, `setCapability`). Defaults: a **G12
+  Lead** (full) and a **Data Scientist** (everything except sign-off/admin/create)
+  with a capability matrix; the mocked signed-in user is the Lead. All mock —
+  no directory.
+- **Audit log** (`getAuditLog`): every consequential action — exclusions,
+  boundary edits, lock/unlock, exports, document generation, duplicate
+  resolution, new cycle — writes an entry via the provider's internal `audit(...)`.
+  A few seeded entries (flagged `seeded`/"example") populate the list before any
+  session action.
+- **Analytics** (`getAnalyticsTrends` / `getAnalyticsCompare`): the **live
+  cycle's aggregates are REAL** (computed from the engine — participants, cohort
+  mean/median/σ, items excluded, mean item quality, award distribution,
+  per-assessment means); **prior cycles are clearly-labelled MOCK** (a "MOCK
+  PRIORS" banner + tags), since there's no real cross-cycle history.
+- **Configuration** (`getConfig`): the item-quality thresholds shown are the
+  engine's **real active rating rules** (display-only — editing them needs an
+  engine change); the grade-vocabulary defaults editor is real and editable;
+  data-retention and branding are mock per-workspace settings.
+- **New cycle** (`createCycle`): records the intent in the audit log and returns
+  the live cycle (no DB) — clearly labelled mock.
 
 ### Grade vocabulary (the real named levels)
 
@@ -277,9 +317,16 @@ nothing hardcodes band names or counts:
 
 - **No Supabase / no persistence.** Exclusions, boundaries and locks live in the
   in-memory provider and **reset on reload**.
-- **Auth / roles.** A current user is mocked with the Lead role
-  (`InMemoryDataProvider.user`, marked `// MOCK:`). Role-gated controls (Lock is
-  Lead-only) read from it so real auth slots in later.
+- **Auth / roles.** Sign-in (`/signin`, "Sign in with Microsoft") and the
+  access-denied state are mocked — no real OAuth; sign-in goes straight in. The
+  current user is the mocked **G12 Lead** (Rana Mansour, `InMemoryDataProvider.user`);
+  members, roles and the capability matrix are mock fixtures
+  (`lib/data/mock-admin.ts`). Role-gated controls read from this so real Microsoft
+  Entra auth slots in later.
+- **Admin areas.** Members/roles/audit/analytics/config and the new-cycle action
+  are all mock (in-memory) — see "Admin, audit & analytics" above. Analytics
+  priors and the data-retention/branding config are labelled `MOCK`; only the
+  live cycle's analytics and the engine's quality thresholds are real.
 - **Prior cycles + cross-cycle comparisons.** There is only one real cycle. Prior
   cycles are clearly-labelled `MOCK` rows; the "vs Jan 2026" boundary comparison
   is driven by a labelled fixture behind a `SHOW_CROSS_CYCLE` flag and tagged
