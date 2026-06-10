@@ -25,6 +25,7 @@ export default function CyclesDashboard() {
 
   return (
     <Shell
+      active="Cycles"
       crumb={[{ label: "Cycles" }]}
       actions={
         <>
@@ -32,10 +33,12 @@ export default function CyclesDashboard() {
             <Icon name="search" />
             Search
           </Button>
-          <Button variant="pri" title="Creating cycles needs the database — mocked in this build">
-            <Icon name="plus" color="#fff" />
-            Start new cycle
-          </Button>
+          <Link href="/cycles/new">
+            <Button variant="pri">
+              <Icon name="plus" color="#fff" />
+              Start new cycle
+            </Button>
+          </Link>
         </>
       }
     >

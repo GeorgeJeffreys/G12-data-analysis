@@ -12,6 +12,7 @@ import { Shell } from "@/components/shell/Shell";
 import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { Pipeline } from "@/components/shell/Pipeline";
+import { cyclesSubnav } from "@/lib/ui/subnav";
 
 export default function CycleOverview({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -27,11 +28,15 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
 
   return (
     <Shell
+      active="Cycles"
       crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}
+      subnav={cycle.mock ? undefined : cyclesSubnav(cycleId, "pipeline")}
       stageIndex={cycle.stageIndex}
       actions={
         <>
-          <Button variant="ghost">Audit log</Button>
+          <Link href={`/cycles/${cycleId}/audit`}>
+            <Button variant="ghost">Audit log</Button>
+          </Link>
           <Button variant="ghost">Export status<Icon name="chev" /></Button>
         </>
       }
