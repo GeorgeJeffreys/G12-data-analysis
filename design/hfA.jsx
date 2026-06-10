@@ -141,6 +141,51 @@ function HFIngest() {
             </div>
           </div>
 
+          <div className="hf-card" style={{ padding: '17px 18px', borderStyle: 'dashed', borderColor: H.line2 }}>
+            <div className="hf-row" style={{ gap: 10, marginBottom: 4, alignItems: 'center' }}>
+              <span className="hf-lbl">Technical-errors spreadsheet</span>
+              <HBadge tone="neutral">Optional</HBadge>
+              <div style={{ flex: 1 }} />
+              <span className="hf-sub" style={{ fontSize: 11.5 }}>One file for the whole sitting</span>
+            </div>
+            <div className="hf-sub" style={{ marginBottom: 13 }}>If technical faults hit individual students mid-question, add the faults file — student, the question they were on, and what went wrong. Not every sitting has one, so this never holds up the pipeline.</div>
+
+            <div className="hf-row" style={{ gap: 11, padding: '11px 13px', border: `1px solid ${H.line2}`, borderRadius: 9, background: H.tint, alignItems: 'center' }}>
+              <HIco name="doc" color={H.ink2} size={17} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="hf-mono" style={{ fontSize: 12, fontWeight: 600 }}>technical_errors_may26.csv</div>
+                <div className="hf-sub" style={{ fontSize: 11 }}>added 2h ago · 18 rows</div>
+              </div>
+              <HBadge tone="good"><HMark kind="pass" size={12} />Columns matched</HBadge>
+              <HBtn variant="ghost" style={{ fontSize: 11 }}>Replace</HBtn>
+              <HBtn variant="ghost" style={{ fontSize: 11 }}>Remove</HBtn>
+            </div>
+
+            <div className="hf-card" style={{ overflow: 'hidden', marginTop: 12, background: H.paper }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 11.5 }}>
+                <thead><tr>
+                  <th className="hf-th" style={{ padding: '7px 11px' }}>Student</th>
+                  <th className="hf-th" style={{ padding: '7px 11px' }}>Question</th>
+                  <th className="hf-th" style={{ padding: '7px 11px' }}>Error reported</th>
+                </tr></thead>
+                <tbody>
+                  {[
+                    { s: '80412 · Aisha N.', q: 'Math · Q15', e: 'Calculator tool froze; ~4 min lost' },
+                    { s: '80413 · Omar F.', q: 'English · Q07', e: 'Audio clip would not play (listening item)' },
+                    { s: '80414 · Lena M.', q: 'Arabic · Q33', e: 'النص العربي لم يظهر بشكل صحيح', rtl: true },
+                  ].map((r, i) => (
+                    <tr key={i}>
+                      <td className="hf-td hf-mono" style={{ padding: '8px 11px', fontSize: 11.5 }}>{r.s}</td>
+                      <td className="hf-td hf-mono" style={{ padding: '8px 11px', fontSize: 11.5, color: H.ink2 }}>{r.q}</td>
+                      <td className="hf-td" style={{ padding: '8px 11px', fontSize: 12, color: H.ink2 }} dir={r.rtl ? 'rtl' : 'ltr'}>{r.e}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 9 }}>18 incidents across 11 students — these open in the new <b style={{ color: H.ink }}>Student review</b> step, after item review.</div>
+          </div>
+
           <div className="hf-card" style={{ padding: '15px 17px', background: H.badSoft, borderColor: H.bad, display: 'flex', gap: 13, alignItems: 'flex-start' }}>
             <HMark kind="fail" size={18} />
             <div>

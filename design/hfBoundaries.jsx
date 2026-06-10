@@ -125,7 +125,7 @@ function HFBoundaries() {
   );
 
   return (
-    <HShell active="Cycles" stage={4} done={4}
+    <HShell active="Cycles" stage={5} done={5}
       crumb="Cycles  ›  May 2026  ›  Scoring & grade boundaries"
       actions={
         <div className="hf-row" style={{ border: `1px solid ${H.line2}`, borderRadius: 8, overflow: 'hidden' }}>

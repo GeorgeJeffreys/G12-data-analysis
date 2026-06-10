@@ -159,7 +159,8 @@ function HQuality({ v, width = 80, showLabel }) {
   );
 }
 
-const HSTAGES = ['Ingest', 'Validate', 'Review', 'Score', 'Boundaries', 'Grades', 'Export'];
+const HSTAGES = ['Ingest', 'Validate', 'Review', 'Students', 'Score', 'Boundaries', 'Grades', 'Export'];
+const HOPT = 3; // "Students" — optional / skippable step in the pipeline
 function HPipeline({ active = 2, done = 1, compact, range }) {
   const isDone = (i) => range ? i < range[0] : i < done;
   const isNow = (i) => range ? (i >= range[0] && i <= range[1]) : i === active;
@@ -167,20 +168,26 @@ function HPipeline({ active = 2, done = 1, compact, range }) {
     <div className="hf-row" style={{ flexWrap: 'nowrap' }}>
       {HSTAGES.map((s, i) => {
         const state = isDone(i) ? 'done' : isNow(i) ? 'now' : 'next';
+        const opt = i === HOPT;
+        const ring = state === 'done' ? H.slate : state === 'now' ? H.pink : H.line2;
         return (
           <React.Fragment key={s}>
-            <div className="hf-row" style={{ gap: 7 }}>
-              <span style={{ width: 21, height: 21, borderRadius: 999, flex: '0 0 auto',
-                border: `1.5px solid ${state === 'done' ? H.slate : state === 'now' ? H.pink : H.line2}`,
-                background: state === 'done' ? H.slate : state === 'now' ? H.pinkSoft : H.paper,
-                color: state === 'done' ? '#fff' : state === 'now' ? H.pink : H.ink3,
-                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700 }}>
-                {state === 'done' ? <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2.5 6.2l2.2 2.2L9.5 3.5" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg> : i + 1}
+            <div className="hf-row" style={{ gap: 6 }} title={opt ? `${s} · optional step` : s}>
+              <span style={{ width: 20, height: 20, borderRadius: 999, flex: '0 0 auto',
+                border: `1.5px ${opt ? 'dashed' : 'solid'} ${ring}`,
+                background: state === 'done' && !opt ? H.slate : state === 'now' ? H.pinkSoft : H.paper,
+                color: state === 'done' ? (opt ? H.slate : '#fff') : state === 'now' ? H.pink : H.ink3,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 700 }}>
+                {state === 'done' && !opt ? <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2.5 6.2l2.2 2.2L9.5 3.5" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg> : i + 1}
               </span>
-              {!compact && <span style={{ fontSize: 12, fontWeight: state === 'now' ? 700 : 500, color: state === 'next' ? H.ink3 : H.ink }}>{s}</span>}
+              {!compact && <span style={{ fontSize: 11.5, fontWeight: state === 'now' ? 700 : 500, color: state === 'next' ? H.ink3 : H.ink, fontStyle: opt ? 'italic' : 'normal' }}>{s}</span>}
             </div>
-            {i < HSTAGES.length - 1 && <div style={{ width: compact ? 16 : 26, height: 2,
-              background: isDone(i) ? H.slate : (range && i >= range[0] && i < range[1]) ? H.pink : H.line2, margin: '0 9px' }} />}
+            {i < HSTAGES.length - 1 && (() => {
+              const dash = (i === HOPT - 1 || i === HOPT);
+              return <div style={{ width: compact ? 13 : 20, margin: compact ? '0 6px' : '0 7px',
+                height: dash ? 0 : 2, borderTop: dash ? `2px dashed ${H.line2}` : 'none',
+                background: dash ? 'transparent' : (isDone(i) ? H.slate : (range && i >= range[0] && i < range[1]) ? H.pink : H.line2) }} />;
+            })()}
           </React.Fragment>
         );
       })}
@@ -284,4 +291,4 @@ function HProgress({ pct, w = '100%', tone }) {
   return <div style={{ width: w, height: 7, background: H.tint2, borderRadius: 5 }}><div style={{ width: `${pct}%`, height: '100%', background: tone === 'good' ? H.good : H.pink, borderRadius: 5, transition: '.2s' }} /></div>;
 }
 
-Object.assign(window, { H, HMark, HIco, HBtn, HChip, HStat, HHatch, HDist, HBreakBars, hfQColor, HQuality, HPipeline, HRail, HSubnav, HShell, HSTAGES, HBadge, HToggle, HCheck, HAvatar, HProgress });
+Object.assign(window, { H, HMark, HIco, HBtn, HChip, HStat, HHatch, HDist, HBreakBars, hfQColor, HQuality, HPipeline, HRail, HSubnav, HShell, HSTAGES, HOPT, HBadge, HToggle, HCheck, HAvatar, HProgress });

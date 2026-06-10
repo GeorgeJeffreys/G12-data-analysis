@@ -15,7 +15,7 @@ function HFReview() {
   const Hc = (t, hint) => <th className="hf-th" style={{ textAlign: 'right', padding: '10px 8px' }} title={hint}>{t}</th>;
   const num = (x) => <span className="hf-mono" style={{ fontSize: 12.5, color: parseFloat(x) < .2 ? H.bad : H.ink }}>{x}</span>;
   return (
-    <HShell active="Cycles" stage={3} done={3} range={[2, 3]}
+    <HShell active="Cycles" stage={2} done={2}
       crumb="Cycles  ›  May 2026  ›  Item review & scoring"
       actions={<HBtn variant="ghost">Filters</HBtn>}
       stageAction={<HBtn variant="pri">Continue to boundaries<HIco name="arrow" color="#fff" /></HBtn>}>
@@ -113,7 +113,7 @@ function HFGrades() {
   ];
   const GB = ({ g, big }) => <span style={{ width: big ? 30 : 23, height: big ? 30 : 23, border: `1px solid ${big ? H.pink : H.line2}`, borderRadius: 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontFamily: H.mono, fontSize: big ? 14 : 11.5, background: big ? H.pink : H.paper, color: big ? '#fff' : H.ink }}>{g}</span>;
   return (
-    <HShell active="Cycles" stage={5} done={5}
+    <HShell active="Cycles" stage={6} done={6}
       crumb="Cycles  ›  May 2026  ›  Grades & sign-off"
       actions={<HBtn variant="ghost"><HIco name="doc" />Export CSV</HBtn>}
       stageAction={<HBtn variant="pri"><HIco name="lock" color="#fff" />Lock grades</HBtn>}>

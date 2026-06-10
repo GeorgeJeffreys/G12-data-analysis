@@ -67,6 +67,9 @@ function HFNewCycle() {
 // ─── Audit log ─────────────────────────────────────────────────────
 function HFAudit() {
   const rows = [
+    { t: '16:02', d: 'Today', who: 'Rana Mansour', role: 'G12 Lead', type: 'override', tone: 'accent', act: 'Overrode cap', det: 'Karim D. (80440) kept at Distinction — two top-difficulty items lost to a confirmed tech fault' },
+    { t: '15:58', d: 'Today', who: 'Rana Mansour', role: 'G12 Lead', type: 'cap', tone: 'warn', act: 'Capped award', det: 'Maya H. (80421) Distinction → Advanced achievement — 2 of 3 top-difficulty questions answered' },
+    { t: '15:10', d: 'Today', who: 'Sami Haddad', role: 'Data Scientist', type: 'sexclude', tone: 'accent', act: 'Excluded for one student', det: 'Q15 removed for 80412 Aisha N. only — confirmed technical fault (calculator froze)' },
     { t: '14:32', d: 'Today', who: 'Rana Mansour', role: 'G12 Lead', type: 'lock', tone: 'good', act: 'Locked grades', det: 'Applicable Math — 4,812 students signed off' },
     { t: '14:18', d: 'Today', who: 'Rana Mansour', role: 'G12 Lead', type: 'boundary', tone: 'accent', act: 'Changed boundary', det: 'Grade A cut 78% → 76% (Applicable Math)' },
     { t: '11:47', d: 'Today', who: 'Sami Haddad', role: 'Data Scientist', type: 'exclude', tone: 'warn', act: 'Excluded item', det: 'Q23 — reason: negative discrimination (−0.06)' },
@@ -83,7 +86,7 @@ function HFAudit() {
       <div className="hf-col" style={{ flex: 1, minHeight: 0 }}>
         <div className="hf-row" style={{ gap: 9, padding: '16px 26px', borderBottom: `1px solid ${H.line}`, flexWrap: 'wrap', background: H.paper }}>
           <span className="hf-field" style={{ width: 230 }}><HIco name="search" color={H.ink3} />Search actions or items</span>
-          <HChip on>All actions</HChip><HChip>Exclusions</HChip><HChip>Boundaries</HChip><HChip>Locks</HChip><HChip>Exports</HChip>
+          <HChip on>All actions</HChip><HChip>Per-student</HChip><HChip>Caps</HChip><HChip>Exclusions</HChip><HChip>Boundaries</HChip><HChip>Locks</HChip>
           <span style={{ width: 1, height: 20, background: H.line2, margin: '0 3px' }} />
           <HChip>Anyone<HIco name="chev" /></HChip><HChip>Last 7 days<HIco name="chev" /></HChip>
           <div style={{ flex: 1 }} />

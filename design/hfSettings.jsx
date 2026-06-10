@@ -173,6 +173,29 @@ function HFConfig() {
             <Rowi label="Default boundary method"><div className="hf-row" style={{ border: `1px solid ${H.line2}`, borderRadius: 8, overflow: 'hidden' }}><span style={{ padding: '6px 11px', fontSize: 11.5, fontWeight: 700, background: H.pinkSoft, color: H.pink }}>Fix boundaries</span><span style={{ padding: '6px 11px', fontSize: 11.5, color: H.ink2, borderLeft: `1px solid ${H.line2}` }}>Fix cohort %</span></div></Rowi>
             <Rowi label="Carry boundaries from previous cycle" last><HToggle on /></Rowi>
           </SectionCard>
+
+          <SectionCard title="Distinction safeguard" sub="Guards the top award: a Distinction is only granted when a student attempted enough of the hardest questions.">
+            <Rowi label="Top-difficulty questions a student must answer">
+              <span className="hf-row" style={{ gap: 8, alignItems: 'center' }}>
+                <span className="hf-row" style={{ border: `1px solid ${H.line2}`, borderRadius: 8, overflow: 'hidden' }}>
+                  <span style={{ padding: '6px 9px', fontSize: 13, color: H.ink3, borderRight: `1px solid ${H.line2}`, cursor: 'pointer' }}>–</span>
+                  <span className="hf-mono" style={{ padding: '6px 14px', fontSize: 13, fontWeight: 700 }}>3</span>
+                  <span style={{ padding: '6px 9px', fontSize: 13, color: H.ink3, borderLeft: `1px solid ${H.line2}`, cursor: 'pointer' }}>+</span>
+                </span>
+                <span className="hf-sub">answered</span>
+              </span>
+            </Rowi>
+            <Rowi label="What counts as top-difficulty">
+              <div className="hf-row" style={{ border: `1px solid ${H.line2}`, borderRadius: 8, overflow: 'hidden' }}>
+                <span style={{ padding: '6px 11px', fontSize: 11.5, color: H.ink2 }}>Recall</span>
+                <span style={{ padding: '6px 11px', fontSize: 11.5, color: H.ink2, borderLeft: `1px solid ${H.line2}` }}>Apply</span>
+                <span style={{ padding: '6px 11px', fontSize: 11.5, fontWeight: 700, background: H.pinkSoft, color: H.pink, borderLeft: `1px solid ${H.line2}` }}>Reason · highest demand</span>
+              </div>
+            </Rowi>
+            <Rowi label="If a Distinction candidate falls short" last>
+              <span className="hf-row" style={{ gap: 8 }}><span className="hf-sub">cap to</span><HBadge tone="neutral">Advanced achievement</HBadge></span>
+            </Rowi>
+          </SectionCard>
         </div>
 
         {/* right column */}
