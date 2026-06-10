@@ -23,7 +23,7 @@ interface ItemFactAgg {
 }
 
 export function assembleItemAnalysis(args: AssembleItemAnalysisArgs): ItemAnalysisInput {
-  const { cycleName, assessments, stats, facts, reviews } = args;
+  const { cycleName, assessments, stats, facts, reviews, perStudentExclusions } = args;
 
   // Group stats and facts by assessment.
   const statsByAssessment = new Map<string, ItemStat[]>();
@@ -93,5 +93,5 @@ export function assembleItemAnalysis(args: AssembleItemAnalysisArgs): ItemAnalys
     });
   }
 
-  return { cycleName, blocks };
+  return { cycleName, blocks, perStudentExclusions };
 }

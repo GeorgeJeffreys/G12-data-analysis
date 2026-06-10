@@ -30,6 +30,19 @@ export const RATING_STYLES: Record<string, CellStyle> = {
   },
 };
 
+/**
+ * Performance-level fills, best → lowest (4 bands): strong green, light green,
+ * amber, red. The green / amber / red reuse the item-analysis rating palette;
+ * the second band is a lighter green. Applied by the level's index in the
+ * (configurable) performance-levels list, so it never hardcodes band names.
+ */
+export const PERFORMANCE_STYLES: CellStyle[] = [
+  { fill: { patternType: "solid", fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" } } },
+  { fill: { patternType: "solid", fgColor: { rgb: "E2EFDA" } }, font: { color: { rgb: "375623" } } },
+  { fill: { patternType: "solid", fgColor: { rgb: "FFEB9C" } }, font: { color: { rgb: "9C6500" } } },
+  { fill: { patternType: "solid", fgColor: { rgb: "FFC7CE" } }, font: { color: { rgb: "9C0006" } } },
+];
+
 export const HEADER_STYLE: CellStyle = {
   font: { bold: true },
   fill: { patternType: "solid", fgColor: { rgb: "E7E6E6" } },
