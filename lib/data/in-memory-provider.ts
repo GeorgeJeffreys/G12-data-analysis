@@ -6,10 +6,10 @@
  */
 
 import { getEngine } from "@/lib/engine";
-import type { ResponseRecord } from "@/lib/engine";
+import type { ItemStat, PerStudentExclusion, QualityRating, ResponseRecord } from "@/lib/engine";
 import seedJson from "./seed.generated.json";
-import type { Seed, SeedAssessment } from "./seed-types";
-import type { DataProvider, SetBoundaryInput } from "./provider";
+import type { Seed, SeedAssessment, SeedItem } from "./seed-types";
+import type { DataProvider, SetBoundaryInput, TechnicalErrorRow } from "./provider";
 import {
   PIPELINE,
   type AnalyticsCompare,
@@ -44,6 +44,14 @@ import {
   type RoleDef,
   type RolesModel,
   type StudentSummary,
+  type DistinctionCandidate,
+  type DistinctionSafeguardModel,
+  type IncidentDecision,
+  type SafeguardConfig,
+  type SafeguardResult,
+  type StudentReviewModel,
+  type TechnicalErrorsUpload,
+  type TechnicalIncident,
 } from "./types";
 import {
   classify,
@@ -105,6 +113,17 @@ export class InMemoryDataProvider implements DataProvider {
   private locked = new Set<string>();
   private grading: GradingConfig = defaultGradingConfig();
   private docSettingsByCycle = new Map<string, DocSettings>();
+
+  // technical errors / per-student exclusions + distinction safeguard
+  private technicalErrors = new Map<string, { uploaded: boolean; sample: boolean; fileName: string | null; incidents: TechnicalIncident[] }>();
+  private incidentSeq = 0;
+  private distinctionOverrides = new Map<string, Map<string, { reason: string; by: string }>>();
+  private distinctionConfirmed = new Set<string>();
+  // safeguard config; empty topDifficultyDemand → resolve to the highest demand present.
+  private safeguard: { distinctionThreshold: number; topDifficultyDemand: string } = {
+    distinctionThreshold: 3,
+    topDifficultyDemand: "",
+  };
 
   // admin / audit / config state (all MOCK — see lib/data/mock-admin.ts)
   private members: Member[] = defaultMembers();
@@ -189,8 +208,22 @@ export class InMemoryDataProvider implements DataProvider {
     a: SeedAssessment,
   ): Map<string, { raw: number; itemsSeen: number; pct: number }> {
     const excluded = [...this.excludedSet(cycleId, a.id)];
-    const scores = engine.computeScores(this.responsesOf(a), excluded);
+    const perStudent = this.perStudentExclusions(cycleId, a.id);
+    const scores = engine.computeScores(this.responsesOf(a), excluded, perStudent);
     return new Map(scores.map((s) => [s.participantId, { raw: s.raw, itemsSeen: s.itemsSeen, pct: s.pct }]));
+  }
+
+  /** Per-student (participant, item) exclusions from confirmed technical incidents. */
+  private perStudentExclusions(cycleId: string, assessmentId?: string): PerStudentExclusion[] {
+    const te = this.technicalErrors.get(cycleId);
+    if (!te) return [];
+    const out: PerStudentExclusion[] = [];
+    for (const inc of te.incidents) {
+      if (inc.decision !== "excluded" || !inc.itemId) continue;
+      if (assessmentId && inc.assessmentId !== assessmentId) continue;
+      out.push({ participantId: inc.studentId, itemId: inc.itemId });
+    }
+    return out;
   }
   /** Levels + default cuts/targets for a scope (assessment → performance, overall → award). */
   private schemeFor(scope: string): { levels: string[]; cuts: number[]; targets: number[]; isAward: boolean } {
@@ -316,6 +349,7 @@ export class InMemoryDataProvider implements DataProvider {
       preview: live.preview,
       duplicates: live.duplicates,
       canContinue: live.validation.passed,
+      technicalErrors: this.technicalErrorsUpload(cycleId),
     };
   }
 
@@ -327,21 +361,28 @@ export class InMemoryDataProvider implements DataProvider {
     const refs = this.assessmentRefs(cycleId);
     const ref = refs.find((r) => r.id === assessmentId)!;
 
-    const items: ItemRow[] = a.items.map((it) => ({
-      id: it.id,
-      wording: it.wording,
-      major: it.major,
-      sub: it.sub,
-      demand: it.demand,
-      pValue: it.pValue,
-      itemTotal: it.itemTotal,
-      pointBiserial: it.pointBiserial,
-      discrimination: it.discrimination,
-      overallReview: it.overallReview,
-      qualityIndex: it.qualityIndex,
-      excluded: excluded.has(it.id),
-      reason: this.reasons.get(`${cycleId}:${assessmentId}:${it.id}`) ?? null,
-    }));
+    // Recompute item statistics live so per-student exclusions drop a glitched
+    // response from that item's cohort psychometrics. With no per-student
+    // exclusions this is byte-identical to the seed (parity-verified).
+    const live = this.liveItemStats(cycleId, a);
+    const items: ItemRow[] = a.items.map((it) => {
+      const s = live.get(it.id);
+      return {
+        id: it.id,
+        wording: it.wording,
+        major: it.major,
+        sub: it.sub,
+        demand: it.demand,
+        pValue: s?.pValue ?? it.pValue,
+        itemTotal: s ? s.itemTotal : it.itemTotal,
+        pointBiserial: s ? s.pointBiserial : it.pointBiserial,
+        discrimination: s?.discrimination ?? it.discrimination,
+        overallReview: s?.overallReview ?? it.overallReview,
+        qualityIndex: s?.qualityIndex ?? it.qualityIndex,
+        excluded: excluded.has(it.id),
+        reason: this.reasons.get(`${cycleId}:${assessmentId}:${it.id}`) ?? null,
+      };
+    });
 
     const pcts = [...this.pctByParticipant(cycleId, a).values()].map((v) => v.pct);
     const cohortMean = round(mean(pcts), 1);
@@ -355,7 +396,7 @@ export class InMemoryDataProvider implements DataProvider {
       distribution[idx] = (distribution[idx] ?? 0) + 1;
     }
 
-    const retained = a.items.filter((it) => !excluded.has(it.id));
+    const retained = items.filter((it) => !it.excluded);
     const medianDifficulty = round(median(retained.map((it) => it.pValue)), 2);
 
     // counts of retained items per element / demand
@@ -552,6 +593,7 @@ export class InMemoryDataProvider implements DataProvider {
     }
     const awardCuts = this.boundaryState(cycleId, "overall").cuts;
     const overallPcts = this.overallPctByParticipant(cycleId);
+    const safeguard = this.distinctionDecisions(cycleId); // studentId -> capped?
 
     const rows = seed.liveCycle.participants.map((p) => {
       const grades: Record<string, { level: string; stars: string }> = {};
@@ -561,12 +603,13 @@ export class InMemoryDataProvider implements DataProvider {
         grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
       }
       const op = overallPcts.get(p.id);
-      return {
-        id: p.id,
-        label: p.label,
-        grades,
-        award: op === undefined ? "" : classify(op, awardLevels, awardCuts),
-      };
+      let award = op === undefined ? "" : classify(op, awardLevels, awardCuts);
+      // Distinction safeguard: cap a Distinction that fell short of the rule
+      // (unless a Lead overrode it). awardLevels[1] = Advanced achievement.
+      if (award === awardLevels[0] && safeguard.get(p.id) === "capped") {
+        award = awardLevels[1] ?? award;
+      }
+      return { id: p.id, label: p.label, grades, award };
     });
 
     const distCounts = new Map<string, number>();
@@ -584,6 +627,375 @@ export class InMemoryDataProvider implements DataProvider {
       locked: this.locked.has(cycleId),
       canLock: this.user.role === "lead_admin" && !this.locked.has(cycleId),
     };
+  }
+
+  // ── live item statistics (per-student exclusions nudge cohort psychometrics)
+  /** Transparent 0–100 quality index — mirrors scripts/build-seed.mts exactly. */
+  private qualityIndexOf(s: ItemStat): number {
+    const score: Record<QualityRating, number> = { Good: 1, Review: 0.55, Flag: 0.12 };
+    const avg = (score[s.pRating] + score[s.itRating] + score[s.pbRating] + score[s.discRating]) / 4;
+    return Math.round(avg * 100);
+  }
+  /**
+   * Recompute one assessment's item statistics through the engine, dropping any
+   * per-student-excluded responses. With no per-student exclusions this is
+   * byte-identical to the seed (parity-verified), so the Review screen is
+   * unchanged until a technical fault is excluded.
+   */
+  private liveItemStats(
+    cycleId: string,
+    a: SeedAssessment,
+  ): Map<string, { pValue: number; itemTotal: number | null; pointBiserial: number | null; discrimination: number; overallReview: QualityRating; qualityIndex: number }> {
+    const stats = engine.computeItemStats({
+      responses: this.responsesOf(a),
+      perStudentExcluded: this.perStudentExclusions(cycleId, a.id),
+    });
+    const out = new Map<
+      string,
+      { pValue: number; itemTotal: number | null; pointBiserial: number | null; discrimination: number; overallReview: QualityRating; qualityIndex: number }
+    >();
+    for (const s of stats) {
+      out.set(s.itemId, {
+        pValue: s.pValue,
+        itemTotal: s.itemTotal,
+        pointBiserial: s.pointBiserial,
+        discrimination: s.discrimination,
+        overallReview: s.overallReview,
+        qualityIndex: this.qualityIndexOf(s),
+      });
+    }
+    return out;
+  }
+
+  // ── per-student technical exclusions (Student review step) ────────────────
+  /** All demand levels present across the cycle, ascending (e.g. D1 < D2 < D3). */
+  private allDemandLevels(): string[] {
+    const set = new Set<string>();
+    for (const a of seed.liveCycle.assessments) for (const it of a.items) if (it.demand) set.add(it.demand);
+    return [...set].sort();
+  }
+  /** The "top-difficulty" demand: configured value, else the highest present. */
+  private resolveTopDifficulty(assessmentId?: string): string {
+    if (this.safeguard.topDifficultyDemand) return this.safeguard.topDifficultyDemand;
+    const set = new Set<string>();
+    const asms = assessmentId
+      ? seed.liveCycle.assessments.filter((a) => a.id === assessmentId)
+      : seed.liveCycle.assessments;
+    for (const a of asms) for (const it of a.items) if (it.demand) set.add(it.demand);
+    const sorted = [...set].sort();
+    return sorted[sorted.length - 1] ?? "";
+  }
+  /** Locate an item across assessments, with a display label (Q-index in order). */
+  private itemLocate(itemId: string): { a: SeedAssessment; item: SeedItem; label: string } | null {
+    for (const a of seed.liveCycle.assessments) {
+      const idx = a.items.findIndex((it) => it.id === itemId);
+      if (idx >= 0) return { a, item: a.items[idx]!, label: `Q${idx + 1}` };
+    }
+    return null;
+  }
+  private buildIncident(
+    studentId: string,
+    studentName: string,
+    itemId: string | null,
+    questionRaw: string,
+    error: string,
+    decision: IncidentDecision = null,
+    reason: string | null = null,
+  ): TechnicalIncident {
+    const loc = itemId ? this.itemLocate(itemId) : null;
+    this.incidentSeq += 1;
+    return {
+      id: `inc-${this.incidentSeq}`,
+      studentId,
+      studentName,
+      assessmentId: loc?.a.id ?? "",
+      assessmentName: loc?.a.name ?? "Unmatched",
+      itemId: loc ? itemId : null,
+      questionLabel: loc?.label ?? questionRaw,
+      demand: loc?.item.demand ?? null,
+      wording: loc?.item.wording ?? null,
+      rtl: loc?.a.rtl ?? false,
+      error,
+      decision,
+      reason,
+      by: decision ? this.user.name : null,
+      at: decision ? new Date().toISOString() : null,
+    };
+  }
+  /** Match an uploaded student cell to a participant (by id or friendly label). */
+  private matchStudent(raw: string): { id: string; name: string } {
+    const clean = raw.trim();
+    const byId = seed.liveCycle.participants.find((p) => p.id.toLowerCase() === clean.toLowerCase());
+    if (byId) return { id: byId.id, name: byId.label };
+    const byLabel = seed.liveCycle.participants.find((p) => p.label.toLowerCase() === clean.toLowerCase());
+    if (byLabel) return { id: byLabel.id, name: byLabel.label };
+    return { id: clean, name: clean };
+  }
+
+  private technicalErrorsUpload(cycleId: string): TechnicalErrorsUpload {
+    const te = this.technicalErrors.get(cycleId);
+    if (!te || !te.uploaded) {
+      return { uploaded: false, fileName: null, incidentCount: 0, matchedCount: 0, preview: { headers: [], rows: [] }, sample: false };
+    }
+    const matched = te.incidents.filter((i) => i.itemId).length;
+    return {
+      uploaded: true,
+      fileName: te.fileName,
+      incidentCount: te.incidents.length,
+      matchedCount: matched,
+      preview: {
+        headers: ["Student", "Question", "Error"],
+        rows: te.incidents.slice(0, 5).map((i) => [i.studentName, i.questionLabel, i.error]),
+      },
+      sample: te.sample,
+    };
+  }
+
+  getStudentReview(cycleId: string): StudentReviewModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const te = this.technicalErrors.get(cycleId);
+    const incidents = te?.incidents ?? [];
+    const excluded = incidents.filter((i) => i.decision === "excluded").length;
+    const kept = incidents.filter((i) => i.decision === "kept").length;
+    const awaiting = incidents.filter((i) => i.decision == null).length;
+    const students = new Set(incidents.map((i) => i.studentId)).size;
+    return {
+      cycleId,
+      uploaded: !!te?.uploaded,
+      sample: !!te?.sample,
+      fileName: te?.fileName ?? null,
+      incidents,
+      counts: { incidents: incidents.length, excluded, kept, awaiting, students },
+    };
+  }
+
+  uploadTechnicalErrors(cycleId: string, fileName: string, rows: TechnicalErrorRow[]): void {
+    if (this.locked.has(cycleId)) return;
+    const incidents = rows
+      .filter((r) => (r.student ?? "").trim() || (r.question ?? "").trim())
+      .map((r) => {
+        const stud = this.matchStudent(String(r.student ?? ""));
+        const q = String(r.question ?? "").trim();
+        const matched = this.itemLocate(q);
+        return this.buildIncident(stud.id, stud.name, matched ? q : null, q, String(r.error ?? "").trim() || "Technical fault reported");
+      });
+    this.technicalErrors.set(cycleId, { uploaded: true, sample: false, fileName, incidents });
+    const matched = incidents.filter((i) => i.itemId).length;
+    this.audit("upload", "Added technical-errors file", `${fileName} — ${incidents.length} incidents (${matched} matched to items)`, cycleId);
+    this.bump();
+  }
+
+  /**
+   * Load the small, clearly-labelled SAMPLE faults fixture. Every incident
+   * references a REAL seeded participant and item (so exclusions genuinely flow
+   * into scoring); it is flagged `sample: true` everywhere it surfaces.
+   */
+  loadSampleTechnicalErrors(cycleId: string): void {
+    if (cycleId !== seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const label = (id: string) => seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    const spec: { sid: string; item: string; error: string; decision: IncidentDecision; reason: string | null }[] = [
+      { sid: "P0010", item: "100002785246", error: "Calculator tool froze mid-question; ~4 min lost", decision: "excluded", reason: "Confirmed technical fault" },
+      { sid: "P0010", item: "100002785119", error: "Graph image failed to load on first attempt", decision: null, reason: null },
+      { sid: "P0013", item: "100002785560", error: "Audio clip would not play (listening item)", decision: null, reason: null },
+      { sid: "P0015", item: "100002785334", error: "النص العربي لم يظهر بشكل صحيح أثناء الاختبار", decision: null, reason: null },
+      { sid: "P0009", item: "100002785120", error: "Power outage in room B; session paused 8 min", decision: "excluded", reason: "Power outage" },
+      { sid: "P0013", item: "100002785374", error: "Tablet battery died; resumed on a new device", decision: "kept", reason: null },
+    ];
+    let seq = 0;
+    const incidents = spec.map((s) => {
+      void (seq += 1);
+      return this.buildIncident(s.sid, label(s.sid), s.item, s.item, s.error, s.decision, s.reason);
+    });
+    this.technicalErrors.set(cycleId, { uploaded: true, sample: true, fileName: "sample_technical_errors.csv", incidents });
+    this.audit("upload", "Loaded sample faults", `${incidents.length} labelled sample incidents (not from a real file)`, cycleId);
+    this.bump();
+  }
+
+  clearTechnicalErrors(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    if (!this.technicalErrors.has(cycleId)) return;
+    this.technicalErrors.delete(cycleId);
+    this.audit("upload", "Removed technical-errors file", "Per-student exclusions cleared", cycleId);
+    this.bump();
+  }
+
+  setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void {
+    if (this.locked.has(cycleId)) return;
+    const te = this.technicalErrors.get(cycleId);
+    const inc = te?.incidents.find((i) => i.id === incidentId);
+    if (!te || !inc) return;
+    inc.decision = decision;
+    inc.reason = decision === "excluded" ? reason ?? "Confirmed technical fault" : null;
+    inc.by = decision ? this.user.name : null;
+    inc.at = decision ? new Date().toISOString() : null;
+    if (decision === "excluded") {
+      this.audit("student", "Excluded question for one student", `${inc.studentName} · ${inc.questionLabel} (${inc.assessmentName}) — ${inc.reason}`, cycleId);
+    } else if (decision === "kept") {
+      this.audit("student", "Kept question for one student", `${inc.studentName} · ${inc.questionLabel} (${inc.assessmentName}) — scored normally`, cycleId);
+    }
+    this.bump();
+  }
+
+  // ── distinction safeguard (grading stage) ─────────────────────────────────
+  /** Top-difficulty questions a student attempted in one assessment (minus their exclusions). */
+  private topDiffAnswered(cycleId: string, a: SeedAssessment, studentId: string, demand: string): number {
+    const excl = new Set(
+      this.perStudentExclusions(cycleId, a.id)
+        .filter((e) => e.participantId === studentId)
+        .map((e) => e.itemId),
+    );
+    const pool = new Set(a.items.filter((it) => it.demand === demand).map((it) => it.id));
+    let n = 0;
+    for (const r of a.responses) {
+      if (r.p !== studentId || !pool.has(r.i) || excl.has(r.i)) continue;
+      n += 1;
+    }
+    return n;
+  }
+  /** Participants whose provisional overall award is the top award (before the safeguard). */
+  private provisionalDistinctionIds(cycleId: string): string[] {
+    const awardLevels = this.grading.awardLevels;
+    const topAward = awardLevels[0] ?? "";
+    const awardCuts = this.boundaryState(cycleId, "overall").cuts;
+    const overall = this.overallPctByParticipant(cycleId);
+    const ids: string[] = [];
+    for (const p of seed.liveCycle.participants) {
+      const op = overall.get(p.id);
+      if (op === undefined) continue;
+      if (classify(op, awardLevels, awardCuts) === topAward) ids.push(p.id);
+    }
+    return ids;
+  }
+  /** studentId → safeguard result, for the grade-matrix cap (used by getGrades). */
+  private distinctionDecisions(cycleId: string): Map<string, SafeguardResult> {
+    const demand = this.resolveTopDifficulty();
+    const threshold = this.safeguard.distinctionThreshold;
+    const overrides = this.distinctionOverrides.get(cycleId);
+    const out = new Map<string, SafeguardResult>();
+    for (const sid of this.provisionalDistinctionIds(cycleId)) {
+      if (overrides?.has(sid)) {
+        out.set(sid, "override");
+        continue;
+      }
+      let capped = false;
+      for (const a of seed.liveCycle.assessments) {
+        const pool = a.items.filter((it) => it.demand === demand).length;
+        if (pool < threshold) continue; // can't require more top-difficulty items than exist
+        if (this.topDiffAnswered(cycleId, a, sid, demand) < threshold) {
+          capped = true;
+          break;
+        }
+      }
+      out.set(sid, capped ? "capped" : "pass");
+    }
+    return out;
+  }
+
+  getDistinctionSafeguard(cycleId: string, scope?: string): DistinctionSafeguardModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const assessments = seed.liveCycle.assessments;
+    const scopes = assessments.map((a) => ({ id: a.id, label: a.shortName }));
+    const scopeId = scope && assessments.some((a) => a.id === scope) ? scope : assessments[0]?.id ?? "";
+    const a = this.assessment(scopeId);
+    const demand = this.resolveTopDifficulty();
+    const threshold = this.safeguard.distinctionThreshold;
+    const pool = a ? a.items.filter((it) => it.demand === demand).length : 0;
+    const awardLevels = this.grading.awardLevels;
+    const topAward = awardLevels[0] ?? "";
+    const cappedTo = awardLevels[1] ?? topAward;
+
+    const decisions = this.distinctionDecisions(cycleId);
+    const overrides = this.distinctionOverrides.get(cycleId);
+    const inLineIds = this.provisionalDistinctionIds(cycleId);
+    const labelOf = new Map(seed.liveCycle.participants.map((p) => [p.id, p.label] as const));
+    const effThreshold = pool > 0 ? Math.min(threshold, pool) : threshold;
+
+    const candidates: DistinctionCandidate[] = inLineIds.map((sid) => {
+      const answered = a ? this.topDiffAnswered(cycleId, a, sid, demand) : 0;
+      const ov = overrides?.get(sid);
+      return {
+        id: sid,
+        name: labelOf.get(sid) ?? sid,
+        topDifficultyAnswered: answered,
+        meets: answered >= effThreshold,
+        provisionalAward: topAward,
+        cappedAward: cappedTo,
+        result: decisions.get(sid) ?? "pass",
+        overrideReason: ov?.reason ?? null,
+        overrideBy: ov?.by ?? null,
+      };
+    });
+    candidates.sort((x, y) => x.topDifficultyAnswered - y.topDifficultyAnswered);
+
+    const vals = [...decisions.values()];
+    return {
+      cycleId,
+      threshold,
+      topDifficultyDemand: demand,
+      topDifficultyPool: pool,
+      scope: scopeId,
+      scopes,
+      topAward,
+      cappedTo,
+      candidates,
+      counts: {
+        inLine: inLineIds.length,
+        meet: vals.filter((v) => v === "pass").length,
+        capped: vals.filter((v) => v === "capped").length,
+        overridden: vals.filter((v) => v === "override").length,
+      },
+      canOverride: this.user.role === "lead_admin",
+      // CONFIRM: "answered" is treated as attempted (a non-blank response), not
+      // "answered correctly". Flip topDiffAnswered to count score>0 to change.
+      attemptedNote: '"Answered" counts an attempted (non-blank) response, not a correct one.',
+    };
+  }
+
+  confirmDistinctionCaps(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    const capped = [...this.distinctionDecisions(cycleId).values()].filter((v) => v === "capped").length;
+    this.distinctionConfirmed.add(cycleId);
+    this.audit(
+      "safeguard",
+      "Confirmed Distinction safeguard",
+      capped ? `${capped} award(s) capped to ${this.grading.awardLevels[1] ?? "the next award"}` : "No caps — every candidate met the rule",
+      cycleId,
+    );
+    this.bump();
+  }
+
+  overrideDistinctionCap(cycleId: string, studentId: string, reason: string): void {
+    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    const clean = reason.trim();
+    if (!clean) return;
+    const m = this.distinctionOverrides.get(cycleId) ?? new Map<string, { reason: string; by: string }>();
+    m.set(studentId, { reason: clean, by: this.user.name });
+    this.distinctionOverrides.set(cycleId, m);
+    const label = seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
+    this.audit("safeguard", "Overrode Distinction cap", `${label} kept at ${this.grading.awardLevels[0] ?? "Distinction"} — ${clean}`, cycleId);
+    this.bump();
+  }
+
+  undoDistinctionOverride(cycleId: string, studentId: string): void {
+    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    const m = this.distinctionOverrides.get(cycleId);
+    if (m?.delete(studentId)) {
+      const label = seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
+      this.audit("safeguard", "Removed Distinction override", `${label} returned to its safeguard result`, cycleId);
+      this.bump();
+    }
+  }
+
+  setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {
+    if (this.user.role !== "lead_admin") return;
+    if (patch.distinctionThreshold != null && Number.isFinite(patch.distinctionThreshold)) {
+      this.safeguard.distinctionThreshold = Math.max(1, Math.round(patch.distinctionThreshold));
+    }
+    if (patch.topDifficultyDemand != null) {
+      this.safeguard.topDifficultyDemand = patch.topDifficultyDemand;
+    }
+    this.audit("safeguard", "Updated Distinction safeguard", `Threshold ${this.safeguard.distinctionThreshold} · top-difficulty ${this.resolveTopDifficulty()}`, null);
+    this.bump();
   }
 
   // ── document generation (Student Summary) ────────────────────────────────
@@ -854,6 +1266,11 @@ export class InMemoryDataProvider implements DataProvider {
       thresholds: QUALITY_THRESHOLDS,
       retention: { ...this.retention },
       branding: { ...this.branding },
+      safeguard: {
+        distinctionThreshold: this.safeguard.distinctionThreshold,
+        topDifficultyDemand: this.resolveTopDifficulty(),
+        demandLevels: this.allDemandLevels(),
+      },
     };
   }
   setRetention(patch: Partial<RetentionConfig>): void {

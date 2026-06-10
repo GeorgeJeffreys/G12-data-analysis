@@ -66,6 +66,17 @@ export interface CycleDetail {
   assessments: AssessmentRef[];
 }
 
+/** Optional technical-errors spreadsheet attached at ingest (never gates progress). */
+export interface TechnicalErrorsUpload {
+  uploaded: boolean;
+  fileName: string | null;
+  incidentCount: number;
+  matchedCount: number;
+  preview: { headers: string[]; rows: (string | number | null)[][] };
+  /** True when populated from the labelled sample fixture rather than a real file. */
+  sample: boolean;
+}
+
 export interface IngestModel {
   cycleId: string;
   fileName: string;
@@ -75,6 +86,7 @@ export interface IngestModel {
   preview: SeedPreview;
   duplicates: number;
   canContinue: boolean;
+  technicalErrors: TechnicalErrorsUpload;
 }
 
 export interface ItemRow {
@@ -279,7 +291,10 @@ export type AuditType =
   | "document"
   | "upload"
   | "cycle"
-  | "validate";
+  | "validate"
+  /** Per-student technical exclusion / keep, and Distinction-safeguard caps & overrides. */
+  | "student"
+  | "safeguard";
 
 export interface AuditEntry {
   id: string;
@@ -369,6 +384,7 @@ export interface ConfigModel {
   thresholds: QualityThresholdRow[];
   retention: RetentionConfig;
   branding: BrandingConfig;
+  safeguard: SafeguardConfig;
 }
 
 // --- New cycle --------------------------------------------------------------
@@ -390,4 +406,72 @@ export interface CreateCycleInput {
   name: string;
   sittingDate: string;
   assessmentIds: string[];
+}
+
+// --- Per-student technical exclusions (Student review step) ------------------
+export type IncidentDecision = "excluded" | "kept" | null;
+
+export interface TechnicalIncident {
+  id: string;
+  studentId: string;
+  studentName: string;
+  assessmentId: string;
+  assessmentName: string;
+  itemId: string | null; // null when the row couldn't be matched to a real item
+  questionLabel: string;
+  demand: string | null;
+  wording: string | null;
+  rtl: boolean;
+  error: string;
+  decision: IncidentDecision;
+  reason: string | null;
+  by: string | null;
+  at: string | null;
+}
+
+export interface StudentReviewModel {
+  cycleId: string;
+  uploaded: boolean;
+  sample: boolean;
+  fileName: string | null;
+  incidents: TechnicalIncident[];
+  counts: { incidents: number; excluded: number; kept: number; awaiting: number; students: number };
+}
+
+// --- Distinction safeguard (grading stage) ----------------------------------
+export type SafeguardResult = "pass" | "capped" | "override";
+
+export interface DistinctionCandidate {
+  id: string;
+  name: string;
+  topDifficultyAnswered: number;
+  meets: boolean;
+  provisionalAward: string;
+  cappedAward: string;
+  result: SafeguardResult;
+  overrideReason: string | null;
+  overrideBy: string | null;
+}
+
+export interface DistinctionSafeguardModel {
+  cycleId: string;
+  threshold: number;
+  topDifficultyDemand: string;
+  topDifficultyPool: number;
+  scope: string;
+  scopes: { id: string; label: string }[];
+  topAward: string;
+  cappedTo: string;
+  candidates: DistinctionCandidate[];
+  counts: { inLine: number; meet: number; capped: number; overridden: number };
+  canOverride: boolean;
+  /** // CONFIRM: "answered" is treated as attempted (a non-blank response), not "answered correctly". */
+  attemptedNote: string;
+}
+
+// --- Safeguard configuration (Settings → Configuration) ----------------------
+export interface SafeguardConfig {
+  distinctionThreshold: number;
+  topDifficultyDemand: string;
+  demandLevels: string[];
 }
