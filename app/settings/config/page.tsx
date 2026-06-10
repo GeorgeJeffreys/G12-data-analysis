@@ -56,6 +56,40 @@ export default function ConfigPage() {
         {/* grade vocabulary editor (configurable, real) */}
         <GradingDefaultsEditor />
 
+        {/* distinction safeguard (real — drives the grading-stage safeguard) */}
+        <SectionCard
+          title="Distinction safeguard"
+          sub="A top award is only granted when a student attempted enough of the hardest questions. These settings drive the safeguard that runs at the grading stage."
+        >
+          <Row label="Minimum top-difficulty questions answered">
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <input
+                className="hf-input"
+                style={{ width: 48 }}
+                value={String(config.safeguard.distinctionThreshold)}
+                inputMode="numeric"
+                onChange={(e) => provider.setSafeguardConfig({ distinctionThreshold: Number(e.target.value.replace(/[^0-9]/g, "")) || 1 })}
+                aria-label="Distinction safeguard threshold"
+              />
+              <span className="hf-sub">questions</span>
+            </span>
+          </Row>
+          <Row label="Top-difficulty defined as" last>
+            <span className={`hf-chip on`} style={{ padding: 0, overflow: "hidden" }}>
+              <select
+                value={config.safeguard.topDifficultyDemand}
+                onChange={(e) => provider.setSafeguardConfig({ topDifficultyDemand: e.target.value })}
+                aria-label="Top-difficulty demand level"
+                style={{ border: "none", background: "transparent", font: "inherit", color: "inherit", padding: "4px 11px", cursor: "pointer", outline: "none" }}
+              >
+                {config.safeguard.demandLevels.map((d) => (
+                  <option key={d} value={d}>{d}{d === config.safeguard.demandLevels[config.safeguard.demandLevels.length - 1] ? " (highest demand)" : ""}</option>
+                ))}
+              </select>
+            </span>
+          </Row>
+        </SectionCard>
+
         <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 320, display: "flex", flexDirection: "column", gap: 18 }}>
             <SectionCard title="Data retention" mock>

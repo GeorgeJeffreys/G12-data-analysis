@@ -121,9 +121,9 @@ export default function ReviewPage({
       ]}
       stageIndex={2}
       stageAction={
-        <Link href={`/cycles/${cycleId}/boundaries`}>
+        <Link href={`/cycles/${cycleId}/student-review`}>
           <Button variant="pri">
-            Continue to boundaries
+            Continue to student review
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

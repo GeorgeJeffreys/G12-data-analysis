@@ -98,6 +98,20 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           ))}
         </div>
 
+        {!model.locked && (
+          <Link href={`/cycles/${cycleId}/grades/distinction`} style={{ textDecoration: "none", color: "inherit" }}>
+            <div className="hf-card hf-hover" style={{ padding: "13px 17px", display: "flex", gap: 12, alignItems: "center" }}>
+              <Icon name="award" color={H.pink} />
+              <span style={{ fontSize: 13, flex: 1 }}>
+                <b>Distinction safeguard</b> — check that every provisional top award attempted enough top-difficulty questions before sign-off.
+              </span>
+              <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.pink, fontWeight: 700, fontSize: 12.5 }}>
+                Review safeguard<Icon name="arrow" size={13} color={H.pink} />
+              </span>
+            </div>
+          </Link>
+        )}
+
         {model.locked && (
           <div className="hf-card" style={{ padding: "13px 17px", background: H.goodSoft, borderColor: H.good, display: "flex", gap: 12, alignItems: "center" }}>
             <Mark kind="pass" size={18} />
