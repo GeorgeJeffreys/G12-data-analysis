@@ -17,9 +17,17 @@ export interface Crumb {
   href?: string;
 }
 
+export interface SubnavItem {
+  label: string;
+  href: string;
+  on: boolean;
+}
+
 export function Shell({
   crumb,
   actions,
+  active,
+  subnav,
   stageIndex,
   done,
   range,
@@ -28,6 +36,10 @@ export function Shell({
 }: {
   crumb: Crumb[];
   actions?: ReactNode;
+  /** Which nav-rail area is active (Cycles | Analytics | Settings). */
+  active?: "Cycles" | "Analytics" | "Settings";
+  /** Secondary tab bar under the header. */
+  subnav?: SubnavItem[];
   stageIndex?: number;
   done?: number;
   range?: [number, number];
@@ -36,7 +48,7 @@ export function Shell({
 }) {
   return (
     <div style={{ display: "flex", alignItems: "stretch", height: "100vh", background: H.canvas }}>
-      <NavRail />
+      <NavRail active={active} />
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
         {/* top bar */}
         <div
@@ -71,6 +83,39 @@ export function Shell({
           </nav>
           {actions}
         </div>
+
+        {/* secondary tab bar */}
+        {subnav && (
+          <nav
+            aria-label="Section"
+            style={{
+              display: "flex",
+              flex: "0 0 auto",
+              borderBottom: `1px solid ${H.line}`,
+              padding: "0 24px",
+              gap: 2,
+              background: H.paper,
+            }}
+          >
+            {subnav.map((it) => (
+              <Link
+                key={it.href}
+                href={it.href}
+                aria-current={it.on ? "page" : undefined}
+                style={{
+                  padding: "12px 15px",
+                  fontSize: 13,
+                  fontWeight: it.on ? 700 : 500,
+                  color: it.on ? H.pink : H.ink2,
+                  borderBottom: `3px solid ${it.on ? H.pink : "transparent"}`,
+                  textDecoration: "none",
+                }}
+              >
+                {it.label}
+              </Link>
+            ))}
+          </nav>
+        )}
 
         {/* pipeline row */}
         {stageIndex != null && (

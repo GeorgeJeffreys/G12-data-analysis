@@ -10,19 +10,28 @@ import { usePathname } from "next/navigation";
 import { H } from "@/lib/ui/tokens";
 import { useProvider } from "@/lib/data/context";
 
+// Three areas, with the batch-2 rail icons (design/hf.jsx HRAIL).
 const NAV = [
-  { k: "Cycles", href: "/", d: "M3 4h10v3H3zM3 9h10v3H3z" },
-  { k: "Assessments", href: "/", d: "M4 3h6l2 2v8H4z" },
-  { k: "Audit log", href: "/", d: "M4 3h8v10H4zM6 6h4M6 8.5h4" },
-  { k: "Settings", href: "/settings", d: "M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z" },
-];
+  { k: "Cycles", href: "/", d: "M3 5h10M3 8h10M3 11h7" },
+  { k: "Analytics", href: "/analytics", d: "M3 13V8.5M7.5 13V3.5M12 13V10" },
+  {
+    k: "Settings",
+    href: "/settings",
+    d: "M8 6a2 2 0 100 4 2 2 0 100-4M8 2.6V4.2M8 11.8v1.6M13.4 8H11.8M4.2 8H2.6M11.4 4.6l-1 1M5.6 10.4l-1 1M11.4 11.4l-1-1M5.6 5.6l-1-1",
+  },
+] as const;
 
-export function NavRail() {
+export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Settings" }) {
   const pathname = usePathname();
   const provider = useProvider();
   const user = provider.getCurrentUser();
-  // Cycles and Settings are the real destinations in this build.
-  const activeKey = pathname.startsWith("/settings") ? "Settings" : "Cycles";
+  const activeKey =
+    active ??
+    (pathname.startsWith("/settings")
+      ? "Settings"
+      : pathname.startsWith("/analytics")
+        ? "Analytics"
+        : "Cycles");
 
   return (
     <nav

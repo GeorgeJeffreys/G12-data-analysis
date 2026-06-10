@@ -14,7 +14,11 @@ export type IconName =
   | "doc"
   | "download"
   | "award"
-  | "refresh";
+  | "refresh"
+  | "cal"
+  | "mail"
+  | "dots"
+  | "trash";
 
 export function Icon({
   name,
@@ -102,6 +106,34 @@ export function Icon({
         <svg viewBox="0 0 16 16" style={st}>
           <circle cx="8" cy="6.5" r="3.5" {...p} />
           <path d="M6 9.5L5 14l3-1.6L11 14l-1-4.5" {...p} />
+        </svg>
+      );
+    case "cal":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <rect x="2.5" y="3.5" width="11" height="10" rx="1.4" {...p} />
+          <path d="M2.5 6.5h11M5.5 2.5v2M10.5 2.5v2" {...p} />
+        </svg>
+      );
+    case "mail":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <rect x="2.5" y="4" width="11" height="8" rx="1.4" {...p} />
+          <path d="M3 5l5 4 5-4" {...p} />
+        </svg>
+      );
+    case "dots":
+      return (
+        <svg viewBox="0 0 16 16" style={{ ...st, fill: color }}>
+          <circle cx="8" cy="3.5" r="1.3" />
+          <circle cx="8" cy="8" r="1.3" />
+          <circle cx="8" cy="12.5" r="1.3" />
+        </svg>
+      );
+    case "trash":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5" {...p} />
         </svg>
       );
     default:
