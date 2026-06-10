@@ -48,11 +48,11 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       stageIndex={5}
       actions={
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="ghost" onClick={() => exportCsv(model)}>
+          <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>
             <Icon name="doc" />
             Export CSV
           </Button>
-          <Button variant="ghost" onClick={() => exportExcel(model)}>
+          <Button variant="ghost" onClick={() => { exportExcel(model); provider.recordExport(cycleId, "Grades workbook (Excel)"); }}>
             <Icon name="doc" />
             Export Excel
           </Button>
