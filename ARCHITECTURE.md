@@ -217,14 +217,44 @@ build silently drops styles on write. Import/parsing still uses `xlsx`.
   - `assembleItemAnalysis(...)` joins engine `ItemStat[]` with response-level
     facts to derive Presented/Answered counts and average response time, and the
     per-assessment participant/row counts and group size.
-- **Overall Score Analysis** — a `Scores` sheet (raw + % per assessment and
-  overall) and a `Summary` sheet (per-assessment means + distribution).
-- **Grades** — a `Grades` sheet (section + overall grades) and a `Distribution`
-  sheet.
+  - **`Per-student exclusions` sheet** (appended after the per-assessment sheets):
+    one row per confirmed per-student technical exclusion — columns
+    `ParticipantID | ParticipantName | AssessmentName | QuestionId |
+    QuestionWording | DemandLevel | Reason | DecidedBy | DecidedAt`
+    (`PER_STUDENT_EXCLUSION_HEADERS`). When a cycle has none, the sheet is emitted
+    with the header row plus a single "No per-student exclusions recorded…" note,
+    so the sheet is always present. This is the **one canonical exclusion record**;
+    the Grades workbook emits the identical sheet (`buildPerStudentExclusionsSheet`).
+- **Overall Score Analysis** — reconciled to the canonical
+  `MCQ_Overall_Score_Analysis` template, five sheets (`SCORE_ANALYSIS_SHEETS`):
+  `Overall Scores Summary` (KPI blocks + per-assessment / major-element /
+  demand-level summaries), `Overall Scores by Assessment`, `Overall Scores by
+  Major Element`, `Overall Scores by Demand Level` (one row per participant ×
+  assessment × group), and `Analysis` (per-assessment distinct question /
+  participant counts + mean answer score). **All scores use retained items only**
+  — `assembleScoreAnalysis(...)` drops both cohort-excluded items and per-student
+  (participant, item) exclusions upfront (mirroring the engine's scoring), so each
+  participant's total and percentage cover exactly the items that counted.
+- **Grades** — the self-contained, auditable record of a cycle's grades, four
+  sheets (`GRADES_SHEETS`): `Grade Summary` (cycle metadata, award distribution,
+  per-assessment performance-level distribution); **`Student Grades`** (the main
+  deliverable — per-student section level/score/pct across the five canonical
+  subject columns, overall award, and the Distinction-safeguard
+  `DistinctionCapApplied` / `CapReason` / `CapOverridden` / `OverrideReason`
+  columns; `GRADES_STUDENT_HEADERS`, sorted best-award-first then overall-pct
+  desc, with performance-level cells colour-filled via `PERFORMANCE_STYLES`);
+  `Per-student Exclusions` (the shared canonical sheet); and `Audit Trail` (every
+  audit entry for the cycle, oldest first). Subject columns map to the suite's
+  assessments by alias (`DEFAULT_SUBJECT_COLUMNS`). The grades download button
+  assembles its input from the real provider read-models (`getGrades`,
+  `getDistinctionSafeguard`, `getStudentReview`, `getAuditLog`).
 
 `workbookToBuffer` serialises for download/storage. `tests/export.test.ts`
-asserts the exact layout, the README & Summary sheet, the rating fills, average
-response time from the real sample export, and xlsx round-trip.
+asserts the exact layouts, the README & Summary and per-student-exclusions sheets,
+the rating + performance fills, the retained-only score aggregation and
+percentage consistency, the cap columns, the audit trail, average response time
+from the real sample export, and xlsx round-trips — all driven from real engine
+output and a real `InMemoryDataProvider` (no hardcoded export fixtures).
 
 ## Frontend (UI) and the DataProvider
 

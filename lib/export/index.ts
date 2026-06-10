@@ -15,7 +15,21 @@ export {
   ITEM_ANALYSIS_SUMMARY_HEADERS,
 } from "./item-analysis";
 export { assembleItemAnalysis } from "./assemble";
-export { buildScoreAnalysisWorkbook, SCORE_ANALYSIS_FIXED_HEADERS } from "./score-analysis";
-export { buildGradesWorkbook, GRADES_FIXED_HEADERS } from "./grades";
-export { workbookToBuffer, sanitizeSheetName, RATING_STYLES } from "./sheet-utils";
+export {
+  buildScoreAnalysisWorkbook,
+  assembleScoreAnalysis,
+  SCORE_ANALYSIS_SHEETS,
+} from "./score-analysis";
+export {
+  buildGradesWorkbook,
+  GRADES_STUDENT_HEADERS,
+  GRADES_SHEETS,
+  DEFAULT_SUBJECT_COLUMNS,
+} from "./grades";
+export {
+  buildPerStudentExclusionsSheet,
+  PER_STUDENT_EXCLUSION_HEADERS,
+  PER_STUDENT_EXCLUSION_SHEET_NAME,
+} from "./per-student-exclusions";
+export { workbookToBuffer, sanitizeSheetName, RATING_STYLES, PERFORMANCE_STYLES } from "./sheet-utils";
 export type * from "./types";

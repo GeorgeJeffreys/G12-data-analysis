@@ -12,16 +12,47 @@ import {
   buildItemAnalysisWorkbook,
   buildScoreAnalysisWorkbook,
   buildGradesWorkbook,
+  assembleScoreAnalysis,
   workbookToBuffer,
   ITEM_ANALYSIS_HEADERS,
   ITEM_ANALYSIS_SUMMARY_HEADERS,
+  PER_STUDENT_EXCLUSION_HEADERS,
+  SCORE_ANALYSIS_SHEETS,
+  GRADES_STUDENT_HEADERS,
+  GRADES_SHEETS,
+  DEFAULT_SUBJECT_COLUMNS,
   RATING_STYLES,
+  PERFORMANCE_STYLES,
 } from "@/lib/export";
-import type { ItemResponseFact } from "@/lib/export";
+import type {
+  ItemResponseFact,
+  PerStudentExclusionRecord,
+  GradesInput,
+} from "@/lib/export";
 import { getEngine, responsesFromClean } from "@/lib/engine";
-import type { ItemMeta, ItemStat, ResponseRecord } from "@/lib/engine";
+import type { ItemMeta, ItemStat, PerStudentExclusion, ResponseRecord } from "@/lib/engine";
 import { parseExport, ingestAndClean } from "@/lib/ingest";
+import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import { loadParityFixtures, sampleExportPath } from "./fixtures";
+
+/** Map a provider's confirmed technical incidents to the export record shape. */
+function exclusionRecordsFromProvider(p: InMemoryDataProvider, cycleId: string): PerStudentExclusionRecord[] {
+  const sr = p.getStudentReview(cycleId);
+  if (!sr) return [];
+  return sr.incidents
+    .filter((i) => i.decision === "excluded" && i.itemId)
+    .map((i) => ({
+      participantId: i.studentId,
+      participantName: i.studentName,
+      assessmentName: i.assessmentName,
+      questionId: i.itemId!,
+      questionWording: i.wording,
+      demandLevel: i.demand,
+      reason: i.reason ?? "Confirmed technical fault",
+      decidedBy: i.by ?? "",
+      decidedAt: i.at ?? "",
+    }));
+}
 
 const engine = getEngine();
 const fixtures = loadParityFixtures();
@@ -80,8 +111,8 @@ describe("item analysis workbook — exact layout", () => {
   });
   const wb = buildItemAnalysisWorkbook(input);
 
-  it("has a README & Summary sheet first, then one sheet per assessment", () => {
-    expect(wb.SheetNames).toEqual(["README & Summary", "Applicable Math"]);
+  it("has a README & Summary sheet first, then one sheet per assessment, then exclusions", () => {
+    expect(wb.SheetNames).toEqual(["README & Summary", "Applicable Math", "Per-student exclusions"]);
   });
 
   it("lays out the assessment sheet exactly (title / meta / guide / header)", () => {
@@ -152,7 +183,7 @@ describe("item analysis workbook — exact layout", () => {
     const buf = workbookToBuffer(wb);
     expect(buf.length).toBeGreaterThan(0);
     const reread = XLSXR.read(buf, { type: "buffer" });
-    expect(reread.SheetNames).toEqual(["README & Summary", "Applicable Math"]);
+    expect(reread.SheetNames).toEqual(["README & Summary", "Applicable Math", "Per-student exclusions"]);
   });
 });
 
@@ -215,7 +246,56 @@ describe("item analysis — average response time from real responses", () => {
   });
 });
 
-describe("score analysis workbook", () => {
+describe("item analysis — per-student exclusions sheet", () => {
+  const CYCLE = "may-2026";
+
+  it("emits the sheet with the canonical columns, one row per confirmed exclusion", () => {
+    const provider = new InMemoryDataProvider();
+    provider.loadSampleTechnicalErrors(CYCLE);
+    const records = exclusionRecordsFromProvider(provider, CYCLE);
+    expect(records.length).toBeGreaterThan(0); // the sample fixture confirms ≥1 exclusion
+
+    const { stats, facts } = buildFromFixture();
+    const wb = buildItemAnalysisWorkbook(
+      assembleItemAnalysis({
+        cycleName: "May 2026",
+        assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
+        stats,
+        facts,
+        perStudentExclusions: records,
+      }),
+    );
+
+    expect(wb.SheetNames[wb.SheetNames.length - 1]).toBe("Per-student exclusions");
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student exclusions");
+    expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
+    const dataRows = aoa.slice(1).filter((r) => r.length > 0);
+    expect(dataRows).toHaveLength(records.length);
+    // first record renders in column order
+    expect(String(dataRows[0]![0])).toBe(records[0]!.participantId);
+    expect(String(dataRows[0]![3])).toBe(records[0]!.questionId);
+    expect(String(dataRows[0]![6])).toBe(records[0]!.reason);
+  });
+
+  it("emits a header-only sheet with a note when there are no exclusions", () => {
+    const { stats, facts } = buildFromFixture();
+    const wb = buildItemAnalysisWorkbook(
+      assembleItemAnalysis({
+        cycleName: "May 2026",
+        assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
+        stats,
+        facts,
+        // no perStudentExclusions
+      }),
+    );
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student exclusions");
+    expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
+    expect(String(aoa[1]![0])).toContain("No per-student exclusions");
+    expect(aoa.slice(1).filter((r) => r.length > 0)).toHaveLength(1); // just the note
+  });
+});
+
+describe("score analysis workbook — canonical layout", () => {
   const { participants } = buildFromFixture();
   const a = fixtures[ASSESSMENT]!;
   const responses: ResponseRecord[] = a.responses.map((r) => ({
@@ -224,60 +304,249 @@ describe("score analysis workbook", () => {
     assessmentId: ASSESSMENT,
     score: r.score,
   }));
-  const scores = engine.computeScores(responses, []);
   const items: ItemMeta[] = a.items.map((it) => ({
     itemId: String(it.qid),
     assessmentId: ASSESSMENT,
     majorElement: it.major,
     demandLevel: it.demand,
+    maxScore: 1,
   }));
-  const rollUp = engine.rollUp({ participantScores: scores, responses, items });
-  const wb = buildScoreAnalysisWorkbook({
+  // Drop one item for everyone (cohort) and one (participant, item) for one student.
+  const cohortExcludedItem = items[0]!.itemId;
+  const psStudent = a.responses.find((r) => String(r.qid) !== cohortExcludedItem)!.student;
+  const psItem = a.responses.find((r) => r.student === psStudent && String(r.qid) !== cohortExcludedItem)!.qid;
+  const perStudentExcluded: PerStudentExclusion[] = [{ participantId: psStudent, itemId: String(psItem) }];
+
+  const input = assembleScoreAnalysis({
     assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
     participants,
-    scores,
-    rollUp,
+    responses,
+    items,
+    excludedItemIds: [cohortExcludedItem],
+    perStudentExcluded,
+  });
+  const wb = buildScoreAnalysisWorkbook(input);
+
+  it("has all five canonical sheets in order", () => {
+    expect(wb.SheetNames).toEqual([...SCORE_ANALYSIS_SHEETS]);
   });
 
-  it("has Scores and Summary sheets", () => {
-    expect(wb.SheetNames).toEqual(["Scores", "Summary"]);
+  it("drops both cohort-excluded and per-student-excluded responses from the scored set", () => {
+    // cohort-excluded item never appears
+    expect(input.scoredResponses.some((r) => r.itemId === cohortExcludedItem)).toBe(false);
+    // the per-student (participant, item) pair is dropped, but the item still
+    // appears for OTHER participants.
+    expect(
+      input.scoredResponses.some((r) => r.participantId === psStudent && r.itemId === String(psItem)),
+    ).toBe(false);
+    expect(input.scoredResponses.some((r) => r.itemId === String(psItem))).toBe(true);
   });
 
-  it("has a Raw and % column per assessment plus overall", () => {
-    const header = aoaOf(wb as unknown as XLSXR.WorkBook, "Scores")[0]!;
-    expect(header[0]).toBe("Participant");
-    expect(header).toContain("Applicable Math Raw");
-    expect(header).toContain("Applicable Math %");
-    expect(header).toContain("Overall Raw");
-    expect(header).toContain("Overall %");
+  it("by-assessment sheet has the canonical header on row 6 and consistent percentages", () => {
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Overall Scores by Assessment");
+    expect(aoa[5]).toEqual([
+      "AssessmentName",
+      "ParticipantID",
+      "ParticipantFullName",
+      "ParticipantScore",
+      "AssessmentTotalScore",
+      "ParticipantScorePercentage",
+    ]);
+    const dataRows = aoa.slice(6).filter((r) => r.length > 0);
+    expect(dataRows.length).toBeGreaterThan(0);
+    for (const r of dataRows) {
+      const score = Number(r[3]);
+      const total = Number(r[4]);
+      const pctCell = Number(r[5]);
+      expect(pctCell).toBeCloseTo(Math.round((score / total) * 100 * 100) / 100, 6);
+    }
+    // the per-student-excluded student lost one retained item vs the full count.
+    const theirRow = dataRows.find((r) => String(r[1]) === psStudent)!;
+    expect(Number(theirRow[4])).toBe(a.items.length - 1 /*cohort*/ - 1 /*their own*/);
+  });
+
+  it("major-element and demand-level sheets carry their key columns", () => {
+    const major = aoaOf(wb as unknown as XLSXR.WorkBook, "Overall Scores by Major Element");
+    expect(major[5]).toEqual([
+      "AssessmentName",
+      "QuestionMajorElement",
+      "ParticipantID",
+      "ParticipantFullName",
+      "ParticipantScore",
+      "MajorElementTotalScore",
+      "ParticipantScorePercentage",
+    ]);
+    const demand = aoaOf(wb as unknown as XLSXR.WorkBook, "Overall Scores by Demand Level");
+    expect(demand[5]![1]).toBe("DemandLevel");
+  });
+
+  it("Analysis sheet reports distinct questions and participants per assessment", () => {
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Analysis");
+    expect(aoa[2]).toEqual([
+      "AssessmentName",
+      "Distinct Count of Questions",
+      "Average of AnswerScore",
+      "Distinct Count of Participants",
+    ]);
+    const row = aoa[3]!;
+    expect(row[0]).toBe(ASSESSMENT);
+    expect(Number(row[1])).toBe(a.items.length - 1); // cohort-excluded item gone
+  });
+
+  it("round-trips through a buffer", () => {
+    const reread = XLSXR.read(workbookToBuffer(wb), { type: "buffer" });
+    expect(reread.SheetNames).toEqual([...SCORE_ANALYSIS_SHEETS]);
   });
 });
 
-describe("grades workbook", () => {
-  const { participants } = buildFromFixture();
-  const grades = participants.map((p, i) => ({
-    participantId: p.id,
-    scope: "overall",
-    gradeLabel: i % 2 === 0 ? "Pass" : "Merit",
-    score: 70 + i,
-  }));
-  const wb = buildGradesWorkbook({
-    assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
-    participants,
-    grades,
+describe("grades workbook — canonical layout", () => {
+  const CYCLE = "may-2026";
+
+  // A real provider, exercised so the Distinction safeguard caps at least one
+  // student (lower the Distinction boundary to bring candidates in line, raise
+  // the threshold so some fall short).
+  function makeInput(): GradesInput {
+    const provider = new InMemoryDataProvider();
+    provider.loadSampleTechnicalErrors(CYCLE);
+    provider.setBoundary(CYCLE, "overall", { cutIndex: 0, cutValue: 55 });
+    provider.setSafeguardConfig({ distinctionThreshold: 9 });
+
+    const model = provider.getGrades(CYCLE)!;
+    const safeguard = provider.getDistinctionSafeguard(CYCLE)!;
+    const review = provider.getStudentReview(CYCLE)!;
+    const audit = provider.getAuditLog(CYCLE, "all", "");
+
+    const alias: Record<string, RegExp> = {
+      ApplicableMath: /applicable math/i,
+      EnglishL2: /english/i,
+      ScientificThinking: /scientific/i,
+      ArabicL1: /arabic/i,
+      LifeSuccessSkills: /life/i,
+    };
+    const subjects = DEFAULT_SUBJECT_COLUMNS.map((s) => ({
+      ...s,
+      assessmentId: model.assessments.find((a) => alias[s.key]?.test(a.name))?.id ?? null,
+    }));
+    const capByP = new Map(
+      safeguard.candidates.map((c) => [
+        c.id,
+        {
+          applied: c.result === "capped",
+          reason: c.result === "capped" ? `Fewer than ${safeguard.threshold} top-difficulty questions attempted` : null,
+          overridden: c.result === "override",
+          overrideReason: c.overrideReason,
+        },
+      ]),
+    );
+    const students = model.rows.map((r) => {
+      const cap = capByP.get(r.id);
+      const perAssessment: Record<string, { level: string; score: number | null; pct: number | null }> = {};
+      for (const a of model.assessments) perAssessment[a.id] = { level: r.grades[a.id]?.level ?? "", score: null, pct: null };
+      return {
+        participantId: r.id,
+        participantName: r.label,
+        perAssessment,
+        overallAward: r.award,
+        overallPct: null,
+        capApplied: cap?.applied ?? false,
+        capReason: cap?.reason ?? null,
+        capOverridden: cap?.overridden ?? false,
+        overrideReason: cap?.overrideReason ?? null,
+      };
+    });
+    const n = model.rows.length;
+    return {
+      cycleName: "May 2026",
+      participantCount: n,
+      assessmentCount: model.assessments.length,
+      lockedAt: null,
+      signedOffBy: null,
+      awardLevels: model.awardLevels,
+      performanceLevels: model.performanceLevels,
+      subjects,
+      students,
+      awardDistribution: model.distribution.map((d) => ({ level: d.level, count: d.count, pct: n ? Math.round((d.count / n) * 1000) / 10 : 0 })),
+      performanceDistribution: model.assessments.map((a) => {
+        const counts: Record<string, number> = {};
+        for (const lvl of model.performanceLevels) counts[lvl] = 0;
+        for (const r of model.rows) {
+          const lvl = r.grades[a.id]?.level;
+          if (lvl) counts[lvl] = (counts[lvl] ?? 0) + 1;
+        }
+        return { assessmentName: a.name, counts };
+      }),
+      perStudentExclusions: review.incidents
+        .filter((i) => i.decision === "excluded" && i.itemId)
+        .map((i) => ({
+          participantId: i.studentId,
+          participantName: i.studentName,
+          assessmentName: i.assessmentName,
+          questionId: i.itemId!,
+          questionWording: i.wording,
+          demandLevel: i.demand,
+          reason: i.reason ?? "Confirmed technical fault",
+          decidedBy: i.by ?? "",
+          decidedAt: i.at ?? "",
+        })),
+      audit: audit.entries.map((e) => ({ timestamp: e.ts, actor: e.actorName, action: e.action, detail: e.detail, entity: e.type, entityId: e.cycleId ?? "" })),
+    };
+  }
+
+  const input = makeInput();
+  const wb = buildGradesWorkbook(input);
+
+  it("has the four canonical sheets", () => {
+    expect(wb.SheetNames).toEqual([...GRADES_SHEETS]);
   });
 
-  it("has Grades and Distribution sheets", () => {
-    expect(wb.SheetNames).toEqual(["Grades", "Distribution"]);
+  it("Student Grades has the canonical 22-column header and one row per participant", () => {
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Student Grades");
+    expect(aoa[2]).toEqual([...GRADES_STUDENT_HEADERS]);
+    const dataRows = aoa.slice(3).filter((r) => r.length > 0);
+    expect(dataRows).toHaveLength(input.students.length);
   });
 
-  it("has a grade column per assessment plus overall", () => {
-    const header = aoaOf(wb as unknown as XLSXR.WorkBook, "Grades")[0]!;
-    expect(header).toEqual([
-      "Participant",
-      "Applicable Math Grade",
-      "Overall Grade",
-      "Overall Score",
-    ]);
+  it("cap columns reflect the Distinction safeguard", () => {
+    const capped = input.students.filter((s) => s.capApplied);
+    expect(capped.length).toBeGreaterThan(0); // the engineered scenario caps ≥1
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Student Grades");
+    const dataRows = aoa.slice(3).filter((r) => r.length > 0);
+    // DistinctionCapApplied is column 18; at least one "Yes".
+    expect(dataRows.some((r) => r[18] === "Yes")).toBe(true);
+    // the capped row carries a non-empty CapReason (column 19).
+    const yesRow = dataRows.find((r) => r[18] === "Yes")!;
+    expect(String(yesRow[19]).length).toBeGreaterThan(0);
+  });
+
+  it("colours performance-level cells to match each cell's level", () => {
+    const ws = wb.Sheets["Student Grades"]!;
+    // Rows are sorted in the sheet, so read the level cell's own value (col 2 =
+    // first subject's Level) and assert its fill matches that level's style.
+    let checked = 0;
+    for (let r = 3; r < 3 + input.students.length; r++) {
+      const cell = ws[XLSXR.utils.encode_cell({ r, c: 2 })] as
+        | { v?: string; s?: { fill?: { fgColor?: { rgb?: string } } } }
+        | undefined;
+      const level = cell?.v;
+      if (!level) continue;
+      const lvlIdx = input.performanceLevels.indexOf(level);
+      if (lvlIdx < 0) continue;
+      const expected = (PERFORMANCE_STYLES[lvlIdx]!.fill as { fgColor: { rgb: string } }).fgColor.rgb;
+      expect(cell!.s?.fill?.fgColor?.rgb).toBe(expected);
+      checked += 1;
+    }
+    expect(checked).toBeGreaterThan(0);
+  });
+
+  it("Audit Trail has the header and at least one entry", () => {
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Audit Trail");
+    expect(aoa[2]).toEqual(["Timestamp", "Actor", "Action", "Detail", "Entity", "EntityId"]);
+    expect(aoa.slice(3).filter((r) => r.length > 0).length).toBeGreaterThan(0);
+  });
+
+  it("includes the Per-student Exclusions sheet", () => {
+    expect(wb.SheetNames).toContain("Per-student Exclusions");
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student Exclusions");
+    expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
   });
 });

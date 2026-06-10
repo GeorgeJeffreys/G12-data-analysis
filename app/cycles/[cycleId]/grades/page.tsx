@@ -9,6 +9,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
+import type { DataProvider } from "@/lib/data/provider";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button } from "@/components/ui/primitives";
@@ -52,7 +53,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             <Icon name="doc" />
             Export CSV
           </Button>
-          <Button variant="ghost" onClick={() => { exportExcel(model); provider.recordExport(cycleId, "Grades workbook (Excel)"); }}>
+          <Button variant="ghost" onClick={() => { exportExcel(provider, cycleId, model); provider.recordExport(cycleId, "Grades workbook (Excel)"); }}>
             <Icon name="doc" />
             Export Excel
           </Button>
@@ -269,22 +270,121 @@ function exportCsv(model: GradesModel) {
   downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "grades_may_2026.csv");
 }
 
-async function exportExcel(model: GradesModel) {
-  // Uses the existing export module (lib/export) — same workbook the backend
-  // produces. xlsx-js-style runs fine in the browser.
-  const { buildGradesWorkbook, workbookToBuffer } = await import("@/lib/export");
-  const wb = buildGradesWorkbook({
-    assessments: model.assessments.map((a) => ({ id: a.id, name: a.name })),
-    participants: model.rows.map((r) => ({ id: r.id, label: r.label })),
-    grades: [
-      ...model.rows.flatMap((r) =>
-        model.assessments.map((a) => ({ participantId: r.id, scope: a.id, gradeLabel: r.grades[a.id]?.level ?? null, score: null })),
-      ),
-      ...model.rows.map((r) => ({ participantId: r.id, scope: "overall", gradeLabel: r.award, score: null })),
-    ],
+// Canonical subject slot → assessment alias (keyword), matching the document
+// generator's slot mapping.
+const SUBJECT_ALIAS: Record<string, RegExp> = {
+  ApplicableMath: /applicable math/i,
+  EnglishL2: /english/i,
+  ScientificThinking: /scientific/i,
+  ArabicL1: /arabic/i,
+  LifeSuccessSkills: /life/i,
+};
+
+async function exportExcel(provider: DataProvider, cycleId: string, model: GradesModel) {
+  // Assembles the canonical grades workbook from the REAL provider read-models
+  // (grades, the Distinction safeguard, per-student incidents and the audit log).
+  // Per-subject raw scores aren't exposed by the provider read-models, so the
+  // Score/Pct cells are left blank here; the Level, award, cap, exclusion and
+  // audit columns are all real.
+  const exp = await import("@/lib/export");
+  const cycle = provider.getCycle(cycleId);
+  const review = provider.getStudentReview(cycleId);
+  const safeguard = provider.getDistinctionSafeguard(cycleId);
+  const audit = provider.getAuditLog(cycleId, "all", "");
+
+  const subjects = exp.DEFAULT_SUBJECT_COLUMNS.map((s) => ({
+    ...s,
+    assessmentId:
+      model.assessments.find((a) => SUBJECT_ALIAS[s.key]?.test(a.name) || SUBJECT_ALIAS[s.key]?.test(a.id))?.id ?? null,
+  }));
+
+  const capByP = new Map<string, { applied: boolean; reason: string | null; overridden: boolean; overrideReason: string | null }>();
+  if (safeguard) {
+    for (const c of safeguard.candidates) {
+      capByP.set(c.id, {
+        applied: c.result === "capped",
+        reason:
+          c.result === "capped"
+            ? `Fewer than ${safeguard.threshold} top-difficulty (${safeguard.topDifficultyDemand}) questions attempted`
+            : null,
+        overridden: c.result === "override",
+        overrideReason: c.overrideReason,
+      });
+    }
+  }
+
+  const students = model.rows.map((r) => {
+    const cap = capByP.get(r.id);
+    const perAssessment: Record<string, { level: string; score: number | null; pct: number | null }> = {};
+    for (const a of model.assessments) perAssessment[a.id] = { level: r.grades[a.id]?.level ?? "", score: null, pct: null };
+    return {
+      participantId: r.id,
+      participantName: r.label,
+      perAssessment,
+      overallAward: r.award,
+      overallPct: null,
+      capApplied: cap?.applied ?? false,
+      capReason: cap?.reason ?? null,
+      capOverridden: cap?.overridden ?? false,
+      overrideReason: cap?.overrideReason ?? null,
+    };
   });
-  const buf = workbookToBuffer(wb);
-  // Copy into a plain ArrayBuffer-backed view for Blob (avoids SharedArrayBuffer typing).
+
+  const n = model.rows.length;
+  const awardDistribution = model.distribution.map((d) => ({
+    level: d.level,
+    count: d.count,
+    pct: n ? Math.round((d.count / n) * 1000) / 10 : 0,
+  }));
+  const performanceDistribution = model.assessments.map((a) => {
+    const counts: Record<string, number> = {};
+    for (const lvl of model.performanceLevels) counts[lvl] = 0;
+    for (const r of model.rows) {
+      const lvl = r.grades[a.id]?.level;
+      if (lvl) counts[lvl] = (counts[lvl] ?? 0) + 1;
+    }
+    return { assessmentName: a.name, counts };
+  });
+
+  const perStudentExclusions = (review?.incidents ?? [])
+    .filter((i) => i.decision === "excluded" && i.itemId)
+    .map((i) => ({
+      participantId: i.studentId,
+      participantName: i.studentName,
+      assessmentName: i.assessmentName,
+      questionId: i.itemId!,
+      questionWording: i.wording,
+      demandLevel: i.demand,
+      reason: i.reason ?? "Confirmed technical fault",
+      decidedBy: i.by ?? "",
+      decidedAt: i.at ?? "",
+    }));
+
+  const auditEntries = audit.entries.map((e) => ({
+    timestamp: e.ts,
+    actor: e.actorName,
+    action: e.action,
+    detail: e.detail,
+    entity: e.type,
+    entityId: e.cycleId ?? "",
+  }));
+
+  const wb = exp.buildGradesWorkbook({
+    cycleName: cycle?.name ?? "May 2026",
+    participantCount: n,
+    assessmentCount: model.assessments.length,
+    lockedAt: model.locked ? "Locked" : null,
+    signedOffBy: model.locked ? provider.getCurrentUser().name : null,
+    awardLevels: model.awardLevels,
+    performanceLevels: model.performanceLevels,
+    subjects,
+    students,
+    awardDistribution,
+    performanceDistribution,
+    perStudentExclusions,
+    audit: auditEntries,
+  });
+  const buf = exp.workbookToBuffer(wb);
   const bytes = new Uint8Array(buf.byteLength);
   bytes.set(buf);
   downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "grades_may_2026.xlsx");
