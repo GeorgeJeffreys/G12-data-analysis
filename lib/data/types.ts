@@ -225,3 +225,168 @@ export interface DocumentsModel {
   /** Canonical slot → assessment mapping for display. */
   subjectOrder: { slot: string; assessment: string }[];
 }
+
+// --- Users & access (Settings) ----------------------------------------------
+export type MemberStatus = "active" | "invited";
+
+export interface Member {
+  id: string;
+  name: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  status: MemberStatus;
+  lastActive: string;
+  /** True for the mocked signed-in user. */
+  isCurrent: boolean;
+}
+
+export interface MembersModel {
+  members: Member[];
+  roles: { id: string; name: string }[];
+}
+
+// --- Roles & permissions ----------------------------------------------------
+export interface Capability {
+  id: string;
+  group: string;
+  label: string;
+}
+
+export interface RoleDef {
+  id: string;
+  name: string;
+  isLead: boolean;
+  memberCount: number;
+}
+
+export interface RolesModel {
+  roles: RoleDef[];
+  /** Capabilities grouped for the grid, in display order. */
+  groups: { group: string; capabilities: Capability[] }[];
+  /** matrix[roleId][capabilityId] = granted. */
+  matrix: Record<string, Record<string, boolean>>;
+}
+
+// --- Audit log --------------------------------------------------------------
+export type AuditType =
+  | "exclude"
+  | "boundary"
+  | "lock"
+  | "reopen"
+  | "export"
+  | "document"
+  | "upload"
+  | "cycle"
+  | "validate";
+
+export interface AuditEntry {
+  id: string;
+  /** ISO timestamp. */
+  ts: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  type: AuditType;
+  action: string;
+  detail: string;
+  cycleId: string | null;
+  /** True for the seeded illustrative entries (not from this session's actions). */
+  seeded: boolean;
+}
+
+export interface AuditModel {
+  entries: AuditEntry[];
+  total: number;
+}
+
+export type AuditFilter = "all" | "exclude" | "boundary" | "lock" | "export";
+
+// --- Analytics (Settings/Analytics area) ------------------------------------
+export interface TrendKpi {
+  label: string;
+  value: string;
+  delta: string;
+  points: number[];
+}
+
+export interface AssessmentTrend {
+  name: string;
+  points: number[];
+  now: string;
+  delta: string;
+}
+
+export interface AnalyticsTrends {
+  /** Cycle labels oldest → newest (the last is the real live cycle). */
+  cycleLabels: string[];
+  kpis: TrendKpi[];
+  byAssessment: AssessmentTrend[];
+  /** Award-distribution percentages per cycle (oldest → newest). */
+  awardOverTime: { label: string; dist: Record<string, number> }[];
+  awardLevels: string[];
+  /** True when prior cycles are mock (no real history). */
+  priorsAreMock: boolean;
+}
+
+export interface CompareColumn {
+  cycle: string;
+  mock: boolean;
+  metrics: Record<string, string>;
+  dist: Record<string, number>;
+}
+
+export interface AnalyticsCompare {
+  metrics: { key: string; label: string }[];
+  columns: CompareColumn[];
+  awardLevels: string[];
+  priorsAreMock: boolean;
+}
+
+// --- Configuration (Settings) -----------------------------------------------
+export interface QualityThresholdRow {
+  metric: string;
+  good: string;
+  review: string;
+  flag: string;
+}
+
+export interface RetentionConfig {
+  archiveAfterYears: number;
+  deleteRawAfterArchive: boolean;
+  keepAuditIndefinitely: boolean;
+}
+
+export interface BrandingConfig {
+  accent: string;
+  logoName: string;
+  defaultCertificateTemplate: string;
+}
+
+export interface ConfigModel {
+  /** The engine's active rating thresholds (read-only — they drive item ratings). */
+  thresholds: QualityThresholdRow[];
+  retention: RetentionConfig;
+  branding: BrandingConfig;
+}
+
+// --- New cycle --------------------------------------------------------------
+export interface NewCycleAssessment {
+  id: string;
+  name: string;
+  rtl: boolean;
+  included: boolean;
+  fileName: string | null;
+}
+
+export interface NewCycleModel {
+  defaultName: string;
+  sittingDate: string;
+  assessments: NewCycleAssessment[];
+}
+
+export interface CreateCycleInput {
+  name: string;
+  sittingDate: string;
+  assessmentIds: string[];
+}

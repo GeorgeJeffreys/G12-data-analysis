@@ -17,7 +17,13 @@
  */
 
 import type {
+  AnalyticsCompare,
+  AnalyticsTrends,
+  AuditFilter,
+  AuditModel,
   BoundaryMode,
+  ConfigModel,
+  CreateCycleInput,
   CurrentUser,
   CycleDetail,
   CycleSummary,
@@ -27,8 +33,13 @@ import type {
   GradesModel,
   GradingDefaultsModel,
   IngestModel,
+  MembersModel,
+  NewCycleModel,
+  RetentionConfig,
   ReviewModel,
+  RolesModel,
   BoundaryModel,
+  BrandingConfig,
 } from "./types";
 import type { GradingConfig } from "./grading";
 
@@ -61,6 +72,21 @@ export interface DataProvider {
   /** Student Summary for document generation (only populated once locked). */
   getDocuments(cycleId: string): DocumentsModel | null;
 
+  // settings: users & roles
+  getMembers(): MembersModel;
+  getRoles(): RolesModel;
+
+  // settings: configuration
+  getConfig(): ConfigModel;
+
+  // audit & analytics
+  getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel;
+  getAnalyticsTrends(): AnalyticsTrends;
+  getAnalyticsCompare(): AnalyticsCompare;
+
+  // new cycle
+  getNewCycle(): NewCycleModel;
+
   // writes
   setItemExcluded(
     cycleId: string,
@@ -75,6 +101,26 @@ export interface DataProvider {
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void;
   lockCycle(cycleId: string): void;
   unlockCycle(cycleId: string): void;
+
+  // members & roles mutations
+  inviteMember(email: string, roleId: string): void;
+  setMemberRole(memberId: string, roleId: string): void;
+  removeMember(memberId: string): void;
+  resendInvite(memberId: string): void;
+  createRole(name: string): void;
+  renameRole(roleId: string, name: string): void;
+  setCapability(roleId: string, capabilityId: string, granted: boolean): void;
+
+  // configuration mutations
+  setRetention(patch: Partial<RetentionConfig>): void;
+  setBranding(patch: Partial<BrandingConfig>): void;
+
+  // audit-writing actions (UI-driven export / document generation)
+  recordExport(cycleId: string, detail: string): void;
+  recordDocuments(cycleId: string, detail: string): void;
+
+  // new-cycle action (mock — no DB)
+  createCycle(input: CreateCycleInput): string;
 
   // reactivity (for useSyncExternalStore)
   subscribe(listener: () => void): () => void;

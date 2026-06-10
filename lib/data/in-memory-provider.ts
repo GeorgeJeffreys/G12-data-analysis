@@ -12,9 +12,19 @@ import type { Seed, SeedAssessment } from "./seed-types";
 import type { DataProvider, SetBoundaryInput } from "./provider";
 import {
   PIPELINE,
+  type AnalyticsCompare,
+  type AnalyticsTrends,
   type AssessmentRef,
+  type AuditEntry,
+  type AuditFilter,
+  type AuditModel,
+  type AuditType,
   type BoundaryMode,
   type BoundaryModel,
+  type BrandingConfig,
+  type ConfigModel,
+  type CompareColumn,
+  type CreateCycleInput,
   type CurrentUser,
   type CycleDetail,
   type CycleSummary,
@@ -26,7 +36,13 @@ import {
   type GradingDefaultsModel,
   type IngestModel,
   type ItemRow,
+  type Member,
+  type MembersModel,
+  type NewCycleModel,
+  type RetentionConfig,
   type ReviewModel,
+  type RoleDef,
+  type RolesModel,
   type StudentSummary,
 } from "./types";
 import {
@@ -37,6 +53,17 @@ import {
   DEFAULT_PERFORMANCE_TARGETS,
   DEFAULT_AWARD_TARGETS,
 } from "./grading";
+import {
+  ALL_CAPABILITY_IDS,
+  ANALYTICS_CYCLE_LABELS,
+  CAPABILITY_GROUPS,
+  DEFAULT_ROLES,
+  QUALITY_THRESHOLDS,
+  defaultMatrix,
+  defaultMembers,
+  mockPriors,
+  seedAuditEntries,
+} from "./mock-admin";
 
 const seed = seedJson as unknown as Seed;
 const engine = getEngine();
@@ -79,12 +106,30 @@ export class InMemoryDataProvider implements DataProvider {
   private grading: GradingConfig = defaultGradingConfig();
   private docSettingsByCycle = new Map<string, DocSettings>();
 
+  // admin / audit / config state (all MOCK — see lib/data/mock-admin.ts)
+  private members: Member[] = defaultMembers();
+  private roles: RoleDef[] = DEFAULT_ROLES.map((r) => ({ ...r }));
+  private matrix: Record<string, Record<string, boolean>> = defaultMatrix();
+  private auditEntries: AuditEntry[] = seedAuditEntries("may-2026");
+  private auditSeq = 0;
+  private retention: RetentionConfig = {
+    archiveAfterYears: 3,
+    deleteRawAfterArchive: true,
+    keepAuditIndefinitely: true,
+  };
+  private branding: BrandingConfig = {
+    accent: "#c12c68",
+    logoName: "alsama_logo.svg",
+    defaultCertificateTemplate: "certificate_template.pptx",
+  };
+
   private readonly user: CurrentUser = {
-    id: "u-lead",
-    name: "Workspace Lead",
+    id: "m-rana",
+    // MOCK: no real auth yet. The signed-in user is a Lead (G12 Lead role) so
+    // role-gated controls (Lock, admin) are exercised; swap for the real
+    // Microsoft-authenticated user when Supabase auth lands.
+    name: "Rana Mansour",
     initials: "RM",
-    // MOCK: no real auth yet. Lead role so role-gated controls (Lock) are
-    // exercised; swap for the signed-in user when Supabase auth lands.
     role: "lead_admin",
   };
 
@@ -103,6 +148,24 @@ export class InMemoryDataProvider implements DataProvider {
 
   getCurrentUser(): CurrentUser {
     return this.user;
+  }
+
+  /** Append an audit entry attributed to the current user (newest first). */
+  private audit(type: AuditType, action: string, detail: string, cycleId: string | null): void {
+    const me = this.members.find((m) => m.id === this.user.id);
+    this.auditSeq += 1;
+    this.auditEntries.unshift({
+      id: `live-${this.auditSeq}`,
+      ts: new Date().toISOString(),
+      actorId: this.user.id,
+      actorName: this.user.name,
+      actorRole: me?.roleName ?? "G12 Lead",
+      type,
+      action,
+      detail,
+      cycleId,
+      seeded: false,
+    } satisfies AuditEntry);
   }
 
   // ── helpers ───────────────────────────────────────────────────────────────
@@ -615,9 +678,13 @@ export class InMemoryDataProvider implements DataProvider {
     if (excluded) {
       set.add(itemId);
       if (reason != null) this.reasons.set(`${key}:${itemId}`, reason);
+      const a = this.assessment(assessmentId);
+      this.audit("exclude", "Excluded item", `${a?.name ?? assessmentId} — reason: ${reason ?? "flagged in review"}`, cycleId);
     } else {
       set.delete(itemId);
       this.reasons.delete(`${key}:${itemId}`);
+      const a = this.assessment(assessmentId);
+      this.audit("exclude", "Restored item", `${a?.name ?? assessmentId} — item returned to scoring`, cycleId);
     }
     this.exclusions.set(key, set);
     this.bump();
@@ -639,6 +706,13 @@ export class InMemoryDataProvider implements DataProvider {
       const hi = i > 0 ? (cuts[i - 1] ?? 100) - 1 : 99;
       const lo = i < cuts.length - 1 ? (cuts[i + 1] ?? 0) + 1 : 1;
       cuts[i] = Math.max(lo, Math.min(hi, v));
+    }
+
+    // Audit only deliberate cut/target edits (not every drag tick): when a
+    // single cut value is committed via the table input.
+    if (input.cutIndex != null && input.cutValue != null) {
+      const scopeName = scope === "overall" ? "Overall award" : this.assessment(scope)?.name ?? scope;
+      this.audit("boundary", "Changed boundary", `${scopeName} — cut ${input.cutIndex + 1} set to ${cuts[input.cutIndex]}%`, cycleId);
     }
 
     this.boundaries.set(key, { mode: input.mode ?? cur.mode, cuts, targets });
@@ -665,19 +739,319 @@ export class InMemoryDataProvider implements DataProvider {
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void {
     // MOCK: records the choice in memory only; no DB write and no row mutation.
     // The real provider will call a server action that rewrites the response set.
-    void cycleId;
     void strategy;
+    this.audit("upload", "Resolved duplicates", `Strategy: ${strategy.replace("_", " ")}`, cycleId);
     this.bump();
   }
 
   lockCycle(cycleId: string): void {
     if (this.user.role !== "lead_admin") return;
     this.locked.add(cycleId);
+    const n = seed.liveCycle.participants.length;
+    this.audit("lock", "Locked grades", `${n} students signed off across ${seed.liveCycle.assessments.length} assessments`, cycleId);
     this.bump();
   }
   unlockCycle(cycleId: string): void {
     if (this.user.role !== "lead_admin") return;
     this.locked.delete(cycleId);
+    this.audit("reopen", "Re-opened cycle", "Cycle unlocked for further review", cycleId);
     this.bump();
+  }
+
+  // ── members & roles ───────────────────────────────────────────────────────
+  getMembers(): MembersModel {
+    return {
+      members: this.members.map((m) => ({ ...m, roleName: this.roles.find((r) => r.id === m.roleId)?.name ?? m.roleName })),
+      roles: this.roles.map((r) => ({ id: r.id, name: r.name })),
+    };
+  }
+
+  private roleMemberCount(roleId: string): number {
+    return this.members.filter((m) => m.roleId === roleId).length;
+  }
+
+  getRoles(): RolesModel {
+    return {
+      roles: this.roles.map((r) => ({ ...r, memberCount: this.roleMemberCount(r.id) })),
+      groups: CAPABILITY_GROUPS,
+      matrix: this.matrix,
+    };
+  }
+
+  inviteMember(email: string, roleId: string): void {
+    if (this.user.role !== "lead_admin") return;
+    const clean = email.trim();
+    if (!clean || this.members.some((m) => m.email.toLowerCase() === clean.toLowerCase())) return;
+    const name = clean
+      .split("@")[0]!
+      .split(/[._]/)
+      .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+      .join(" ");
+    const roleName = this.roles.find((r) => r.id === roleId)?.name ?? "Data Scientist";
+    this.members.push({
+      id: `m-${Date.now()}`,
+      name: name || clean,
+      email: clean,
+      roleId,
+      roleName,
+      status: "invited",
+      lastActive: "Invite sent just now",
+      isCurrent: false,
+    });
+    this.audit("upload", "Invited person", `${clean} as ${roleName}`, null);
+    this.bump();
+  }
+  setMemberRole(memberId: string, roleId: string): void {
+    if (this.user.role !== "lead_admin") return;
+    const m = this.members.find((x) => x.id === memberId);
+    const role = this.roles.find((r) => r.id === roleId);
+    if (!m || !role) return;
+    m.roleId = roleId;
+    m.roleName = role.name;
+    this.bump();
+  }
+  removeMember(memberId: string): void {
+    if (this.user.role !== "lead_admin" || memberId === this.user.id) return;
+    this.members = this.members.filter((m) => m.id !== memberId);
+    this.bump();
+  }
+  resendInvite(memberId: string): void {
+    const m = this.members.find((x) => x.id === memberId);
+    if (m && m.status === "invited") {
+      m.lastActive = "Invite re-sent just now";
+      this.bump();
+    }
+  }
+  createRole(name: string): void {
+    if (this.user.role !== "lead_admin") return;
+    const clean = name.trim();
+    if (!clean) return;
+    const id = `role-${Date.now()}`;
+    this.roles.push({ id, name: clean, isLead: false, memberCount: 0 });
+    // New roles start with no capabilities — tick what they need.
+    this.matrix[id] = Object.fromEntries(ALL_CAPABILITY_IDS.map((c) => [c, false]));
+    this.bump();
+  }
+  renameRole(roleId: string, name: string): void {
+    if (this.user.role !== "lead_admin") return;
+    const r = this.roles.find((x) => x.id === roleId);
+    const clean = name.trim();
+    if (!r || !clean) return;
+    r.name = clean;
+    for (const m of this.members) if (m.roleId === roleId) m.roleName = clean;
+    this.bump();
+  }
+  setCapability(roleId: string, capabilityId: string, granted: boolean): void {
+    if (this.user.role !== "lead_admin") return;
+    const row = this.matrix[roleId] ?? (this.matrix[roleId] = {});
+    row[capabilityId] = granted;
+    this.bump();
+  }
+
+  // ── configuration ─────────────────────────────────────────────────────────
+  getConfig(): ConfigModel {
+    return {
+      thresholds: QUALITY_THRESHOLDS,
+      retention: { ...this.retention },
+      branding: { ...this.branding },
+    };
+  }
+  setRetention(patch: Partial<RetentionConfig>): void {
+    this.retention = { ...this.retention, ...patch };
+    this.bump();
+  }
+  setBranding(patch: Partial<BrandingConfig>): void {
+    this.branding = { ...this.branding, ...patch };
+    this.bump();
+  }
+
+  // ── audit ─────────────────────────────────────────────────────────────────
+  getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel {
+    const filterTypes: Record<AuditFilter, AuditType[] | null> = {
+      all: null,
+      exclude: ["exclude"],
+      boundary: ["boundary"],
+      lock: ["lock", "reopen"],
+      export: ["export", "document"],
+    };
+    const types = filterTypes[filter];
+    const q = search.trim().toLowerCase();
+    const entries = this.auditEntries.filter((e) => {
+      if (cycleId && e.cycleId && e.cycleId !== cycleId) return false;
+      if (types && !types.includes(e.type)) return false;
+      if (q && !`${e.action} ${e.detail} ${e.actorName}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+    return { entries, total: this.auditEntries.length };
+  }
+
+  recordExport(cycleId: string, detail: string): void {
+    this.audit("export", "Exported data", detail, cycleId);
+    this.bump();
+  }
+  recordDocuments(cycleId: string, detail: string): void {
+    this.audit("document", "Generated documents", detail, cycleId);
+    this.bump();
+  }
+
+  // ── analytics (real live cycle, mock priors) ──────────────────────────────
+  private liveAggregates() {
+    const cycleId = seed.liveCycle.id;
+    const overallPcts = [...this.overallPctByParticipant(cycleId).values()];
+    const grades = this.getGrades(cycleId);
+    const awardLevels = this.grading.awardLevels;
+    const awardDist: Record<string, number> = {};
+    const n = grades?.rows.length ?? 0;
+    for (const lvl of awardLevels) {
+      const c = grades?.distribution.find((d) => d.level === lvl)?.count ?? 0;
+      awardDist[lvl] = n ? round((c / n) * 100, 0) : 0;
+    }
+    // per-assessment cohort mean + excluded + mean quality
+    const byAssessment: Record<string, number> = {};
+    let totalExcluded = 0;
+    let qualitySum = 0;
+    let qualityCount = 0;
+    for (const a of seed.liveCycle.assessments) {
+      const pcts = [...this.pctByParticipant(cycleId, a).values()].map((v) => v.pct);
+      byAssessment[a.id] = round(mean(pcts), 1);
+      totalExcluded += this.excludedSet(cycleId, a.id).size;
+      for (const it of a.items) {
+        qualitySum += it.qualityIndex;
+        qualityCount += 1;
+      }
+    }
+    return {
+      participants: seed.liveCycle.participants.length,
+      cohortMean: round(mean(overallPcts), 1),
+      median: round(median(overallPcts), 0),
+      sd: round(stddev(overallPcts), 1),
+      itemsScored: seed.liveCycle.assessments.reduce((s, a) => s + a.items.length, 0) - totalExcluded,
+      itemsExcluded: totalExcluded,
+      meanQuality: qualityCount ? Math.round(qualitySum / qualityCount) : 0,
+      awardDist,
+      byAssessment,
+    };
+  }
+
+  getAnalyticsTrends(): AnalyticsTrends {
+    const live = this.liveAggregates();
+    const awardLevels = this.grading.awardLevels;
+    const assessmentIds = seed.liveCycle.assessments.map((a) => a.id);
+    const priors = mockPriors(awardLevels, assessmentIds);
+
+    const series = (pick: (p: { participants: number; cohortMean: number; itemsExcluded: number; meanQuality: number }) => number, liveVal: number) =>
+      [...priors.map(pick), liveVal];
+    const delta = (pts: number[]) => {
+      const a = pts[pts.length - 1] ?? 0;
+      const b = pts[pts.length - 2] ?? a;
+      const d = round(a - b, 1);
+      return `${d >= 0 ? "+" : "−"}${Math.abs(d)} vs last`;
+    };
+    const ptsParticipants = series((p) => p.participants, live.participants);
+    const ptsMean = series((p) => p.cohortMean, live.cohortMean);
+    const ptsExcluded = series((p) => p.itemsExcluded, live.itemsExcluded);
+    const ptsQuality = series((p) => p.meanQuality, live.meanQuality);
+
+    const kpis = [
+      { label: "Participants", value: live.participants.toLocaleString(), delta: delta(ptsParticipants), points: ptsParticipants },
+      { label: "Cohort mean", value: `${live.cohortMean}%`, delta: delta(ptsMean), points: ptsMean },
+      { label: "Items excluded", value: String(live.itemsExcluded), delta: delta(ptsExcluded), points: ptsExcluded },
+      { label: "Mean item quality", value: String(live.meanQuality), delta: delta(ptsQuality), points: ptsQuality },
+    ];
+
+    const byAssessment = seed.liveCycle.assessments.map((a) => {
+      const pts = [...priors.map((p) => p.byAssessment[a.id] ?? 0), live.byAssessment[a.id] ?? 0];
+      const d = round((pts[pts.length - 1] ?? 0) - (pts[pts.length - 2] ?? 0), 1);
+      return { name: a.shortName, points: pts, now: `${live.byAssessment[a.id] ?? 0}%`, delta: `${d >= 0 ? "+" : "−"}${Math.abs(d)}` };
+    });
+
+    const awardOverTime = [
+      ...priors.map((p) => ({ label: p.label, dist: p.awardDist })),
+      { label: ANALYTICS_CYCLE_LABELS[ANALYTICS_CYCLE_LABELS.length - 1] ?? "May 26", dist: live.awardDist },
+    ];
+
+    return {
+      cycleLabels: ANALYTICS_CYCLE_LABELS,
+      kpis,
+      byAssessment,
+      awardOverTime,
+      awardLevels,
+      priorsAreMock: true,
+    };
+  }
+
+  getAnalyticsCompare(): AnalyticsCompare {
+    const live = this.liveAggregates();
+    const awardLevels = this.grading.awardLevels;
+    const prior = mockPriors(awardLevels, seed.liveCycle.assessments.map((a) => a.id))[2]!; // Jan 26
+
+    const topAward = awardLevels[0] ?? "";
+    const lowAward = awardLevels[awardLevels.length - 1] ?? "";
+    const metrics = [
+      { key: "participants", label: "Participants" },
+      { key: "cohortMean", label: "Cohort mean" },
+      { key: "median", label: "Median score" },
+      { key: "sd", label: "Std. dev (σ)" },
+      { key: "itemsScored", label: "Items scored" },
+      { key: "itemsExcluded", label: "Items excluded" },
+      { key: "topShare", label: `${topAward} share` },
+      { key: "lowShare", label: `${lowAward} share` },
+    ];
+
+    const liveCol: CompareColumn = {
+      cycle: seed.liveCycle.name,
+      mock: false,
+      metrics: {
+        participants: live.participants.toLocaleString(),
+        cohortMean: `${live.cohortMean}%`,
+        median: String(live.median),
+        sd: String(live.sd),
+        itemsScored: String(live.itemsScored),
+        itemsExcluded: String(live.itemsExcluded),
+        topShare: `${live.awardDist[topAward] ?? 0}%`,
+        lowShare: `${live.awardDist[lowAward] ?? 0}%`,
+      },
+      dist: live.awardDist,
+    };
+    const priorCol: CompareColumn = {
+      cycle: "January 2026",
+      mock: true,
+      metrics: {
+        participants: prior.participants.toLocaleString(),
+        cohortMean: `${prior.cohortMean}%`,
+        median: String(prior.median),
+        sd: String(prior.sd),
+        itemsScored: String(prior.itemsScored),
+        itemsExcluded: String(prior.itemsExcluded),
+        topShare: `${prior.awardDist[topAward] ?? 0}%`,
+        lowShare: `${prior.awardDist[lowAward] ?? 0}%`,
+      },
+      dist: prior.awardDist,
+    };
+
+    return { metrics, columns: [liveCol, priorCol], awardLevels, priorsAreMock: true };
+  }
+
+  // ── new cycle ─────────────────────────────────────────────────────────────
+  getNewCycle(): NewCycleModel {
+    return {
+      defaultName: "May 2026",
+      sittingDate: "14 May 2026",
+      assessments: seed.liveCycle.assessments.map((a) => ({
+        id: a.id,
+        name: a.name,
+        rtl: a.rtl,
+        included: true,
+        fileName: null,
+      })),
+    };
+  }
+
+  createCycle(input: CreateCycleInput): string {
+    // MOCK: cycles need the database. Records the intent in the audit log and
+    // returns the live cycle id (the only one with real data) so navigation works.
+    this.audit("cycle", "Created cycle", `${input.name} — ${input.assessmentIds.length} assessments`, seed.liveCycle.id);
+    this.bump();
+    return seed.liveCycle.id;
   }
 }
