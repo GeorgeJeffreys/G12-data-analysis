@@ -292,6 +292,43 @@ nothing hardcodes band names or counts:
   the four engine ratings (`scripts/build-seed.mts` `qualityIndex`), not a
   fabricated statistic.
 
+## Document generation (certificates & reports) and its swap point
+
+Per-student PDFs are generated from PowerPoint templates once grades are locked.
+The UI depends only on the **`DocumentGenerator`** interface
+(`lib/documents/generator.ts`) and the types in `lib/documents/types.ts` — never
+on the Python renderer or LibreOffice directly.
+
+- **Student Summary, not a spreadsheet.** `getDocuments(cycleId)` builds the
+  Student Summary (name, `RESULTID` = ParticipantID, overall award, the five
+  performance levels + stars) from the **locked-grades read-model**. It is empty
+  until the cycle is locked. Subjects are mapped to the template's fixed
+  **S1..S5 slots by an explicit alias** (S1 Applicable Math, S2 Scientific
+  Thinking, S3 Arabic 1st, S4 English 2nd, S5 Life Success Skills) — by keyword,
+  **not by position**, because the template order differs from the suite's.
+- **Tokens.** Certificate: `{{NAME}}`, `{{AWARD}}`, `{{RESULTID}}`. Report:
+  `{{NAME}}`, `{{S1..S5_LEVEL}}`/`{{S1..S5_STARS}}`, `{{RESULTID}}`. `{{RESULTID}}`
+  **replaces the certificate's baked-in fixed ID**, and test centre / exam date /
+  issue date are **per-cycle settings** (`setDocumentSettings`); the renderer
+  normalises those baked/placeholder values to tokens before filling. Stars are
+  derived from the level, never entered.
+- **Dev implementation:** `HttpDocumentGenerator` POSTs the Student Summary +
+  uploaded template(s) to `POST /api/documents/generate` (Node runtime), which
+  shells out to `scripts/doc_gen.py` (adapted from the reference `gen.py`):
+  python-pptx fill → LibreOffice (`soffice --convert-to pdf`) → one zip per type.
+  Artifacts stream back through `GET /api/documents/download` (path-guarded).
+  Verified end-to-end against both real templates and the seeded cycle —
+  18 students × 2 docs = 36 PDFs, with the alias mapping and Result-ID
+  replacement confirmed in the rendered output.
+- **Fonts:** Barlow is fetched; **Georgia Pro Condensed** (certificate name line)
+  is proprietary and detected-as-absent — the UI warns that a substitute will be
+  used and surfaces the "embed fonts in the template" guidance.
+- **Swap point / deployment:** **do not render in a Vercel serverless function** —
+  LibreOffice is too heavy. Production implements the same `DocumentGenerator`
+  against a **dedicated Python worker** (queue + object storage for artifacts);
+  only `lib/documents/generator.ts` changes. This sits alongside the Supabase
+  swap as the two production follow-ons.
+
 ## What is stubbed / deferred (backend)
 
 - **The engine itself is the stub.** It is a faithful TS implementation, kept
