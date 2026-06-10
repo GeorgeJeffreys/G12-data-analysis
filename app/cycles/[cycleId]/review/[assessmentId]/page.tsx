@@ -119,8 +119,7 @@ export default function ReviewPage({
         { label: "May 2026", href: `/cycles/${cycleId}` },
         { label: "Item review & scoring" },
       ]}
-      stageIndex={3}
-      range={[2, 3]}
+      stageIndex={2}
       stageAction={
         <Link href={`/cycles/${cycleId}/boundaries`}>
           <Button variant="pri">

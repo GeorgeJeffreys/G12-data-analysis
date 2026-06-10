@@ -21,6 +21,7 @@ export const PIPELINE = [
   "Ingest",
   "Validate",
   "Review",
+  "Student review",
   "Score",
   "Boundaries",
   "Grades",

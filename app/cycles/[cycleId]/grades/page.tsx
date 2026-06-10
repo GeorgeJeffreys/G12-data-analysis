@@ -45,7 +45,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         { label: "May 2026", href: `/cycles/${cycleId}` },
         { label: "Grades & sign-off" },
       ]}
-      stageIndex={5}
+      stageIndex={6}
       actions={
         <div style={{ display: "flex", gap: 8 }}>
           <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>

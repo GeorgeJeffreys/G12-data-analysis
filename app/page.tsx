@@ -95,7 +95,7 @@ export default function CyclesDashboard() {
                         <span style={{ width: 9, height: 9, borderRadius: 999, background: H.pink, flex: "0 0 auto" }} />
                       )}
                       <span style={{ fontWeight: 500, fontSize: 12.5 }}>{c.stageLabel}</span>
-                      <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{c.stepsDone}/7</span>
+                      <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{c.stepsDone}/8</span>
                     </div>
                   </td>
                   <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{c.participants.toLocaleString()}</td>
