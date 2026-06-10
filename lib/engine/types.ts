@@ -110,9 +110,22 @@ export interface RollUpInput {
   excludedItemIds?: string[];
 }
 
+/**
+ * A single (participant, item) response excluded for that one student only — a
+ * technical fault on that question for that student. Removing it drops the
+ * response from BOTH the student's score AND that item's cohort statistics, so a
+ * glitched response can't skew the cohort psychometrics.
+ */
+export interface PerStudentExclusion {
+  participantId: string;
+  itemId: string;
+}
+
 export interface ItemStatsInput {
   responses: ResponseRecord[];
   items?: ItemMeta[];
+  /** Responses to drop per-student before computing item stats. */
+  perStudentExcluded?: PerStudentExclusion[];
 }
 
 // --- Ingest contract (Section 8: ingestAndClean) ----------------------------

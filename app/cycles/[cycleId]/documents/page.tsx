@@ -12,6 +12,7 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { cyclesSubnav } from "@/lib/ui/subnav";
 import { Button, Card, Pill } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { getDocumentGenerator } from "@/lib/documents/generator";
@@ -109,6 +110,8 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
       });
       setResult(res);
       setStep("results");
+      const total = Object.values(res.kinds).reduce((s, k) => s + (k?.complete ?? 0), 0);
+      provider.recordDocuments(cycleId, `${total} PDF(s) across ${kinds.join(" + ")}`);
     } catch (e) {
       setError((e as Error).message);
       setStep("config");
@@ -123,7 +126,9 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
 
   return (
     <Shell
+      active="Cycles"
       crumb={crumb}
+      subnav={cyclesSubnav(cycleId, "documents")}
       actions={
         <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.good, fontWeight: 700, fontSize: 12 }}>
           <Mark kind="pass" size={14} /> Grades locked
@@ -269,7 +274,9 @@ function ResultsView({
 
   return (
     <Shell
+      active="Cycles"
       crumb={[...crumb, { label: "Results" }]}
+      subnav={cyclesSubnav(model.cycleId, "documents")}
       actions={
         <div style={{ display: "flex", gap: 8 }}>
           {kinds.map((k) =>

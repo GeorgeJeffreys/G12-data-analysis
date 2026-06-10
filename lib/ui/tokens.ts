@@ -51,6 +51,7 @@ export const PIPELINE_STAGES = [
   "Ingest",
   "Validate",
   "Review",
+  "Student review",
   "Score",
   "Boundaries",
   "Grades",

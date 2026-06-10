@@ -17,7 +17,13 @@
  */
 
 import type {
+  AnalyticsCompare,
+  AnalyticsTrends,
+  AuditFilter,
+  AuditModel,
   BoundaryMode,
+  ConfigModel,
+  CreateCycleInput,
   CurrentUser,
   CycleDetail,
   CycleSummary,
@@ -27,10 +33,25 @@ import type {
   GradesModel,
   GradingDefaultsModel,
   IngestModel,
+  MembersModel,
+  NewCycleModel,
+  RetentionConfig,
   ReviewModel,
+  RolesModel,
   BoundaryModel,
+  BrandingConfig,
+  StudentReviewModel,
+  DistinctionSafeguardModel,
+  IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
+
+/** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
+export interface TechnicalErrorRow {
+  student: string;
+  question: string;
+  error: string;
+}
 
 export interface SetBoundaryInput {
   mode?: BoundaryMode;
@@ -58,8 +79,27 @@ export interface DataProvider {
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null;
   getGrades(cycleId: string): GradesModel | null;
   getGradingDefaults(): GradingDefaultsModel;
+  /** Per-student technical exclusions (optional Student-review step). */
+  getStudentReview(cycleId: string): StudentReviewModel | null;
+  /** Distinction safeguard for one assessment scope (grading stage). */
+  getDistinctionSafeguard(cycleId: string, scope?: string): DistinctionSafeguardModel | null;
   /** Student Summary for document generation (only populated once locked). */
   getDocuments(cycleId: string): DocumentsModel | null;
+
+  // settings: users & roles
+  getMembers(): MembersModel;
+  getRoles(): RolesModel;
+
+  // settings: configuration
+  getConfig(): ConfigModel;
+
+  // audit & analytics
+  getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel;
+  getAnalyticsTrends(): AnalyticsTrends;
+  getAnalyticsCompare(): AnalyticsCompare;
+
+  // new cycle
+  getNewCycle(): NewCycleModel;
 
   // writes
   setItemExcluded(
@@ -75,6 +115,38 @@ export interface DataProvider {
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void;
   lockCycle(cycleId: string): void;
   unlockCycle(cycleId: string): void;
+
+  // members & roles mutations
+  inviteMember(email: string, roleId: string): void;
+  setMemberRole(memberId: string, roleId: string): void;
+  removeMember(memberId: string): void;
+  resendInvite(memberId: string): void;
+  createRole(name: string): void;
+  renameRole(roleId: string, name: string): void;
+  setCapability(roleId: string, capabilityId: string, granted: boolean): void;
+
+  // per-student technical exclusions (Student review)
+  uploadTechnicalErrors(cycleId: string, fileName: string, rows: TechnicalErrorRow[]): void;
+  loadSampleTechnicalErrors(cycleId: string): void;
+  clearTechnicalErrors(cycleId: string): void;
+  setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void;
+
+  // distinction safeguard (grading stage)
+  confirmDistinctionCaps(cycleId: string): void;
+  overrideDistinctionCap(cycleId: string, studentId: string, reason: string): void;
+  undoDistinctionOverride(cycleId: string, studentId: string): void;
+
+  // configuration mutations
+  setRetention(patch: Partial<RetentionConfig>): void;
+  setBranding(patch: Partial<BrandingConfig>): void;
+  setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void;
+
+  // audit-writing actions (UI-driven export / document generation)
+  recordExport(cycleId: string, detail: string): void;
+  recordDocuments(cycleId: string, detail: string): void;
+
+  // new-cycle action (mock — no DB)
+  createCycle(input: CreateCycleInput): string;
 
   // reactivity (for useSyncExternalStore)
   subscribe(listener: () => void): () => void;

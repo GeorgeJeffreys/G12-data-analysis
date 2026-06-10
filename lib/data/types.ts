@@ -21,6 +21,7 @@ export const PIPELINE = [
   "Ingest",
   "Validate",
   "Review",
+  "Student review",
   "Score",
   "Boundaries",
   "Grades",
@@ -65,6 +66,17 @@ export interface CycleDetail {
   assessments: AssessmentRef[];
 }
 
+/** Optional technical-errors spreadsheet attached at ingest (never gates progress). */
+export interface TechnicalErrorsUpload {
+  uploaded: boolean;
+  fileName: string | null;
+  incidentCount: number;
+  matchedCount: number;
+  preview: { headers: string[]; rows: (string | number | null)[][] };
+  /** True when populated from the labelled sample fixture rather than a real file. */
+  sample: boolean;
+}
+
 export interface IngestModel {
   cycleId: string;
   fileName: string;
@@ -74,6 +86,7 @@ export interface IngestModel {
   preview: SeedPreview;
   duplicates: number;
   canContinue: boolean;
+  technicalErrors: TechnicalErrorsUpload;
 }
 
 export interface ItemRow {
@@ -224,4 +237,241 @@ export interface DocumentsModel {
   settings: DocSettings;
   /** Canonical slot → assessment mapping for display. */
   subjectOrder: { slot: string; assessment: string }[];
+}
+
+// --- Users & access (Settings) ----------------------------------------------
+export type MemberStatus = "active" | "invited";
+
+export interface Member {
+  id: string;
+  name: string;
+  email: string;
+  roleId: string;
+  roleName: string;
+  status: MemberStatus;
+  lastActive: string;
+  /** True for the mocked signed-in user. */
+  isCurrent: boolean;
+}
+
+export interface MembersModel {
+  members: Member[];
+  roles: { id: string; name: string }[];
+}
+
+// --- Roles & permissions ----------------------------------------------------
+export interface Capability {
+  id: string;
+  group: string;
+  label: string;
+}
+
+export interface RoleDef {
+  id: string;
+  name: string;
+  isLead: boolean;
+  memberCount: number;
+}
+
+export interface RolesModel {
+  roles: RoleDef[];
+  /** Capabilities grouped for the grid, in display order. */
+  groups: { group: string; capabilities: Capability[] }[];
+  /** matrix[roleId][capabilityId] = granted. */
+  matrix: Record<string, Record<string, boolean>>;
+}
+
+// --- Audit log --------------------------------------------------------------
+export type AuditType =
+  | "exclude"
+  | "boundary"
+  | "lock"
+  | "reopen"
+  | "export"
+  | "document"
+  | "upload"
+  | "cycle"
+  | "validate"
+  /** Per-student technical exclusion / keep, and Distinction-safeguard caps & overrides. */
+  | "student"
+  | "safeguard";
+
+export interface AuditEntry {
+  id: string;
+  /** ISO timestamp. */
+  ts: string;
+  actorId: string;
+  actorName: string;
+  actorRole: string;
+  type: AuditType;
+  action: string;
+  detail: string;
+  cycleId: string | null;
+  /** True for the seeded illustrative entries (not from this session's actions). */
+  seeded: boolean;
+}
+
+export interface AuditModel {
+  entries: AuditEntry[];
+  total: number;
+}
+
+export type AuditFilter = "all" | "exclude" | "boundary" | "lock" | "export";
+
+// --- Analytics (Settings/Analytics area) ------------------------------------
+export interface TrendKpi {
+  label: string;
+  value: string;
+  delta: string;
+  points: number[];
+}
+
+export interface AssessmentTrend {
+  name: string;
+  points: number[];
+  now: string;
+  delta: string;
+}
+
+export interface AnalyticsTrends {
+  /** Cycle labels oldest → newest (the last is the real live cycle). */
+  cycleLabels: string[];
+  kpis: TrendKpi[];
+  byAssessment: AssessmentTrend[];
+  /** Award-distribution percentages per cycle (oldest → newest). */
+  awardOverTime: { label: string; dist: Record<string, number> }[];
+  awardLevels: string[];
+  /** True when prior cycles are mock (no real history). */
+  priorsAreMock: boolean;
+}
+
+export interface CompareColumn {
+  cycle: string;
+  mock: boolean;
+  metrics: Record<string, string>;
+  dist: Record<string, number>;
+}
+
+export interface AnalyticsCompare {
+  metrics: { key: string; label: string }[];
+  columns: CompareColumn[];
+  awardLevels: string[];
+  priorsAreMock: boolean;
+}
+
+// --- Configuration (Settings) -----------------------------------------------
+export interface QualityThresholdRow {
+  metric: string;
+  good: string;
+  review: string;
+  flag: string;
+}
+
+export interface RetentionConfig {
+  archiveAfterYears: number;
+  deleteRawAfterArchive: boolean;
+  keepAuditIndefinitely: boolean;
+}
+
+export interface BrandingConfig {
+  accent: string;
+  logoName: string;
+  defaultCertificateTemplate: string;
+}
+
+export interface ConfigModel {
+  /** The engine's active rating thresholds (read-only — they drive item ratings). */
+  thresholds: QualityThresholdRow[];
+  retention: RetentionConfig;
+  branding: BrandingConfig;
+  safeguard: SafeguardConfig;
+}
+
+// --- New cycle --------------------------------------------------------------
+export interface NewCycleAssessment {
+  id: string;
+  name: string;
+  rtl: boolean;
+  included: boolean;
+  fileName: string | null;
+}
+
+export interface NewCycleModel {
+  defaultName: string;
+  sittingDate: string;
+  assessments: NewCycleAssessment[];
+}
+
+export interface CreateCycleInput {
+  name: string;
+  sittingDate: string;
+  assessmentIds: string[];
+}
+
+// --- Per-student technical exclusions (Student review step) ------------------
+export type IncidentDecision = "excluded" | "kept" | null;
+
+export interface TechnicalIncident {
+  id: string;
+  studentId: string;
+  studentName: string;
+  assessmentId: string;
+  assessmentName: string;
+  itemId: string | null; // null when the row couldn't be matched to a real item
+  questionLabel: string;
+  demand: string | null;
+  wording: string | null;
+  rtl: boolean;
+  error: string;
+  decision: IncidentDecision;
+  reason: string | null;
+  by: string | null;
+  at: string | null;
+}
+
+export interface StudentReviewModel {
+  cycleId: string;
+  uploaded: boolean;
+  sample: boolean;
+  fileName: string | null;
+  incidents: TechnicalIncident[];
+  counts: { incidents: number; excluded: number; kept: number; awaiting: number; students: number };
+}
+
+// --- Distinction safeguard (grading stage) ----------------------------------
+export type SafeguardResult = "pass" | "capped" | "override";
+
+export interface DistinctionCandidate {
+  id: string;
+  name: string;
+  topDifficultyAnswered: number;
+  meets: boolean;
+  provisionalAward: string;
+  cappedAward: string;
+  result: SafeguardResult;
+  overrideReason: string | null;
+  overrideBy: string | null;
+}
+
+export interface DistinctionSafeguardModel {
+  cycleId: string;
+  threshold: number;
+  topDifficultyDemand: string;
+  topDifficultyPool: number;
+  scope: string;
+  scopes: { id: string; label: string }[];
+  topAward: string;
+  cappedTo: string;
+  candidates: DistinctionCandidate[];
+  counts: { inLine: number; meet: number; capped: number; overridden: number };
+  canOverride: boolean;
+  /** // CONFIRM: "answered" is treated as attempted (a non-blank response), not "answered correctly". */
+  attemptedNote: string;
+}
+
+// --- Safeguard configuration (Settings → Configuration) ----------------------
+export interface SafeguardConfig {
+  distinctionThreshold: number;
+  topDifficultyDemand: string;
+  demandLevels: string[];
 }

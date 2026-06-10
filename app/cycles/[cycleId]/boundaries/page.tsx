@@ -81,7 +81,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
         { label: "May 2026", href: `/cycles/${cycleId}` },
         { label: "Scoring & grade boundaries" },
       ]}
-      stageIndex={4}
+      stageIndex={5}
       actions={
         <div style={{ display: "flex", border: `1px solid ${H.line2}`, borderRadius: 8, overflow: "hidden" }}>
           {model.scopes.map((s, i) => (
