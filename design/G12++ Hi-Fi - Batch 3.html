@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>G12++ Exam Processing Suite — Hi-Fi (Batch 3 · Student-by-student review)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=Sofia+Sans:wght@400;500;600;700;800&family=Yellowtail&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; }
+  * { -webkit-font-smoothing: antialiased; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="hf.jsx"></script>
+<script type="text/babel" src="hfA.jsx"></script>
+<script type="text/babel" src="hfB.jsx"></script>
+<script type="text/babel" src="hfSettings.jsx"></script>
+<script type="text/babel" src="hfStudents.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="ingest" title="Ingest & validate — addition"
+        subtitle="Same screen, now with an optional second upload for the technical-errors spreadsheet (student · question · error). Optional, validated like the main export, and never blocks progress.">
+        <DCArtboard id="i1" label="Ingest & validate · with technical-errors file added" width={1180} height={1140}><HFIngest /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="students" title="Student review — new optional step (after Review, before Score)"
+        subtitle="Per-student technical exclusions. An exclusion here removes one question for one student only — kept visually distinct from the cohort-wide item exclusion. The step is skippable when no faults file was uploaded.">
+        <DCArtboard id="st1" label="A · No file uploaded — empty & skippable" width={1180} height={640}><HFStudentExclusions state="empty" /></DCArtboard>
+        <DCArtboard id="st2" label="B · Incidents awaiting decisions" width={1180} height={1060}><HFStudentExclusions state="awaiting" /></DCArtboard>
+        <DCArtboard id="st3" label="C · All resolved" width={1180} height={920}><HFStudentExclusions state="resolved" /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="distinction" title="Distinction safeguard — new (grading / sign-off stage)"
+        subtitle="Runs on provisional awards. A Distinction needs ≥ X top-difficulty questions answered (X set in Settings, default 3); short candidates cap to Advanced achievement. A Lead can override with a reason.">
+        <DCArtboard id="d1" label="Some capped" width={1180} height={900}><HFDistinction state="capped" /></DCArtboard>
+        <DCArtboard id="d2" label="All students pass — nothing to cap" width={1180} height={940}><HFDistinction state="allpass" /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="settings" title="Settings → Configuration — addition"
+        subtitle="The Distinction-safeguard threshold (default 3) and what counts as top-difficulty (highest demand level) live in the existing configuration screen.">
+        <DCArtboard id="cfg" label="Configuration · with Distinction safeguard block" width={1180} height={1000}><HFConfig /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
