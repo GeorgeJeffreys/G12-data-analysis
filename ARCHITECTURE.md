@@ -96,8 +96,8 @@ The engine lives behind a single interface, `ComputationEngine`
 interface ComputationEngine {
   readonly version: string;
   ingestAndClean(rawExport): { cleanedResponses, validationReport };
-  computeItemStats({ responses, items? }): ItemStat[];
-  computeScores(responses, excludedItemIds): ParticipantScore[];
+  computeItemStats({ responses, items?, perStudentExcluded? }): ItemStat[];
+  computeScores(responses, excludedItemIds, perStudentExcluded?): ParticipantScore[];
   rollUp({ participantScores, responses, items, excludedItemIds? }): RollUp;
 }
 ```
@@ -139,6 +139,28 @@ data scientist's published p-value, item-total, point-biserial and discriminatio
 for **all 177 items across the five assessments** within rounding tolerance, with
 ratings and overall review matching exactly. `computeScores` is separately
 checked for self-consistency against the raw response matrix.
+
+### Per-student technical exclusions (the one deliberate interface change)
+
+A technical fault can hit **one student on one question** (a frozen tool, an
+image that failed to load). That single response must be removed from **both**
+that student's score **and** that item's cohort statistics — a glitched response
+must not skew the cohort psychometrics. This is the only deliberate extension to
+the engine interface:
+
+- `PerStudentExclusion = { participantId, itemId }` (`lib/engine/types.ts`).
+- `computeScores` and `computeItemStats` take an optional `perStudentExcluded`
+  set and **filter those (participant, item) responses upfront** before any
+  maths runs (`perStudentKey` / `perStudentSet` in `lib/engine/stats.ts`).
+- **Parity-safe by construction:** with an empty/absent set the code path is
+  byte-identical to the baseline, so the 177-item parity test is untouched.
+  `tests/engine.perstudent.test.ts` adds four tests: empty set ≡ baseline (for
+  both scores and item stats), and a single exclusion drops the item from only
+  that student's score and shrinks that one item's cohort `n` / `p-value`.
+- The provider derives the exclusion set from **confirmed** technical incidents
+  (`perStudentExclusions(cycleId, assessmentId?)`) and threads it through every
+  scoring and item-stats call, so item-review KPIs, boundaries and grades all
+  reflect per-student faults live.
 
 ## Ingest + validation (Sections 5 & 10)
 
@@ -247,8 +269,10 @@ the shell.
 | Cycles | Cycle overview (Pipeline) | `/cycles/[cycleId]` |
 | Cycles | Ingest & validate | `/cycles/[cycleId]/ingest` |
 | Cycles | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
+| Cycles | Student review (per-student exclusions) | `/cycles/[cycleId]/student-review` |
 | Cycles | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
 | Cycles | Grades & sign-off | `/cycles/[cycleId]/grades` |
+| Cycles | Distinction safeguard | `/cycles/[cycleId]/grades/distinction` |
 | Cycles | Audit log | `/cycles/[cycleId]/audit` |
 | Cycles | Certificates / documents | `/cycles/[cycleId]/documents` |
 | Analytics | Trends | `/analytics` |
@@ -284,10 +308,51 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   PRIORS" banner + tags), since there's no real cross-cycle history.
 - **Configuration** (`getConfig`): the item-quality thresholds shown are the
   engine's **real active rating rules** (display-only — editing them needs an
-  engine change); the grade-vocabulary defaults editor is real and editable;
-  data-retention and branding are mock per-workspace settings.
+  engine change); the grade-vocabulary defaults editor is real and editable; the
+  **Distinction-safeguard** block (threshold + top-difficulty demand) is real and
+  drives the grading-stage safeguard; data-retention and branding are mock
+  per-workspace settings.
 - **New cycle** (`createCycle`): records the intent in the audit log and returns
   the live cycle (no DB) — clearly labelled mock.
+
+### Student review & Distinction safeguard (the new workflow)
+
+The pipeline stepper is now eight stages: **Ingest → Validate → Review →
+Student review → Score → Boundaries → Grades → Export**. Two human gates were
+added around per-student fairness.
+
+- **Optional technical-errors upload (Ingest).** A second, optional spreadsheet
+  (`student · question · error`) can be attached at Ingest. It is parsed
+  client-side (`lib/data/parse-technical-errors.ts`, SheetJS — real path) and
+  **never gates progress**. `uploadTechnicalErrors` turns rows into per-student
+  incident records; unmatched student/question cells are kept and shown as
+  "unmatched" rather than dropped. `loadSampleTechnicalErrors` provides a small,
+  **clearly-labelled `SAMPLE`** fixture whose every incident references a *real*
+  seeded participant and item, so its exclusions genuinely flow into scoring.
+- **Student review (`/student-review`, `getStudentReview`).** Lists incidents
+  grouped by student or by question; each is decided **exclude / keep** with a
+  reason. A `ScopeLegend` makes the per-student scope unmistakable vs. the
+  cohort-wide item exclusion on Review. Confirmed exclusions feed
+  `perStudentExclusions` → the engine (above), nudging that item's cohort
+  psychometrics and that student's score. The step is empty/skippable when no
+  file was added. Every decision is audit-logged (`student` type).
+- **Distinction safeguard (`/grades/distinction`, `getDistinctionSafeguard`).**
+  Runs on the **provisional awards from boundaries**: a top award is only kept
+  when the student **attempted at least _threshold_ top-difficulty questions**
+  (default 3; "top-difficulty" = the highest demand level present, configurable
+  in Settings). Shortfalls cap the award to the next level (e.g.
+  Distinction → Advanced); a **Lead** can override with a recorded reason. Caps
+  flow into the grade matrix (`getGrades`), and caps/overrides are audit-logged
+  (`safeguard` type). **`// CONFIRM`:** "answered" is treated as *attempted* (a
+  non-blank response), not "answered correctly" — flagged in `attemptedNote` and
+  isolated in `topDiffAnswered` so it is a one-line change.
+  - **Honest numbers.** Everything is computed from the real seeded cycle. That
+    cohort's overall scores top out at ~65%, **below** the default 75%
+    Distinction cut, so the safeguard truthfully reports *no candidates in line*
+    by default and renders an explicit empty state. Lowering the Distinction
+    boundary brings real candidates in line, and per-student exclusions of
+    top-difficulty items are the genuine lever that can push one below the
+    threshold — no candidate counts are fabricated.
 
 ### Grade vocabulary (the real named levels)
 
@@ -335,6 +400,11 @@ nothing hardcodes band names or counts:
   action is a provider **stub** (records the choice, no row mutation). The sample
   export has no duplicates, so the panel doesn't appear on the live cycle.
 - **"Start new cycle"** is a no-op (needs the database).
+- **Technical-errors data.** The upload + parse path is real, but the seed has no
+  attached faults file. The `Load sample` button injects a small fixture flagged
+  `SAMPLE` everywhere it appears; its incidents point at real seeded
+  students/items so the resulting per-student exclusions are genuinely computed,
+  not faked.
 - **Quality index** (the 0–100 bar in item review) is a transparent composite of
   the four engine ratings (`scripts/build-seed.mts` `qualityIndex`), not a
   fabricated statistic.
