@@ -89,6 +89,15 @@ function HIco({ name, size = 15, color = 'currentColor' }) {
     case 'plus':   return <svg viewBox="0 0 16 16" style={st}><path d="M8 3v10M3 8h10" {...p}/></svg>;
     case 'arrow':  return <svg viewBox="0 0 16 16" style={st}><path d="M3 8h10M9 4l4 4-4 4" {...p}/></svg>;
     case 'doc':    return <svg viewBox="0 0 16 16" style={st}><path d="M4 2.5h5l3 3v8H4z" {...p}/><path d="M9 2.5v3h3" {...p}/></svg>;
+    case 'download': return <svg viewBox="0 0 16 16" style={st}><path d="M8 2.5v7M5 7l3 3 3-3M3 13h10" {...p}/></svg>;
+    case 'dots':   return <svg viewBox="0 0 16 16" style={st} fill={color} stroke="none"><circle cx="3.5" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/><circle cx="12.5" cy="8" r="1.3"/></svg>;
+    case 'filter': return <svg viewBox="0 0 16 16" style={st}><path d="M2.5 4h11L9.5 9v3.5l-3 1.5V9z" {...p}/></svg>;
+    case 'trash':  return <svg viewBox="0 0 16 16" style={st}><path d="M3.5 4.5h9M6 4.5V3h4v1.5M5 4.5l.6 9h4.8l.6-9" {...p}/></svg>;
+    case 'mail':   return <svg viewBox="0 0 16 16" style={st}><rect x="2.5" y="4" width="11" height="8" rx="1.2" {...p}/><path d="M3 5l5 4 5-4" {...p}/></svg>;
+    case 'refresh':return <svg viewBox="0 0 16 16" style={st}><path d="M13 6a5 5 0 10.5 4M13 3v3h-3" {...p}/></svg>;
+    case 'award':  return <svg viewBox="0 0 16 16" style={st}><circle cx="8" cy="6.5" r="3.5" {...p}/><path d="M6 9.5L5 14l3-1.6L11 14l-1-4.5" {...p}/></svg>;
+    case 'cal':    return <svg viewBox="0 0 16 16" style={st}><rect x="2.5" y="3.5" width="11" height="10" rx="1.2" {...p}/><path d="M2.5 6.5h11M5.5 2.5v2M10.5 2.5v2" {...p}/></svg>;
+    case 'eye':    return <svg viewBox="0 0 16 16" style={st}><path d="M1.5 8S4 4 8 4s6.5 4 6.5 4-2.5 4-6.5 4-6.5-4-6.5-4z" {...p}/><circle cx="8" cy="8" r="1.6" {...p}/></svg>;
     default: return null;
   }
 }
@@ -179,24 +188,26 @@ function HPipeline({ active = 2, done = 1, compact, range }) {
   );
 }
 
-// light neutral rail; pink only on brand mark + active item
+// light neutral rail; pink only on brand mark + active item. Three areas.
 const HRAIL = [
-  { k: 'Cycles', d: 'M3 4h10v3H3zM3 9h10v3H3z' },
-  { k: 'Assessments', d: 'M4 3h6l2 2v8H4z' },
-  { k: 'Audit log', d: 'M4 3h8v10H4zM6 6h4M6 8.5h4' },
-  { k: 'Settings', d: 'M8 5.5a2.5 2.5 0 100 5 2.5 2.5 0 000-5z' },
+  { k: 'Cycles', d: 'M3 5h10M3 8h10M3 11h7' },
+  { k: 'Analytics', d: 'M3 13V8.5M7.5 13V3.5M12 13V10' },
+  { k: 'Settings', d: 'M8 6a2 2 0 100 4 2 2 0 100-4M8 2.6V4.2M8 11.8v1.6M13.4 8H11.8M4.2 8H2.6M11.4 4.6l-1 1M5.6 10.4l-1 1M11.4 11.4l-1-1M5.6 5.6l-1-1' },
 ];
 function HRail({ active = 'Cycles' }) {
   return (
-    <div className="hf-col" style={{ width: 64, flex: '0 0 auto', background: H.tint, borderRight: `1px solid ${H.line2}`, alignItems: 'center', padding: '16px 0', gap: 5 }}>
+    <div className="hf-col" style={{ width: 64, flex: '0 0 auto', background: H.tint, borderRight: `1px solid ${H.line2}`, alignItems: 'center', padding: '16px 0', gap: 6 }}>
       <div style={{ width: 34, height: 34, borderRadius: 10, background: H.pink, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14, boxShadow: '0 1px 4px rgba(193,44,104,.35)' }}>
         <span style={{ fontFamily: H.script, fontSize: 22, lineHeight: 1, marginTop: 4 }}>A</span>
       </div>
       {HRAIL.map(it => {
         const on = it.k === active;
         return (
-          <div key={it.k} title={it.k} style={{ width: 40, height: 40, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: on ? H.pinkSoft : 'transparent', color: on ? H.pink : H.ink3 }}>
-            <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"><path d={it.d}/></svg>
+          <div key={it.k} title={it.k} className="hf-col" style={{ alignItems: 'center', gap: 3, cursor: 'pointer' }}>
+            <div style={{ width: 40, height: 36, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: on ? H.pinkSoft : 'transparent', color: on ? H.pink : H.ink3 }}>
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d={it.d}/></svg>
+            </div>
+            <span style={{ fontSize: 8.5, fontWeight: on ? 700 : 500, letterSpacing: '.2px', color: on ? H.pink : H.ink3 }}>{it.k}</span>
           </div>
         );
       })}
@@ -206,7 +217,19 @@ function HRail({ active = 'Cycles' }) {
   );
 }
 
-function HShell({ active = 'Cycles', crumb, actions, stage, done, range, stageAction, children }) {
+// secondary tab bar (sits under the header)
+function HSubnav({ items }) {
+  return (
+    <div className="hf-row" style={{ flex: '0 0 auto', borderBottom: `1px solid ${H.line}`, padding: '0 24px', gap: 2, background: H.paper }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ padding: '12px 15px', fontSize: 13, fontWeight: it.on ? 700 : 500, color: it.on ? H.pink : H.ink2,
+          borderBottom: `3px solid ${it.on ? H.pink : 'transparent'}`, cursor: 'pointer' }}>{it.label}</div>
+      ))}
+    </div>
+  );
+}
+
+function HShell({ active = 'Cycles', crumb, actions, subnav, stage, done, range, stageAction, children }) {
   return (
     <div className="hf hf-row" style={{ alignItems: 'stretch' }}>
       <HRail active={active} />
@@ -217,6 +240,7 @@ function HShell({ active = 'Cycles', crumb, actions, stage, done, range, stageAc
           <span className="hf-sub" style={{ flex: 1 }}>{crumb}</span>
           {actions}
         </div>
+        {subnav && <HSubnav items={subnav} />}
         {stage != null && (
           <div className="hf-row" style={{ flex: '0 0 auto', borderBottom: `1px solid ${H.line}`, padding: '9px 24px', background: H.canvas, gap: 16, minHeight: 56 }}>
             <HPipeline active={stage} done={done != null ? done : stage} range={range} />
@@ -230,4 +254,34 @@ function HShell({ active = 'Cycles', crumb, actions, stage, done, range, stageAc
   );
 }
 
-Object.assign(window, { H, HMark, HIco, HBtn, HChip, HStat, HHatch, HDist, HBreakBars, hfQColor, HQuality, HPipeline, HRail, HShell, HSTAGES });
+// ── form / status primitives ──
+function HBadge({ tone = 'neutral', children }) {
+  const map = {
+    good: [H.good, H.goodSoft], warn: [H.warn, H.warnSoft], bad: [H.bad, H.badSoft],
+    accent: [H.pink, H.pinkSoft], neutral: [H.ink2, H.tint2],
+  };
+  const [fg, bg] = map[tone] || map.neutral;
+  return <span style={{ fontSize: 10.5, fontWeight: 700, color: fg, background: bg, padding: '3px 9px', borderRadius: 999, display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap', letterSpacing: '.2px' }}>{children}</span>;
+}
+function HToggle({ on }) {
+  return <span style={{ width: 34, height: 20, borderRadius: 999, background: on ? H.pink : H.line2, position: 'relative', flex: '0 0 auto', transition: '.15s', display: 'inline-block' }}>
+    <span style={{ position: 'absolute', top: 2, left: on ? 16 : 2, width: 16, height: 16, borderRadius: 999, background: '#fff', boxShadow: '0 1px 2px rgba(0,0,0,.2)', transition: '.15s' }} />
+  </span>;
+}
+function HCheck({ on, half }) {
+  return <span style={{ width: 18, height: 18, borderRadius: 5, flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    border: `1.5px solid ${on || half ? H.pink : H.line2}`, background: on ? H.pink : half ? H.pinkSoft : H.paper }}>
+    {on && <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 6.2l2.2 2.2L9.5 3.5" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+    {half && <span style={{ width: 8, height: 2, background: H.pink, borderRadius: 2 }} />}
+  </span>;
+}
+function HAvatar({ name, size = 32, tone }) {
+  const init = name.split(' ').map(w => w[0]).slice(0, 2).join('');
+  return <span style={{ width: size, height: size, borderRadius: 999, flex: '0 0 auto', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+    background: tone === 'pink' ? H.pinkSoft : H.tint2, color: tone === 'pink' ? H.pink : H.ink2, fontWeight: 700, fontSize: size * 0.38 }}>{init}</span>;
+}
+function HProgress({ pct, w = '100%', tone }) {
+  return <div style={{ width: w, height: 7, background: H.tint2, borderRadius: 5 }}><div style={{ width: `${pct}%`, height: '100%', background: tone === 'good' ? H.good : H.pink, borderRadius: 5, transition: '.2s' }} /></div>;
+}
+
+Object.assign(window, { H, HMark, HIco, HBtn, HChip, HStat, HHatch, HDist, HBreakBars, hfQColor, HQuality, HPipeline, HRail, HSubnav, HShell, HSTAGES, HBadge, HToggle, HCheck, HAvatar, HProgress });

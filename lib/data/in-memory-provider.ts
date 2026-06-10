@@ -18,6 +18,8 @@ import {
   type CurrentUser,
   type CycleDetail,
   type CycleSummary,
+  type DocSettings,
+  type DocumentsModel,
   type DuplicateStrategy,
   type GradeBandRow,
   type GradesModel,
@@ -25,6 +27,7 @@ import {
   type IngestModel,
   type ItemRow,
   type ReviewModel,
+  type StudentSummary,
 } from "./types";
 import {
   classify,
@@ -74,6 +77,7 @@ export class InMemoryDataProvider implements DataProvider {
   private boundaries = new Map<string, BoundaryState>(); // cycle:scope -> state
   private locked = new Set<string>();
   private grading: GradingConfig = defaultGradingConfig();
+  private docSettingsByCycle = new Map<string, DocSettings>();
 
   private readonly user: CurrentUser = {
     id: "u-lead",
@@ -208,7 +212,7 @@ export class InMemoryDataProvider implements DataProvider {
         locked: this.locked.has(live.id),
         mock: false,
         doNext: this.locked.has(live.id)
-          ? { title: "Cycle locked", body: "Grades are signed off. Export the workbooks or re-open to make changes.", href: `/cycles/${live.id}/grades`, cta: "View grades" }
+          ? { title: "Generate documents", body: "Grades are signed off. Generate certificates and performance reports for every student.", href: `/cycles/${live.id}/documents`, cta: "Generate documents" }
           : {
               title: "Review item quality",
               body: "Assessments are validated and waiting for quality review before scoring.",
@@ -517,6 +521,72 @@ export class InMemoryDataProvider implements DataProvider {
       locked: this.locked.has(cycleId),
       canLock: this.user.role === "lead_admin" && !this.locked.has(cycleId),
     };
+  }
+
+  // ── document generation (Student Summary) ────────────────────────────────
+  getDocuments(cycleId: string): DocumentsModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const locked = this.locked.has(cycleId);
+
+    // Canonical template slots S1..S5 mapped to suite assessments by alias
+    // (keyword), NOT by position — the template order differs from the suite's.
+    const refs = this.assessmentRefs(cycleId);
+    const resolve = (re: RegExp) => refs.find((a) => re.test(a.id) || re.test(a.name));
+    const slotDefs: { slot: string; re: RegExp }[] = [
+      { slot: "S1", re: /applicable math/i },
+      { slot: "S2", re: /scientific/i },
+      { slot: "S3", re: /arabic/i },
+      { slot: "S4", re: /english/i },
+      { slot: "S5", re: /life/i },
+    ];
+    const subjectOrder = slotDefs.map((d) => ({
+      slot: d.slot,
+      assessment: resolve(d.re)?.name ?? d.slot,
+    }));
+
+    const settings = this.docSettings(cycleId);
+
+    if (!locked) {
+      return { cycleId, locked, students: [], settings, subjectOrder };
+    }
+
+    const grades = this.getGrades(cycleId)!;
+    const students: StudentSummary[] = grades.rows.map((r) => ({
+      participantId: r.id,
+      name: r.label,
+      award: r.award,
+      subjects: slotDefs.map((d) => {
+        const ref = resolve(d.re);
+        const cell = ref ? r.grades[ref.id] : undefined;
+        return {
+          slot: d.slot,
+          assessment: ref?.name ?? d.slot,
+          level: cell?.level ?? "",
+          stars: cell?.stars ?? "",
+        };
+      }),
+    }));
+
+    return { cycleId, locked, students, settings, subjectOrder };
+  }
+
+  private docSettings(cycleId: string): DocSettings {
+    const existing = this.docSettingsByCycle.get(cycleId);
+    if (existing) return existing;
+    void cycleId;
+    // Defaults: cycle name + the template's sample test centre; dates from the
+    // cycle. These are per-cycle settings, editable in the UI.
+    return {
+      cycleName: seed.liveCycle.name,
+      testCentre: "Alsama Shatila 1",
+      examDate: "11 May 2026",
+      issueDate: "10 June 2026",
+    };
+  }
+
+  setDocumentSettings(cycleId: string, patch: Partial<DocSettings>): void {
+    this.docSettingsByCycle.set(cycleId, { ...this.docSettings(cycleId), ...patch });
+    this.bump();
   }
 
   getGradingDefaults(): GradingDefaultsModel {

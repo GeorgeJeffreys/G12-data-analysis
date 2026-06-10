@@ -11,7 +11,10 @@ export type IconName =
   | "chev"
   | "plus"
   | "arrow"
-  | "doc";
+  | "doc"
+  | "download"
+  | "award"
+  | "refresh";
 
 export function Icon({
   name,
@@ -80,6 +83,25 @@ export function Icon({
         <svg viewBox="0 0 16 16" style={st}>
           <path d="M4 2.5h5l3 3v8H4z" {...p} />
           <path d="M9 2.5v3h3" {...p} />
+        </svg>
+      );
+    case "download":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <path d="M8 2.5v7M5 7l3 3 3-3M3 13h10" {...p} />
+        </svg>
+      );
+    case "refresh":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <path d="M13 6a5 5 0 10.5 4M13 3v3h-3" {...p} />
+        </svg>
+      );
+    case "award":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <circle cx="8" cy="6.5" r="3.5" {...p} />
+          <path d="M6 9.5L5 14l3-1.6L11 14l-1-4.5" {...p} />
         </svg>
       );
     default:

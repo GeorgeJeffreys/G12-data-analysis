@@ -7,6 +7,7 @@
  * Once locked the cycle is read-only until re-opened.
  */
 import { useState } from "react";
+import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
@@ -103,6 +104,9 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             <span style={{ fontSize: 13, flex: 1 }}>
               Grades are locked and signed off by {user.name}. The cycle is read-only.
             </span>
+            <Link href={`/cycles/${cycleId}/documents`}>
+              <Button variant="pri"><Icon name="award" color="#fff" />Generate documents</Button>
+            </Link>
             {user.role === "lead_admin" && (
               <Button variant="ghost" onClick={unlock}>Re-open cycle</Button>
             )}

@@ -188,3 +188,40 @@ export interface GradingDefaultsModel {
   /** True when the award-derivation rule is still the unverified placeholder. */
   awardRuleUnconfirmed: boolean;
 }
+
+// --- Document generation (Student Summary from locked grades) ----------------
+export interface SubjectResult {
+  /** Canonical template slot S1..S5. */
+  slot: string;
+  /** The suite assessment mapped to this slot (by alias). */
+  assessment: string;
+  level: string;
+  stars: string;
+}
+
+export interface StudentSummary {
+  /** Maps to the {{RESULTID}} token. */
+  participantId: string;
+  name: string;
+  /** Overall award level. */
+  award: string;
+  /** Per-subject performance level + stars, in canonical S1..S5 order. */
+  subjects: SubjectResult[];
+}
+
+export interface DocSettings {
+  cycleName: string;
+  testCentre: string;
+  examDate: string;
+  issueDate: string;
+}
+
+export interface DocumentsModel {
+  cycleId: string;
+  /** Document generation is only available once grades are locked. */
+  locked: boolean;
+  students: StudentSummary[];
+  settings: DocSettings;
+  /** Canonical slot → assessment mapping for display. */
+  subjectOrder: { slot: string; assessment: string }[];
+}

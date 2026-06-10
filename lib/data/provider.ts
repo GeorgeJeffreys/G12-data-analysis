@@ -21,6 +21,8 @@ import type {
   CurrentUser,
   CycleDetail,
   CycleSummary,
+  DocSettings,
+  DocumentsModel,
   DuplicateStrategy,
   GradesModel,
   GradingDefaultsModel,
@@ -56,6 +58,8 @@ export interface DataProvider {
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null;
   getGrades(cycleId: string): GradesModel | null;
   getGradingDefaults(): GradingDefaultsModel;
+  /** Student Summary for document generation (only populated once locked). */
+  getDocuments(cycleId: string): DocumentsModel | null;
 
   // writes
   setItemExcluded(
@@ -67,6 +71,7 @@ export interface DataProvider {
   ): void;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;
+  setDocumentSettings(cycleId: string, patch: Partial<DocSettings>): void;
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void;
   lockCycle(cycleId: string): void;
   unlockCycle(cycleId: string): void;
