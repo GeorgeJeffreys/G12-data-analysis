@@ -26,11 +26,6 @@ const MOCK_PRIOR_TOP_CUT = 74;
 const MOCK_PRIOR_MIX_PERFORMANCE = [12, 28, 38, 22]; // % per band, top → bottom
 const MOCK_PRIOR_MIX_AWARD = [9, 24, 34, 33];
 
-function shortLabel(level: string, isAward: boolean, stars: string | null): string {
-  if (isAward) return AWARD_SHORT[level] ?? level;
-  return stars && stars.length ? stars : "—";
-}
-
 export default function BoundariesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
@@ -238,35 +233,56 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             </table>
 
             {SHOW_CROSS_CYCLE && (
-              <div style={{ padding: "16px 18px 10px", borderTop: `1px solid ${H.line}` }}>
-                <div className="hf-lbl" style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
-                  Mix vs {MOCK_PRIOR_NAME}
+              <div style={{ padding: "16px 18px 12px", borderTop: `1px solid ${H.line}` }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 2 }}>
+                  <span className="hf-h2" style={{ fontSize: 13 }}>
+                    {model.isAward ? "Award mix vs previous cycle" : "Performance mix vs previous cycle"}
+                  </span>
                   <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.5 }}>MOCK</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: 70 }}>
-                  {model.bands.map((b, i) => {
-                    const nowPct = b.pct;
-                    const last = mockMix[i] ?? 0;
-                    const delta = nowPct - last;
-                    return (
-                      <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6, flex: 1 }} title={b.level}>
-                        <span className="hf-mono" style={{ fontSize: 9.5, color: Math.abs(delta) < 0.5 ? H.ink3 : H.ink2 }}>
-                          {delta >= 0 ? "+" : ""}{delta.toFixed(1)}
-                        </span>
-                        <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: 46 }}>
-                          <div style={{ width: 12, height: `${Math.max(4, (nowPct / 50) * 100)}%`, background: H.ink2, borderRadius: "2px 2px 0 0" }} />
-                          <div style={{ width: 12, height: `${Math.max(4, (last / 50) * 100)}%`, border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
-                        </div>
-                        <span className="hf-mono" style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3 }}>
-                          {shortLabel(b.level, model.isAward, b.stars).slice(0, 4)}
-                        </span>
-                      </div>
-                    );
-                  })}
+                <div className="hf-sub" style={{ fontSize: 11, marginBottom: 14, lineHeight: 1.35 }}>
+                  How this cycle’s {model.isAward ? "award" : "performance"} mix compares to a previous
+                  cycle ({MOCK_PRIOR_NAME}). The prior cycle is illustrative mock data — there is no
+                  real cross-cycle history yet.
                 </div>
+                {(() => {
+                  // Scale every bar to the largest share present so nothing
+                  // overflows the plot, and reserve fixed rows above (Δ) and below
+                  // (label) the bars so values never overlap the columns.
+                  const mixMax = Math.max(
+                    5,
+                    ...model.bands.map((b) => b.pct),
+                    ...mockMix,
+                  );
+                  const PLOT = 64;
+                  return (
+                    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", gap: 6 }}>
+                      {model.bands.map((b, i) => {
+                        const nowPct = b.pct;
+                        const last = mockMix[i] ?? 0;
+                        const delta = nowPct - last;
+                        const label = model.isAward ? AWARD_SHORT[b.level] ?? b.level : b.stars || b.level;
+                        return (
+                          <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, minWidth: 0 }} title={b.level}>
+                            <span className="hf-mono" style={{ fontSize: 9.5, height: 14, color: Math.abs(delta) < 0.5 ? H.ink3 : delta >= 0 ? H.good : H.bad }}>
+                              {delta >= 0 ? "+" : ""}{delta.toFixed(1)}
+                            </span>
+                            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: PLOT }}>
+                              <div style={{ width: 12, height: Math.max(3, (nowPct / mixMax) * PLOT), background: H.ink2, borderRadius: "2px 2px 0 0" }} />
+                              <div style={{ width: 12, height: Math.max(3, (last / mixMax) * PLOT), border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
+                            </div>
+                            <span style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3, marginTop: 5, textAlign: "center", lineHeight: 1.1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis" }}>
+                              {label}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
                 <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 12, fontSize: 10.5, color: H.ink3 }}>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />Now
+                    <span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />This cycle
                   </span>
                   <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
                     <span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{MOCK_PRIOR_NAME} (mock)
@@ -376,7 +392,23 @@ function BoundaryChart({
       {regions.map((r) => (
         <div
           key={r.level + "l"}
-          style={{ position: "absolute", top: 4, left: `${(r.from + r.to) / 2}%`, transform: "translateX(-50%)", fontFamily: "var(--font-mono)", fontWeight: 700, fontSize: isAward ? 9.5 : 12, color: H.ink2, whiteSpace: "nowrap" }}
+          title={r.level}
+          style={{
+            position: "absolute",
+            top: 4,
+            left: `${r.from}%`,
+            width: `${r.to - r.from}%`,
+            padding: "0 2px",
+            textAlign: "center",
+            fontFamily: "var(--font-mono)",
+            fontWeight: 700,
+            fontSize: isAward ? 9.5 : 12,
+            color: H.ink2,
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            pointerEvents: "none",
+          }}
         >
           {r.label}
         </div>

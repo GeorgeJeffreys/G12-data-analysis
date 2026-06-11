@@ -513,9 +513,9 @@ export class InMemoryDataProvider implements DataProvider {
     if (cycleId !== seed.liveCycle.id) return null;
     const scopes = [
       ...seed.liveCycle.assessments.map((a) => ({ id: a.id, label: a.shortName })),
-      { id: "overall", label: "Overall" },
+      { id: "overall", label: "Overall award" },
     ];
-    const scopeLabel = scopes.find((s) => s.id === scope)?.label ?? "Overall";
+    const scopeLabel = scopes.find((s) => s.id === scope)?.label ?? "Overall award";
 
     const scheme = this.schemeFor(scope);
     const levels = scheme.levels;
