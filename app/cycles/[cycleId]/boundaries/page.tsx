@@ -32,6 +32,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const cycleId = params.cycleId;
   const provider = useProvider();
   const [scope, setScope] = useState<string>("overall");
+  const [compareOpen, setCompareOpen] = useState(false);
   const model = useProviderData((p) => p.getBoundaries(cycleId, scope), [cycleId, scope]);
 
   if (!model) {
@@ -134,8 +135,8 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
         </div>
 
         <div className="hf-split" style={{ flex: 1, minHeight: 0 }}>
-          {/* chart card */}
-          <div className="hf-card" style={{ flex: 1, padding: "20px 24px 14px", minWidth: 0, display: "flex", flexDirection: "column" }}>
+          {/* chart card — the dominant instrument (~two-thirds) */}
+          <div className="hf-card" style={{ flex: "2 1 0%", padding: "20px 24px 14px", minWidth: 320, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span className="hf-lbl">Score distribution · {model.n} students</span>
               <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: model.mode === "cuts" ? H.pink : H.ink3, fontWeight: 600 }}>
@@ -173,8 +174,8 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             </div>
           </div>
 
-          {/* table card */}
-          <div className="hf-card" style={{ flex: "1 1 440px", minWidth: 320, overflow: "auto", display: "flex", flexDirection: "column" }}>
+          {/* table card — the compact companion (~one-third) */}
+          <div className="hf-card" style={{ flex: "1 1 320px", minWidth: 300, maxWidth: 440, overflow: "auto", display: "flex", flexDirection: "column" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
               <thead>
                 <tr>
@@ -236,65 +237,6 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
               </tbody>
             </table>
 
-            {SHOW_CROSS_CYCLE && (
-              <div style={{ padding: "16px 18px 12px", borderTop: `1px solid ${H.line}` }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 2 }}>
-                  <span className="hf-h2" style={{ fontSize: 13 }}>
-                    {model.isAward ? "Award mix vs previous cycle" : "Performance mix vs previous cycle"}
-                  </span>
-                  <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.5 }}>MOCK</span>
-                </div>
-                <div className="hf-sub" style={{ fontSize: 11, marginBottom: 14, lineHeight: 1.35 }}>
-                  How this cycle’s {model.isAward ? "award" : "performance"} mix compares to a previous
-                  cycle ({MOCK_PRIOR_NAME}). The prior cycle is illustrative mock data — there is no
-                  real cross-cycle history yet.
-                </div>
-                {(() => {
-                  // Scale every bar to the largest share present so nothing
-                  // overflows the plot, and reserve fixed rows above (Δ) and below
-                  // (label) the bars so values never overlap the columns.
-                  const mixMax = Math.max(
-                    5,
-                    ...model.bands.map((b) => b.pct),
-                    ...mockMix,
-                  );
-                  const PLOT = 64;
-                  return (
-                    <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", gap: 6 }}>
-                      {model.bands.map((b, i) => {
-                        const nowPct = b.pct;
-                        const last = mockMix[i] ?? 0;
-                        const delta = nowPct - last;
-                        const label = model.isAward ? AWARD_SHORT[b.level] ?? b.level : b.stars || b.level;
-                        return (
-                          <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, minWidth: 0 }} title={b.level}>
-                            <span className="hf-mono" style={{ fontSize: 9.5, height: 14, color: Math.abs(delta) < 0.5 ? H.ink3 : delta >= 0 ? H.good : H.bad }}>
-                              {delta >= 0 ? "+" : ""}{delta.toFixed(1)}
-                            </span>
-                            <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: PLOT }}>
-                              <div style={{ width: 12, height: Math.max(3, (nowPct / mixMax) * PLOT), background: H.ink2, borderRadius: "2px 2px 0 0" }} />
-                              <div style={{ width: 12, height: Math.max(3, (last / mixMax) * PLOT), border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
-                            </div>
-                            <span style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3, marginTop: 5, textAlign: "center", lineHeight: 1.1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis" }}>
-                              {label}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-                <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 12, fontSize: 10.5, color: H.ink3 }}>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />This cycle
-                  </span>
-                  <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                    <span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{MOCK_PRIOR_NAME} (mock)
-                  </span>
-                </div>
-              </div>
-            )}
-
             <div style={{ display: "flex", alignItems: "center", padding: "11px 14px", gap: 9, borderTop: `1px solid ${H.line}`, background: H.tint, marginTop: "auto" }}>
               {model.mode === "pct" ? (
                 remainder < 0 ? (
@@ -319,8 +261,87 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             </div>
           </div>
         </div>
+
+        {/* demoted, collapsible cross-cycle comparison (mock) below the main row */}
+        {SHOW_CROSS_CYCLE && (
+          <ComparisonStrip
+            open={compareOpen}
+            onToggle={() => setCompareOpen((v) => !v)}
+            isAward={model.isAward}
+            bands={model.bands}
+            mockMix={mockMix}
+            priorName={MOCK_PRIOR_NAME}
+          />
+        )}
       </div>
     </Shell>
+  );
+}
+
+/** Demoted, collapsible cross-cycle comparison (mock) — a thin strip below the main row. */
+function ComparisonStrip({
+  open,
+  onToggle,
+  isAward,
+  bands,
+  mockMix,
+  priorName,
+}: {
+  open: boolean;
+  onToggle: () => void;
+  isAward: boolean;
+  bands: { level: string; stars: string | null; pct: number }[];
+  mockMix: number[];
+  priorName: string;
+}) {
+  const mixMax = Math.max(5, ...bands.map((b) => b.pct), ...mockMix);
+  const PLOT = 56;
+  return (
+    <div className="hf-card" style={{ flex: "0 0 auto", overflow: "hidden" }}>
+      <button
+        onClick={onToggle}
+        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: "10px 16px", color: H.ink2 }}
+      >
+        <svg width="11" height="11" viewBox="0 0 12 12" style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s" }} aria-hidden="true">
+          <path d="M4 2.5L8 6l-4 3.5" fill="none" stroke={H.ink3} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span className="hf-h2" style={{ fontSize: 13 }}>{isAward ? "Award mix vs previous cycle" : "Performance mix vs previous cycle"}</span>
+        <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.5 }}>MOCK</span>
+        <span className="hf-sub" style={{ fontSize: 11 }}>vs {priorName}</span>
+      </button>
+      {open && (
+        <div style={{ padding: "4px 18px 14px" }}>
+          <div className="hf-sub" style={{ fontSize: 11, marginBottom: 12, lineHeight: 1.35 }}>
+            How this cycle’s {isAward ? "award" : "performance"} mix compares to a previous cycle ({priorName}).
+            The prior cycle is illustrative mock data — there is no real cross-cycle history yet.
+          </div>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", gap: 6, maxWidth: 560 }}>
+            {bands.map((b, i) => {
+              const nowPct = b.pct;
+              const last = mockMix[i] ?? 0;
+              const delta = nowPct - last;
+              const label = isAward ? AWARD_SHORT[b.level] ?? b.level : b.stars || b.level;
+              return (
+                <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, minWidth: 0 }} title={b.level}>
+                  <span className="hf-mono" style={{ fontSize: 9.5, height: 14, color: Math.abs(delta) < 0.5 ? H.ink3 : delta >= 0 ? H.good : H.bad }}>
+                    {delta >= 0 ? "+" : ""}{delta.toFixed(1)}
+                  </span>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: PLOT }}>
+                    <div style={{ width: 12, height: Math.max(3, (nowPct / mixMax) * PLOT), background: H.ink2, borderRadius: "2px 2px 0 0" }} />
+                    <div style={{ width: 12, height: Math.max(3, (last / mixMax) * PLOT), border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
+                  </div>
+                  <span style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3, marginTop: 5, textAlign: "center", lineHeight: 1.1, maxWidth: 60, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", gap: 16, marginTop: 10, fontSize: 10.5, color: H.ink3 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />This cycle</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{priorName} (mock)</span>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 
