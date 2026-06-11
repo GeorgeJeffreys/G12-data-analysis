@@ -61,16 +61,60 @@ export interface ItemStat {
   engineVersion: string;
 }
 
-/** Per-participant, per-assessment score on the retained (non-excluded) items. */
+/**
+ * Per-participant, per-subject (assessment) score. The subject total is a
+ * raw-mark sum of three components, in order:
+ *   raw = mcq (retained MCQ marks) + essay (English/Arabic only) + alterations.
+ * The subject max is the count of retained MCQ items plus the essay max (when the
+ * subject has an essay), and `pct` is `raw / max * 100`.
+ */
 export interface ParticipantScore {
   participantId: string;
   assessmentId: string;
-  /** Sum of scores on retained items the participant answered. */
+  /** Retained MCQ marks: sum of scores on retained items the participant answered. */
+  mcq: number;
+  /** Essay mark for this subject (0 when the subject has no essay). */
+  essay: number;
+  /** Net alteration marks added (+) or subtracted (−). */
+  alterations: number;
+  /** Subject total = mcq + essay + alterations. */
   raw: number;
-  /** raw / max-attainable on retained items answered, as a percentage. */
+  /** Subject max = retained MCQ item count + (essay max when the subject has an essay). */
+  max: number;
+  /** raw / max as a percentage. */
   pct: number;
-  /** Count of retained items the participant answered. */
+  /** Count of retained MCQ items the participant answered. */
   itemsSeen: number;
+}
+
+/** An offline-marked essay mark (English/Arabic only), out of the essay max (20). */
+export interface EssayMark {
+  participantId: string;
+  assessmentId: string;
+  /** Essay mark out of the essay max (default 20). */
+  mark: number;
+}
+
+/** A human-decided raw-mark alteration (+/−) for one student on one subject. */
+export interface Alteration {
+  participantId: string;
+  assessmentId: string;
+  /** Net raw marks added (+) or subtracted (−). */
+  marks: number;
+}
+
+/** Optional inputs to the score roll-up beyond the MCQ responses. */
+export interface ScoreOptions {
+  /** Essay marks to add to the matching subject totals. */
+  essayMarks?: readonly EssayMark[];
+  /** Net alterations to add to the matching subject totals. */
+  alterations?: readonly Alteration[];
+  /** Assessment ids that carry an essay — their max includes the essay max. */
+  essayAssessmentIds?: readonly string[];
+  /** Essay max marks (default 20). */
+  essayMax?: number;
+  /** Item metadata, for per-item max scores (defaults to 1 per item). */
+  items?: readonly ItemMeta[];
 }
 
 export interface AssessmentRollup {
@@ -112,22 +156,9 @@ export interface RollUpInput {
   excludedItemIds?: string[];
 }
 
-/**
- * A single (participant, item) response excluded for that one student only — a
- * technical fault on that question for that student. Removing it drops the
- * response from BOTH the student's score AND that item's cohort statistics, so a
- * glitched response can't skew the cohort psychometrics.
- */
-export interface PerStudentExclusion {
-  participantId: string;
-  itemId: string;
-}
-
 export interface ItemStatsInput {
   responses: ResponseRecord[];
   items?: ItemMeta[];
-  /** Responses to drop per-student before computing item stats. */
-  perStudentExcluded?: PerStudentExclusion[];
   /**
    * Scoring configuration (item-quality thresholds + level/award sets). Defaults
    * to `DEFAULT_SCORING_CONFIG`, which reproduces the published ratings exactly.

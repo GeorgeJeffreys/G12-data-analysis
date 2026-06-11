@@ -6,7 +6,6 @@
 import type {
   ItemMeta,
   ItemStat,
-  PerStudentExclusion,
   ResponseRecord,
 } from "@/lib/engine";
 
@@ -134,8 +133,6 @@ export interface AssembleScoreAnalysisArgs {
   items: ItemMeta[];
   /** Cohort-excluded item ids (dropped for everyone). */
   excludedItemIds?: string[];
-  /** Per-student (participant, item) exclusions (dropped for that student only). */
-  perStudentExcluded?: PerStudentExclusion[];
   scoreRunNote?: string;
 }
 

@@ -33,7 +33,7 @@ import type {
   GradesInput,
 } from "@/lib/export";
 import { getEngine, responsesFromClean } from "@/lib/engine";
-import type { ItemMeta, ItemStat, PerStudentExclusion, ResponseRecord } from "@/lib/engine";
+import type { ItemMeta, ItemStat, ResponseRecord } from "@/lib/engine";
 import { parseExport, ingestAndClean } from "@/lib/ingest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import { loadParityFixtures, sampleExportPath } from "./fixtures";
@@ -314,11 +314,8 @@ describe("score analysis workbook — canonical layout", () => {
     demandLevel: it.demand,
     maxScore: 1,
   }));
-  // Drop one item for everyone (cohort) and one (participant, item) for one student.
+  // Drop one item for everyone (cohort exclusion).
   const cohortExcludedItem = items[0]!.itemId;
-  const psStudent = a.responses.find((r) => String(r.qid) !== cohortExcludedItem)!.student;
-  const psItem = a.responses.find((r) => r.student === psStudent && String(r.qid) !== cohortExcludedItem)!.qid;
-  const perStudentExcluded: PerStudentExclusion[] = [{ participantId: psStudent, itemId: String(psItem) }];
 
   const input = assembleScoreAnalysis({
     assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
@@ -326,7 +323,6 @@ describe("score analysis workbook — canonical layout", () => {
     responses,
     items,
     excludedItemIds: [cohortExcludedItem],
-    perStudentExcluded,
   });
   const wb = buildScoreAnalysisWorkbook(input);
 
@@ -334,15 +330,11 @@ describe("score analysis workbook — canonical layout", () => {
     expect(wb.SheetNames).toEqual([...SCORE_ANALYSIS_SHEETS]);
   });
 
-  it("drops both cohort-excluded and per-student-excluded responses from the scored set", () => {
+  it("drops cohort-excluded responses from the scored set", () => {
     // cohort-excluded item never appears
     expect(input.scoredResponses.some((r) => r.itemId === cohortExcludedItem)).toBe(false);
-    // the per-student (participant, item) pair is dropped, but the item still
-    // appears for OTHER participants.
-    expect(
-      input.scoredResponses.some((r) => r.participantId === psStudent && r.itemId === String(psItem)),
-    ).toBe(false);
-    expect(input.scoredResponses.some((r) => r.itemId === String(psItem))).toBe(true);
+    // a retained item still appears for participants
+    expect(input.scoredResponses.length).toBeGreaterThan(0);
   });
 
   it("by-assessment sheet has the canonical header on row 6 and consistent percentages", () => {
@@ -363,9 +355,11 @@ describe("score analysis workbook — canonical layout", () => {
       const pctCell = Number(r[5]);
       expect(pctCell).toBeCloseTo(Math.round((score / total) * 100 * 100) / 100, 6);
     }
-    // the per-student-excluded student lost one retained item vs the full count.
-    const theirRow = dataRows.find((r) => String(r[1]) === psStudent)!;
-    expect(Number(theirRow[4])).toBe(a.items.length - 1 /*cohort*/ - 1 /*their own*/);
+    // every participant now scores against the same retained-item total (one
+    // cohort-excluded item dropped); there are no per-student exclusions.
+    for (const r of dataRows) {
+      expect(Number(r[4])).toBe(a.items.length - 1 /*cohort*/);
+    }
   });
 
   it("major-element and demand-level sheets carry their key columns", () => {
@@ -411,8 +405,8 @@ describe("grades workbook — canonical layout", () => {
   function makeInput(): GradesInput {
     const provider = new InMemoryDataProvider();
     provider.loadSampleTechnicalErrors(CYCLE);
-    provider.setBoundary(CYCLE, "overall", { cutIndex: 0, cutValue: 55 });
-    provider.setSafeguardConfig({ distinctionThreshold: 9 });
+    provider.setBoundary(CYCLE, "overall", { cutIndex: 0, cutValue: 30 });
+    provider.setSafeguardConfig({ distinctionThreshold: 10 });
 
     const model = provider.getGrades(CYCLE)!;
     const safeguard = provider.getDistinctionSafeguard(CYCLE)!;
@@ -509,12 +503,22 @@ describe("grades workbook — canonical layout", () => {
     expect(dataRows).toHaveLength(input.students.length);
   });
 
-  it("cap columns reflect the Distinction safeguard", () => {
-    const capped = input.students.filter((s) => s.capApplied);
-    expect(capped.length).toBeGreaterThan(0); // the engineered scenario caps ≥1
-    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Student Grades");
+  it("cap columns render a Distinction-safeguard cap", () => {
+    // The honest seeded cohort attempts every top-difficulty question, so the
+    // live safeguard caps no one. Exercise the cap-COLUMN rendering (the export's
+    // responsibility) with a student carrying a cap decision.
+    const capInput: GradesInput = {
+      ...input,
+      students: input.students.map((s, i) =>
+        i === 0
+          ? { ...s, capApplied: true, capReason: "Fewer than 10 top-difficulty questions attempted" }
+          : s,
+      ),
+    };
+    const capWb = buildGradesWorkbook(capInput);
+    const aoa = aoaOf(capWb as unknown as XLSXR.WorkBook, "Student Grades");
     const dataRows = aoa.slice(3).filter((r) => r.length > 0);
-    // DistinctionCapApplied is column 18; at least one "Yes".
+    // DistinctionCapApplied is column 18; the capped student shows "Yes".
     expect(dataRows.some((r) => r[18] === "Yes")).toBe(true);
     // the capped row carries a non-empty CapReason (column 19).
     const yesRow = dataRows.find((r) => r[18] === "Yes")!;

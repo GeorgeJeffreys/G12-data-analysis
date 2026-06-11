@@ -29,7 +29,6 @@
 import type {
   ItemMeta,
   ItemStat,
-  PerStudentExclusion,
   QualityRating,
   ResponseRecord,
 } from "./types";
@@ -39,18 +38,6 @@ import {
   rateP,
   type ScoringConfig,
 } from "./config";
-
-/** Canonical key for a (participant, item) per-student exclusion. */
-export function perStudentKey(participantId: string, itemId: string): string {
-  return `${participantId}␟${itemId}`;
-}
-
-/** Build a fast lookup set from per-student exclusions. */
-export function perStudentSet(excluded?: readonly PerStudentExclusion[]): Set<string> {
-  const set = new Set<string>();
-  if (excluded) for (const e of excluded) set.add(perStudentKey(e.participantId, e.itemId));
-  return set;
-}
 
 const RATING_SEVERITY: Record<QualityRating, number> = {
   Good: 0,
@@ -149,22 +136,15 @@ export function computeItemStats(
   responses: readonly ResponseRecord[],
   engineVersion: string,
   items?: readonly ItemMeta[],
-  perStudentExcluded?: readonly PerStudentExclusion[],
   scoringConfig: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): ItemStat[] {
   const q = scoringConfig.quality;
   const metaByItem = new Map<string, ItemMeta>();
   if (items) for (const it of items) metaByItem.set(it.itemId, it);
 
-  // A per-student-excluded (glitched) response is dropped entirely before any
-  // stats are computed — so it skews neither that item's p-value/discrimination/
-  // correlations nor the participant's totals used elsewhere.
-  const psExcluded = perStudentSet(perStudentExcluded);
-
   // Group responses by assessment.
   const byAssessment = new Map<string, ResponseRecord[]>();
   for (const r of responses) {
-    if (psExcluded.size && psExcluded.has(perStudentKey(r.participantId, r.itemId))) continue;
     let bucket = byAssessment.get(r.assessmentId);
     if (!bucket) {
       bucket = [];

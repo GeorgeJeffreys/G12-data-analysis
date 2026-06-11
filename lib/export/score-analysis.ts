@@ -28,7 +28,6 @@ import type {
   ScoreAnalysisInput,
   ScoredItemResponse,
 } from "./types";
-import { perStudentKey, perStudentSet } from "@/lib/engine";
 
 export const SCORE_ANALYSIS_SHEETS = [
   "Overall Scores Summary",
@@ -39,8 +38,9 @@ export const SCORE_ANALYSIS_SHEETS = [
 ] as const;
 
 const DEFAULT_RUN_NOTE =
-  "Scores use retained items only — cohort-excluded items and per-student technical " +
-  "exclusions are both dropped (the same score run the engine uses for grading).";
+  "Scores use retained items only — cohort-excluded items are dropped (the same " +
+  "score run the engine uses for grading). Essay marks and alterations add to the " +
+  "subject totals where applicable.";
 
 // ── assembler ────────────────────────────────────────────────────────────────
 
@@ -51,13 +51,11 @@ const DEFAULT_RUN_NOTE =
 export function assembleScoreAnalysis(args: AssembleScoreAnalysisArgs): ScoreAnalysisInput {
   const { assessments, participants, responses, items } = args;
   const cohortExcluded = new Set(args.excludedItemIds ?? []);
-  const psExcluded = perStudentSet(args.perStudentExcluded);
   const itemMeta = new Map(items.map((i) => [i.itemId, i]));
 
   const scoredResponses: ScoredItemResponse[] = [];
   for (const r of responses) {
     if (cohortExcluded.has(r.itemId)) continue;
-    if (psExcluded.size && psExcluded.has(perStudentKey(r.participantId, r.itemId))) continue;
     const meta = itemMeta.get(r.itemId);
     scoredResponses.push({
       participantId: r.participantId,

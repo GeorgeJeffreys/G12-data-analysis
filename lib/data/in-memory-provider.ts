@@ -7,8 +7,11 @@
 
 import { getEngine, defaultScoringConfig } from "@/lib/engine";
 import type {
+  Alteration,
+  EssayMark,
+  ItemMeta,
   ItemStat,
-  PerStudentExclusion,
+  ParticipantScore,
   QualityRating,
   QualityThresholds,
   ResponseRecord,
@@ -158,9 +161,14 @@ export class InMemoryDataProvider implements DataProvider {
   private quality: QualityThresholds = defaultScoringConfig().quality;
   private docSettingsByCycle = new Map<string, DocSettings>();
 
-  // technical errors / per-student exclusions + distinction safeguard
+  // incident log (Adjustments) + distinction safeguard
   private technicalErrors = new Map<string, { uploaded: boolean; sample: boolean; fileName: string | null; incidents: TechnicalIncident[] }>();
   private incidentSeq = 0;
+  // three-component scoring inputs (Parts 2 & 3) — empty defaults to MCQ-only.
+  // essayMarks: cycle -> ParticipantID|assessmentId -> mark out of 20.
+  private essayMarksByCycle = new Map<string, EssayMark[]>();
+  // alterations: cycle -> human-decided +/- raw marks per student per subject.
+  private alterationsByCycle = new Map<string, Alteration[]>();
   private distinctionOverrides = new Map<string, Map<string, { reason: string; by: string }>>();
   private distinctionConfirmed = new Set<string>();
   // safeguard config; empty topDifficultyDemand → resolve to the highest demand present.
@@ -246,28 +254,44 @@ export class InMemoryDataProvider implements DataProvider {
       score: r.s,
     }));
   }
-  /** participantId -> percentage on retained items for one assessment. */
-  private pctByParticipant(
-    cycleId: string,
-    a: SeedAssessment,
-  ): Map<string, { raw: number; itemsSeen: number; pct: number }> {
+  /**
+   * participantId -> full subject score for one assessment, composed from the
+   * three components (retained MCQ + essay + alterations). The map values are the
+   * engine's ParticipantScore, so callers can read the total (`raw`), `max`,
+   * `pct`, and the per-component breakdown (`mcq` / `essay` / `alterations`).
+   */
+  private pctByParticipant(cycleId: string, a: SeedAssessment): Map<string, ParticipantScore> {
     const excluded = [...this.excludedSet(cycleId, a.id)];
-    const perStudent = this.perStudentExclusions(cycleId, a.id);
-    const scores = engine.computeScores(this.responsesOf(a), excluded, perStudent);
-    return new Map(scores.map((s) => [s.participantId, { raw: s.raw, itemsSeen: s.itemsSeen, pct: s.pct }]));
+    const scores = engine.computeScores(this.responsesOf(a), excluded, {
+      essayMarks: this.essayMarksFor(cycleId, a.id),
+      alterations: this.alterationsFor(cycleId, a.id),
+      essayAssessmentIds: this.essaySubjectIds(),
+      items: this.itemMetasFor(a),
+    });
+    return new Map(scores.map((s) => [s.participantId, s]));
   }
 
-  /** Per-student (participant, item) exclusions from confirmed technical incidents. */
-  private perStudentExclusions(cycleId: string, assessmentId?: string): PerStudentExclusion[] {
-    const te = this.technicalErrors.get(cycleId);
-    if (!te) return [];
-    const out: PerStudentExclusion[] = [];
-    for (const inc of te.incidents) {
-      if (inc.decision !== "excluded" || !inc.itemId) continue;
-      if (assessmentId && inc.assessmentId !== assessmentId) continue;
-      out.push({ participantId: inc.studentId, itemId: inc.itemId });
-    }
-    return out;
+  /** Assessment ids that carry an essay component (English + Arabic). */
+  private essaySubjectIds(): string[] {
+    return seed.liveCycle.assessments.filter((a) => /arabic|english/i.test(a.name)).map((a) => a.id);
+  }
+  private itemMetasFor(a: SeedAssessment): ItemMeta[] {
+    return a.items.map((it) => ({
+      itemId: it.id,
+      assessmentId: a.id,
+      majorElement: it.major,
+      subElement: it.sub,
+      demandLevel: it.demand,
+      maxScore: it.maxScore,
+    }));
+  }
+  private essayMarksFor(cycleId: string, assessmentId?: string): EssayMark[] {
+    const all = this.essayMarksByCycle.get(cycleId) ?? [];
+    return assessmentId ? all.filter((e) => e.assessmentId === assessmentId) : all;
+  }
+  private alterationsFor(cycleId: string, assessmentId?: string): Alteration[] {
+    const all = this.alterationsByCycle.get(cycleId) ?? [];
+    return assessmentId ? all.filter((e) => e.assessmentId === assessmentId) : all;
   }
   /**
    * The live ScoringConfig the engine reads — the item-quality thresholds
@@ -505,18 +529,15 @@ export class InMemoryDataProvider implements DataProvider {
 
     // Full live ItemStat (same engine call as the table) so the per-statistic
     // ratings reflect any per-student exclusions and the configured thresholds.
-    const perStudent = this.perStudentExclusions(cycleId, assessmentId);
     const stats = engine.computeItemStats({
       responses: this.responsesOf(a),
-      perStudentExcluded: perStudent,
       scoringConfig: this.scoringConfig(),
     });
     const s = stats.find((x) => x.itemId === itemId);
 
     // Live response rows for this item (per-student-excluded responses dropped),
     // for the outcome split and the discrimination upper/lower groups.
-    const ps = new Set(perStudent.map((e) => `${e.participantId} ${e.itemId}`));
-    const recs = this.responsesOf(a).filter((r) => !ps.has(`${r.participantId} ${r.itemId}`));
+    const recs = this.responsesOf(a);
     const totalByP = new Map<string, number>();
     for (const r of recs) totalByP.set(r.participantId, (totalByP.get(r.participantId) ?? 0) + r.score);
     const rows = recs
@@ -604,16 +625,16 @@ export class InMemoryDataProvider implements DataProvider {
   // ── scoring & grade boundaries ──────────────────────────────────────────---
   private scopePcts(cycleId: string, scope: string): number[] {
     if (scope === "overall") {
-      const totals = new Map<string, { raw: number; seen: number }>();
+      const totals = new Map<string, { raw: number; max: number }>();
       for (const a of seed.liveCycle.assessments) {
         for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
-          const t = totals.get(pid) ?? { raw: 0, seen: 0 };
+          const t = totals.get(pid) ?? { raw: 0, max: 0 };
           t.raw += v.raw;
-          t.seen += v.itemsSeen;
+          t.max += v.max;
           totals.set(pid, t);
         }
       }
-      return [...totals.values()].filter((t) => t.seen > 0).map((t) => (t.raw / t.seen) * 100);
+      return [...totals.values()].filter((t) => t.max > 0).map((t) => (t.raw / t.max) * 100);
     }
     const a = this.assessment(scope);
     if (!a) return [];
@@ -731,17 +752,17 @@ export class InMemoryDataProvider implements DataProvider {
   // ── grades & sign-off ───────────────────────────────────────────────────--
   /** Per-participant overall percentage = total raw / total max across assessments. */
   private overallPctByParticipant(cycleId: string): Map<string, number> {
-    const totals = new Map<string, { raw: number; seen: number }>();
+    const totals = new Map<string, { raw: number; max: number }>();
     for (const a of seed.liveCycle.assessments) {
       for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
-        const t = totals.get(pid) ?? { raw: 0, seen: 0 };
+        const t = totals.get(pid) ?? { raw: 0, max: 0 };
         t.raw += v.raw;
-        t.seen += v.itemsSeen;
+        t.max += v.max;
         totals.set(pid, t);
       }
     }
     const out = new Map<string, number>();
-    for (const [pid, t] of totals) out.set(pid, t.seen ? (t.raw / t.seen) * 100 : 0);
+    for (const [pid, t] of totals) out.set(pid, t.max ? (t.raw / t.max) * 100 : 0);
     return out;
   }
 
@@ -824,12 +845,10 @@ export class InMemoryDataProvider implements DataProvider {
       subjects.push({ assessmentId: a.id, name: a.name, majorElements: majorOrder });
 
       const excluded = this.excludedSet(cycleId, a.id);
-      const ps = new Set(this.perStudentExclusions(cycleId, a.id).map((e) => `${e.participantId} ${e.itemId}`));
       // accumulate raw/n per (participant, element)
       const acc = new Map<string, Map<string, { raw: number; n: number }>>();
       for (const r of this.responsesOf(a)) {
         if (excluded.has(r.itemId)) continue;
-        if (ps.has(`${r.participantId} ${r.itemId}`)) continue;
         const el = itemMajor.get(r.itemId);
         if (!el) continue;
         let byEl = acc.get(r.participantId);
@@ -911,7 +930,6 @@ export class InMemoryDataProvider implements DataProvider {
   ): Map<string, { pValue: number; itemTotal: number | null; pointBiserial: number | null; discrimination: number; overallReview: QualityRating; qualityIndex: number }> {
     const stats = engine.computeItemStats({
       responses: this.responsesOf(a),
-      perStudentExcluded: this.perStudentExclusions(cycleId, a.id),
       scoringConfig: this.scoringConfig(),
     });
     const out = new Map<
@@ -1101,17 +1119,13 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── distinction safeguard (grading stage) ─────────────────────────────────
-  /** Top-difficulty questions a student attempted in one assessment (minus their exclusions). */
+  /** Top-difficulty questions a student attempted in one assessment. */
   private topDiffAnswered(cycleId: string, a: SeedAssessment, studentId: string, demand: string): number {
-    const excl = new Set(
-      this.perStudentExclusions(cycleId, a.id)
-        .filter((e) => e.participantId === studentId)
-        .map((e) => e.itemId),
-    );
+    void cycleId;
     const pool = new Set(a.items.filter((it) => it.demand === demand).map((it) => it.id));
     let n = 0;
     for (const r of a.responses) {
-      if (r.p !== studentId || !pool.has(r.i) || excl.has(r.i)) continue;
+      if (r.p !== studentId || !pool.has(r.i)) continue;
       n += 1;
     }
     return n;

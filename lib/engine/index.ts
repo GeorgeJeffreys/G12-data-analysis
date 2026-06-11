@@ -30,7 +30,7 @@ import type {
   ItemStat,
   ItemStatsInput,
   ParticipantScore,
-  PerStudentExclusion,
+  ScoreOptions,
   RawExport,
   ResponseRecord,
   RollUp,
@@ -48,7 +48,7 @@ export interface ComputationEngine {
   computeScores(
     responses: ResponseRecord[],
     excludedItemIds: string[],
-    perStudentExcluded?: PerStudentExclusion[],
+    options?: ScoreOptions,
   ): ParticipantScore[];
   rollUp(input: RollUpInput): RollUp;
 }
@@ -79,7 +79,6 @@ class TypeScriptEngine implements ComputationEngine {
       input.responses,
       this.version,
       input.items,
-      input.perStudentExcluded,
       input.scoringConfig,
     );
   }
@@ -87,9 +86,9 @@ class TypeScriptEngine implements ComputationEngine {
   computeScores(
     responses: ResponseRecord[],
     excludedItemIds: string[],
-    perStudentExcluded?: PerStudentExclusion[],
+    options?: ScoreOptions,
   ): ParticipantScore[] {
-    return computeScoresImpl(responses, excludedItemIds, perStudentExcluded);
+    return computeScoresImpl(responses, excludedItemIds, options);
   }
 
   rollUp(input: RollUpInput): RollUp {
@@ -111,8 +110,6 @@ export {
   rateP,
   rateCorrelation,
   worstRating,
-  perStudentKey,
-  perStudentSet,
 } from "./stats";
 export { computeScores } from "./scores";
 export { rollUp } from "./rollup";
@@ -137,7 +134,9 @@ export type {
   ItemStat,
   ItemStatsInput,
   ParticipantScore,
-  PerStudentExclusion,
+  EssayMark,
+  Alteration,
+  ScoreOptions,
   ResponseRecord,
   RollUp,
   RollUpInput,
