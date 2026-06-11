@@ -22,7 +22,7 @@ import { Shell } from "@/components/shell/Shell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
-import { Histogram, BreakdownBars } from "@/components/ui/charts";
+import { Histogram } from "@/components/ui/charts";
 
 const REASONS = [
   "Negative discrimination",
@@ -190,7 +190,7 @@ export default function ReviewPage({
       </div>
 
       {/* KPI strip */}
-      <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 36, padding: "16px 26px", borderBottom: `1px solid ${H.line}`, background: H.paper, flexWrap: "wrap" }}>
+      <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 30, padding: "11px 26px", borderBottom: `1px solid ${H.line}`, background: H.paper, flexWrap: "wrap" }}>
         <Kpi n={String(model.kpis.items)} label="Items" />
         <Kpi n={String(model.kpis.excluded)} label="Excluded" sub="recompute on" />
         <Kpi n={fmtStat(model.kpis.medianDifficulty)} label="Median difficulty" />
@@ -285,40 +285,73 @@ export default function ReviewPage({
   );
 }
 
-// ── cohort summary strip ────────────────────────────────────────────────────
+// ── cohort summary strip (slim, inline) ─────────────────────────────────────
 function CohortStrip({ open, onToggle, model }: { open: boolean; onToggle: () => void; model: ReviewModel }) {
   return (
-    <div style={{ flex: "0 0 auto", borderBottom: `1px solid ${H.line}`, background: H.canvas }}>
+    <div
+      className="hf-pad"
+      style={{ flex: "0 0 auto", borderBottom: `1px solid ${H.line}`, background: H.canvas, display: "flex", alignItems: "center", gap: 18, padding: "7px 26px", flexWrap: "wrap", minHeight: 40 }}
+    >
       <button
         onClick={onToggle}
-        style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", border: "none", background: "transparent", cursor: "pointer", padding: "9px 26px", color: H.ink2 }}
+        title={open ? "Collapse cohort summary" : "Expand cohort summary"}
+        style={{ display: "flex", alignItems: "center", gap: 7, border: "none", background: "transparent", cursor: "pointer", color: H.ink2, padding: 0, flex: "0 0 auto" }}
       >
-        <span style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s", fontSize: 11 }}>▶</span>
+        <Chevron open={open} />
         <span className="hf-lbl">Cohort summary</span>
-        <span className="hf-sub" style={{ fontSize: 11 }}>distribution · by element · by demand</span>
-        <div style={{ flex: 1 }} />
-        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: H.pink, fontWeight: 700 }}>
-          <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} /> LIVE
+        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 9.5, color: H.pink, fontWeight: 700, marginLeft: 4 }}>
+          <span style={{ width: 5, height: 5, borderRadius: 999, background: H.pink }} /> LIVE
         </span>
       </button>
+
       {open && (
-        <div className="hf-pad" style={{ display: "flex", gap: 30, padding: "4px 26px 18px", flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 280px", minWidth: 240 }}>
-            <div className="hf-lbl" style={{ marginBottom: 8 }}>Score distribution</div>
-            <Histogram data={model.distribution} height={84} />
-            <div className="hf-sub" style={{ marginTop: 6 }}>Cohort mean {model.cohortMean}% · σ {model.cohortSd}</div>
+        <>
+          {/* condensed distribution */}
+          <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "0 0 auto" }}>
+            <div style={{ width: 132 }}><Histogram data={model.distribution} height={34} /></div>
+            <span className="hf-sub" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+              mean <b style={{ color: H.ink }}>{model.cohortMean}%</b> · σ {model.cohortSd}
+            </span>
           </div>
-          <div style={{ flex: "1 1 240px", minWidth: 220 }}>
-            <div className="hf-lbl" style={{ marginBottom: 10 }}>By curriculum element</div>
-            <BreakdownBars items={model.byElement} />
-          </div>
-          <div style={{ flex: "1 1 200px", minWidth: 180 }}>
-            <div className="hf-lbl" style={{ marginBottom: 10 }}>By demand level</div>
-            <BreakdownBars items={model.byDemand} />
-          </div>
-        </div>
+          <Sep />
+          <CompactGroup label="Element" items={model.byElement} />
+          <Sep />
+          <CompactGroup label="Demand" items={model.byDemand} />
+        </>
       )}
     </div>
+  );
+}
+
+function Sep() {
+  return <span style={{ width: 1, height: 22, background: H.line2, flex: "0 0 auto" }} />;
+}
+
+/** Condensed inline summary: label + small "key n" chips with a thin fill bar. */
+function CompactGroup({ label, items }: { label: string; items: { k: string; v: number }[] }) {
+  const max = Math.max(1, ...items.map((i) => i.v));
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", minWidth: 0 }}>
+      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
+      {items.map((it) => (
+        <span key={it.k} title={`${it.k}: ${it.v}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: H.ink2, background: H.paper, border: `1px solid ${H.line2}`, borderRadius: 999, padding: "1px 7px", maxWidth: 150 }}>
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.k}</span>
+          <span style={{ width: 22, height: 4, background: H.tint2, borderRadius: 2, flex: "0 0 auto" }}>
+            <span style={{ display: "block", width: `${(it.v / max) * 100}%`, height: "100%", background: H.bar, borderRadius: 2 }} />
+          </span>
+          <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink }}>{it.v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Subtle, conventional expand chevron (rotates when open). */
+function Chevron({ open }: { open: boolean }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s", flex: "0 0 auto" }} aria-hidden="true">
+      <path d="M4 2.5L8 6l-4 3.5" fill="none" stroke={H.ink3} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
@@ -348,10 +381,10 @@ function ZoomControl({ zoom, onZoom }: { zoom: Zoom; onZoom: (z: Zoom) => void }
 
 function Kpi({ n, label, sub }: { n: string; label: string; sub?: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-      <span className="hf-mono" style={{ fontSize: 25, fontWeight: 600, lineHeight: 1 }}>{n}</span>
-      <span className="hf-lbl" style={{ marginTop: 4 }}>{label}</span>
-      {sub && <span className="hf-sub" style={{ fontSize: 11 }}>{sub}</span>}
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span className="hf-mono" style={{ fontSize: 20, fontWeight: 600, lineHeight: 1 }}>{n}</span>
+      <span className="hf-lbl" style={{ marginTop: 3 }}>{label}</span>
+      {sub && <span className="hf-sub" style={{ fontSize: 10.5 }}>{sub}</span>}
     </div>
   );
 }
@@ -407,15 +440,23 @@ function ItemRowView({
       style={{ background: selected ? H.pinkSoft2 : it.excluded ? H.tint : "transparent", opacity: it.excluded ? 0.62 : 1, cursor: "pointer", boxShadow: selected ? `inset 3px 0 0 ${H.pink}` : "none" }}
     >
       <td style={{ ...td, verticalAlign: "top", maxWidth: 360 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-          <span className="hf-mono" style={{ fontWeight: 700, fontSize: zoom.font }}>{qLabel}</span>
-          <span style={{ flex: 1, minWidth: 0, fontSize: zoom.font, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? {} : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block", maxWidth: 250 }) }}>
+        <div style={{ display: "flex", gap: 8, alignItems: expanded ? "flex-start" : "center" }}>
+          <span className="hf-mono" style={{ fontWeight: 700, fontSize: zoom.font, flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>{qLabel}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: zoom.font, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
             {expanded ? (it.wording ?? "—") : firstLine(it.wording)}
           </span>
-          {(it.wording ?? "").length > 40 && (
-            <button onClick={(e) => { stop(e); onToggleExpand(); }} title={expanded ? "Collapse" : "Expand full text"} className="hf-mono" style={{ border: "none", background: "transparent", color: H.pink, cursor: "pointer", fontSize: 11, fontWeight: 700, flex: "0 0 auto" }}>
-              {expanded ? "less" : "more"}
+          {(it.wording ?? "").length > 40 ? (
+            <button
+              onClick={(e) => { stop(e); onToggleExpand(); }}
+              aria-label={expanded ? "Collapse question text" : "Expand full question text"}
+              aria-expanded={expanded}
+              title={expanded ? "Collapse" : "Show full text"}
+              style={{ border: "none", background: "transparent", cursor: "pointer", flex: "0 0 auto", display: "inline-flex", alignItems: "center", padding: 2, marginTop: expanded ? 1 : 0, borderRadius: 4 }}
+            >
+              <Chevron open={expanded} />
             </button>
+          ) : (
+            <span style={{ width: 15, flex: "0 0 auto" }} />
           )}
         </div>
       </td>
