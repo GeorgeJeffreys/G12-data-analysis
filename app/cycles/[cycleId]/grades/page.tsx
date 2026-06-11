@@ -66,15 +66,6 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           <span style={{ display: "flex", alignItems: "center", gap: 8, color: H.good, fontWeight: 700, fontSize: 12.5 }}>
             <Mark kind="pass" size={16} /> Locked &amp; signed off
           </span>
-        ) : confirming ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="hf-sub" style={{ fontSize: 12 }}>Lock &amp; sign off?</span>
-            <Button variant="pri" onClick={lock}>
-              <Icon name="lock" color="#fff" />
-              Confirm lock
-            </Button>
-            <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
-          </div>
         ) : (
           <Button
             variant="pri"
@@ -188,29 +179,42 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                 Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments. Boundaries can’t change afterward without re-opening the cycle.
               </span>
             </div>
-            {confirming ? (
-              <div className="hf-card" style={{ padding: "13px 16px", display: "flex", flexDirection: "column", gap: 8, justifyContent: "center", minWidth: 230 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600 }}>Lock and sign off now?</span>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Button variant="pri" onClick={lock}><Icon name="lock" color="#fff" />Confirm lock</Button>
-                  <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
-                </div>
-              </div>
-            ) : (
-              <Button
-                variant="pri"
-                style={{ padding: "13px 24px", fontSize: 13.5 }}
-                disabled={!model.canLock}
-                onClick={() => setConfirming(true)}
-                title={model.canLock ? undefined : "Only a Lead can lock grades"}
-              >
-                <Icon name="lock" color="#fff" />
-                Lock grades &amp; sign off
-              </Button>
-            )}
+            <Button
+              variant="pri"
+              style={{ padding: "13px 24px", fontSize: 13.5 }}
+              disabled={!model.canLock}
+              onClick={() => setConfirming(true)}
+              title={model.canLock ? undefined : "Only a Lead can lock grades"}
+            >
+              <Icon name="lock" color="#fff" />
+              Lock grades &amp; sign off
+            </Button>
           </div>
         )}
       </div>
+
+      {/* lock confirmation modal — the single entry point, no header reflow */}
+      {confirming && !model.locked && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.32)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}
+          onClick={() => setConfirming(false)}
+        >
+          <div className="hf-card" style={{ padding: "22px 24px", maxWidth: 480, width: "100%", background: H.paper }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <Mark kind="warn" size={20} />
+              <span className="hf-h2">Lock grades &amp; sign off?</span>
+            </div>
+            <div className="hf-sub" style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+              Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments.
+              Boundaries and grades can’t change afterward without re-opening the cycle.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+              <Button variant="pri" onClick={lock}><Icon name="lock" color="#fff" />Confirm lock</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }
