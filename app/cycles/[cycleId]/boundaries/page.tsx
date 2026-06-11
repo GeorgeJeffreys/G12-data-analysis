@@ -172,7 +172,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </div>
 
           {/* table card */}
-          <div className="hf-card" style={{ flex: "1 1 440px", minWidth: 320, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div className="hf-card" style={{ flex: "1 1 440px", minWidth: 320, overflow: "auto", display: "flex", flexDirection: "column" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
               <thead>
                 <tr>
@@ -391,13 +391,15 @@ function BoundaryChart({
       {regions.map((r) => (
         <div key={r.level} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: r.opacity }} />
       ))}
+      {/* band labels sit BELOW the plot, clear of the draggable handle pills
+          (which live at the top), so the two never collide */}
       {regions.map((r) => (
         <div
           key={r.level + "l"}
           title={r.level}
           style={{
             position: "absolute",
-            top: 4,
+            bottom: 26,
             left: `${r.from}%`,
             width: `${r.to - r.from}%`,
             padding: "0 2px",
