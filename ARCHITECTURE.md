@@ -22,7 +22,7 @@ this document describes the *implementation*.
 - **Supabase** (Postgres/Auth/Storage/RLS) — env-var-based clients in
   `lib/supabase/`. Not yet wired to the UI. No keys committed; see `.env.example`.
 - **SheetJS (`xlsx`) / `xlsx-js-style`** for Excel I/O.
-- **Vitest** for tests. `npm test` runs 240 tests, all passing.
+- **Vitest** for tests. `npm test` runs 248 tests, all passing.
 
 ## Repository layout
 
@@ -96,8 +96,8 @@ The engine lives behind a single interface, `ComputationEngine`
 interface ComputationEngine {
   readonly version: string;
   ingestAndClean(rawExport): { cleanedResponses, validationReport };
-  computeItemStats({ responses, items?, perStudentExcluded? }): ItemStat[];
-  computeScores(responses, excludedItemIds, perStudentExcluded?): ParticipantScore[];
+  computeItemStats({ responses, items?, scoringConfig? }): ItemStat[];
+  computeScores(responses, excludedItemIds, options?): ParticipantScore[]; // ScoreOptions: essayMarks, alterations, essayAssessmentIds…
   rollUp({ participantScores, responses, items, excludedItemIds? }): RollUp;
 }
 ```
@@ -187,27 +187,48 @@ for **all 177 items across the five assessments** within rounding tolerance, wit
 ratings and overall review matching exactly. `computeScores` is separately
 checked for self-consistency against the raw response matrix.
 
-### Per-student technical exclusions (the one deliberate interface change)
+### Subject totals: MCQ + Essay + Alterations (the reshaped scoring model)
 
-A technical fault can hit **one student on one question** (a frozen tool, an
-image that failed to load). That single response must be removed from **both**
-that student's score **and** that item's cohort statistics — a glitched response
-must not skew the cohort psychometrics. This is the only deliberate extension to
-the engine interface:
+A student's **final mark for a subject** is a raw-mark sum of three components:
 
-- `PerStudentExclusion = { participantId, itemId }` (`lib/engine/types.ts`).
-- `computeScores` and `computeItemStats` take an optional `perStudentExcluded`
-  set and **filter those (participant, item) responses upfront** before any
-  maths runs (`perStudentKey` / `perStudentSet` in `lib/engine/stats.ts`).
-- **Parity-safe by construction:** with an empty/absent set the code path is
-  byte-identical to the baseline, so the 177-item parity test is untouched.
-  `tests/engine.perstudent.test.ts` adds four tests: empty set ≡ baseline (for
-  both scores and item stats), and a single exclusion drops the item from only
-  that student's score and shrinks that one item's cohort `n` / `p-value`.
-- The provider derives the exclusion set from **confirmed** technical incidents
-  (`perStudentExclusions(cycleId, assessmentId?)`) and threads it through every
-  scoring and item-stats call, so item-review KPIs, boundaries and grades all
-  reflect per-student faults live.
+1. **MCQ** — 1 mark per question over the items **retained** after the cohort
+   item-review (the Review step's psychometric exclusions). Unchanged maths.
+2. **Essay** — **English and Arabic only**, marked offline and uploaded, out of
+   **20**, added to the MCQ total (so a 40-item English subject becomes scored
+   out of 60).
+3. **Alterations** — per-student raw marks **added or subtracted** by human
+   judgement, arising from the incident-log triage. Audit-logged.
+
+`ParticipantScore` carries `mcq` / `essay` / `alterations`, the total (`raw`),
+the subject `max` ( = retained MCQ item count + 20 when the subject has an essay)
+and `pct`. `computeScores(responses, excludedItemIds, options?)` takes
+`ScoreOptions` (`essayMarks`, `alterations`, `essayAssessmentIds`, `essayMax`);
+empty defaults score a cycle **exactly as MCQ-only**. Performance-level
+cut-points and the boundaries screen operate on this **summed total and its
+max**; the overall award is derived from the five subject results (the award
+rule is still the `// CONFIRM:` placeholder).
+
+**The previous per-student exclusion model was removed entirely.** Nothing is
+dropped from any student or from cohort statistics; alterations are additive.
+`computeItemStats` is byte-identical to the baseline (the old empty per-student
+path was a no-op), so the **177-item parity test still passes 177/177**
+(`tests/engine.scoring-components.test.ts` pins the essay/alteration arithmetic
+and the unchanged item stats).
+
+**Essay importer** (`lib/data/parse-essays.ts`, Part 2): reads the per-subject
+sheets (AFL → Arabic, ESL → English) keyed by ParticipantID, taking the
+`TotalScore` column (the D1–D5 rubric columns are ignored); each student's mark
+is the **mean** of their per-essay TotalScores (`// CONFIRM:` divisor). Optional,
+non-blocking upload at Ingest (`uploadEssayMarks` / `loadSampleEssayMarks` /
+`getEssayMarks`), matched by ParticipantID with unmatched IDs surfaced.
+
+**Incident → alterations triage** (`lib/data/parse-incidents.ts`, Part 3): reads
+the free-text `Incident_Log` (header ~row 3) and `Students Complaints` sheets
+into a triage queue — **never auto-applied**. On the Adjustments step each
+incident is decided per-student (roster suggestion from the free-text name +
+`Exam` code, never auto-applied), whole-subject (bulk), or no-action, becoming an
+alteration (`decideIncident` → `getAdjustments`) that feeds the roll-up and is
+audit-logged.
 
 ## Ingest + validation (Sections 5 & 10)
 
@@ -269,9 +290,11 @@ build silently drops styles on write. Import/parsing still uses `xlsx`.
     `ParticipantID | ParticipantName | AssessmentName | QuestionId |
     QuestionWording | DemandLevel | Reason | DecidedBy | DecidedAt`
     (`PER_STUDENT_EXCLUSION_HEADERS`). When a cycle has none, the sheet is emitted
-    with the header row plus a single "No per-student exclusions recorded…" note,
-    so the sheet is always present. This is the **one canonical exclusion record**;
-    the Grades workbook emits the identical sheet (`buildPerStudentExclusionsSheet`).
+    with the header row plus a single "No per-student exclusions recorded…" note.
+    (The per-student exclusion model was removed in the scoring rebuild, so on a
+    live cycle this item-analysis sheet is now always the empty/note form; the
+    **grades/performance-report workbooks emit an `Alterations` sheet instead** —
+    see below.)
 - **Overall Score Analysis** — reconciled to the canonical
   `MCQ_Overall_Score_Analysis` template, five sheets (`SCORE_ANALYSIS_SHEETS`):
   `Overall Scores Summary` (KPI blocks + per-assessment / major-element /
@@ -285,7 +308,10 @@ build silently drops styles on write. Import/parsing still uses `xlsx`.
 - **Students' Performance Report** — the grades download, reworked to match the
   original `Students_Performance_Report` file (`buildPerformanceReportWorkbook`,
   `PERFORMANCE_REPORT_SHEETS`). Three matched sheets, then the
-  clearly-additional `Per-student exclusions` and `Audit Trail` sheets appended
+  clearly-additional **`Alterations`** sheet (`ParticipantID | ParticipantName |
+  Subject | Marks (+/-) | Reason | DecidedBy | DecidedAt | SourceIncident`,
+  built from the decided incidents — a whole-subject decision expands to one row
+  per student; empty cycle = header + note) and the `Audit Trail` sheet appended
   **after** them:
   - **`Class Performance`** — title, per-assessment group headers spanning each
     assessment's major-element columns, then one row per performance level whose
@@ -357,7 +383,7 @@ the shell.
 | Cycles | Cycle overview (Pipeline) | `/cycles/[cycleId]` |
 | Cycles | Ingest & validate | `/cycles/[cycleId]/ingest` |
 | Cycles | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
-| Cycles | Student review (per-student exclusions) | `/cycles/[cycleId]/student-review` |
+| Cycles | Adjustments (incident triage → alterations) | `/cycles/[cycleId]/adjustments` |
 | Cycles | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
 | Cycles | Grades & sign-off | `/cycles/[cycleId]/grades` |
 | Cycles | Distinction safeguard | `/cycles/[cycleId]/grades/distinction` |
@@ -438,27 +464,25 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   see the `// DOWNSTREAM:` notes) — via a confirm dialog, with invalid sets
   blocked.
 
-### Student review & Distinction safeguard (the new workflow)
+### Adjustments & Distinction safeguard (the workflow)
 
-The pipeline stepper is now eight stages: **Ingest → Validate → Review →
-Student review → Score → Boundaries → Grades → Export**. Two human gates were
-added around per-student fairness.
+The pipeline stepper is eight stages: **Ingest → Validate → Review →
+Adjustments → Score → Boundaries → Grades → Export**.
 
-- **Optional technical-errors upload (Ingest).** A second, optional spreadsheet
-  (`student · question · error`) can be attached at Ingest. It is parsed
-  client-side (`lib/data/parse-technical-errors.ts`, SheetJS — real path) and
-  **never gates progress**. `uploadTechnicalErrors` turns rows into per-student
-  incident records; unmatched student/question cells are kept and shown as
-  "unmatched" rather than dropped. `loadSampleTechnicalErrors` provides a small,
-  **clearly-labelled `SAMPLE`** fixture whose every incident references a *real*
-  seeded participant and item, so its exclusions genuinely flow into scoring.
-- **Student review (`/student-review`, `getStudentReview`).** Lists incidents
-  grouped by student or by question; each is decided **exclude / keep** with a
-  reason. A `ScopeLegend` makes the per-student scope unmistakable vs. the
-  cohort-wide item exclusion on Review. Confirmed exclusions feed
-  `perStudentExclusions` → the engine (above), nudging that item's cohort
-  psychometrics and that student's score. The step is empty/skippable when no
-  file was added. Every decision is audit-logged (`student` type).
+- **Optional uploads at Ingest (never gate progress).** Alongside the QM export:
+  the **essay-marks** file and the **incident log** (see the scoring-model
+  section above). Each is parsed client-side and surfaces a matched/unmatched
+  preview; a clearly-labelled `SAMPLE` can be loaded without a file.
+- **Adjustments (`/cycles/[id]/adjustments`, `getAdjustments` / `decideIncident`).**
+  Replaces the old per-student exclusion screen. Two tabs: **Incident triage**
+  (each incident shown with full context; decided per-student / whole-subject
+  bulk / no-action, with a subject defaulted from the exam code, raw marks ±, and
+  a required reason — every decision audit-logged) and **Mark composition**
+  (`getComposition`: per-student per-subject **MCQ + Essay + Alterations = total**
+  out of max, expandable). The step is skippable when no incident log was added.
+- **Provisional-grades warning.** Boundaries and Grades show a non-blocking
+  `ProvisionalBanner` when an essay subject has no marks yet or incidents remain
+  unreviewed — grades are provisional until those are in, never gated.
 - **Distinction safeguard (`/grades/distinction`, `getDistinctionSafeguard`).**
   Runs on the **provisional awards from boundaries**: a top award is only kept
   when the student **attempted at least _threshold_ top-difficulty questions**
@@ -618,7 +642,7 @@ on the Python renderer or LibreOffice directly.
 npm install
 npm run dev       # the app (in-memory provider, real engine)
 npm run seed      # regenerate lib/data/seed.generated.json from the sample export
-npm test          # 240 tests incl. the 177-item parity gate
+npm test          # 248 tests incl. the 177-item parity gate
 npm run typecheck # tsc --noEmit, strict
 npm run build     # next build
 ```
