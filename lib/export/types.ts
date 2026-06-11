@@ -44,6 +44,23 @@ export interface PerStudentExclusionRecord {
 }
 
 /**
+ * One applied raw-mark alteration (from the Adjustments incident triage). A
+ * whole-subject bulk decision yields one record per student.
+ */
+export interface AlterationRecord {
+  participantId: string;
+  participantName: string;
+  subject: string;
+  /** Net marks added (+) or subtracted (−). */
+  marks: number;
+  reason: string;
+  decidedBy: string;
+  decidedAt: string;
+  /** The source incident's free-text label (student name / issue). */
+  sourceIncident: string | null;
+}
+
+/**
  * A minimal response-level fact used to derive the per-item display metrics
  * (presented / answered counts, average response time) that the engine's
  * statistics do not carry. Callers map their cleaned responses to this shape.
@@ -187,6 +204,7 @@ export interface GradesInput {
   awardDistribution: { level: string; count: number; pct: number }[];
   /** Per-assessment performance-level distribution. */
   performanceDistribution: { assessmentName: string; counts: Record<string, number> }[];
-  perStudentExclusions: PerStudentExclusionRecord[];
+  /** Human-decided raw-mark alterations (replaces the old exclusions sheet). */
+  alterations: AlterationRecord[];
   audit: GradeAuditEntry[];
 }

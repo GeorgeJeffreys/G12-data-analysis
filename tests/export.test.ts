@@ -17,6 +17,7 @@ import {
   ITEM_ANALYSIS_HEADERS,
   ITEM_ANALYSIS_SUMMARY_HEADERS,
   PER_STUDENT_EXCLUSION_HEADERS,
+  ALTERATION_HEADERS,
   SCORE_ANALYSIS_SHEETS,
   GRADES_STUDENT_HEADERS,
   GRADES_SHEETS,
@@ -472,19 +473,18 @@ describe("grades workbook — canonical layout", () => {
         }
         return { assessmentName: a.name, counts };
       }),
-      perStudentExclusions: review.incidents
-        .filter((i) => i.decision === "excluded" && i.itemId)
-        .map((i) => ({
-          participantId: i.studentId,
-          participantName: i.studentName,
-          assessmentName: i.assessmentName,
-          questionId: i.itemId!,
-          questionWording: i.wording,
-          demandLevel: i.demand,
-          reason: i.reason ?? "Confirmed technical fault",
-          decidedBy: i.by ?? "",
-          decidedAt: i.at ?? "",
-        })),
+      alterations: [
+        {
+          participantId: model.rows[0]!.id,
+          participantName: model.rows[0]!.label,
+          subject: model.assessments[0]!.name,
+          marks: 3,
+          reason: "Lost time on a frozen item",
+          decidedBy: "G12 Lead",
+          decidedAt: "2026-06-10T09:00:00.000Z",
+          sourceIncident: "Calculator froze",
+        },
+      ],
       audit: audit.entries.map((e) => ({ timestamp: e.ts, actor: e.actorName, action: e.action, detail: e.detail, entity: e.type, entityId: e.cycleId ?? "" })),
     };
   }
@@ -551,10 +551,14 @@ describe("grades workbook — canonical layout", () => {
     expect(aoa.slice(3).filter((r) => r.length > 0).length).toBeGreaterThan(0);
   });
 
-  it("includes the Per-student Exclusions sheet", () => {
-    expect(wb.SheetNames).toContain("Per-student Exclusions");
-    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student Exclusions");
-    expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
+  it("includes the Alterations sheet with the canonical columns + a row per alteration", () => {
+    expect(wb.SheetNames).toContain("Alterations");
+    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Alterations");
+    expect(aoa[0]).toEqual([...ALTERATION_HEADERS]);
+    // one synthetic alteration was supplied in makeInput
+    const dataRows = aoa.slice(1).filter((r) => r.length > 1);
+    expect(dataRows.length).toBe(1);
+    expect(Number(dataRows[0]![3])).toBe(3); // Marks column
   });
 });
 
@@ -568,7 +572,7 @@ describe("performance report workbook — Students_Performance_Report layout", (
     const report = provider.getPerformanceReport(CYCLE)!;
     const wb = buildPerformanceReportWorkbook({
       ...report,
-      perStudentExclusions: exclusionRecordsFromProvider(provider, CYCLE),
+      alterations: [],
       audit: provider.getAuditLog(CYCLE, "all", "").entries.map((e) => ({
         timestamp: e.ts,
         actor: e.actorName,
@@ -582,13 +586,13 @@ describe("performance report workbook — Students_Performance_Report layout", (
     return XLSXR.read(buf, { type: "buffer" });
   }
 
-  it("emits the three matched sheets, then exclusions + audit, in order", () => {
+  it("emits the three matched sheets, then alterations + audit, in order", () => {
     const wb = build();
     expect(wb.SheetNames.slice(0, 3)).toEqual([...PERFORMANCE_REPORT_SHEETS]);
-    expect(wb.SheetNames).toContain("Per-student exclusions");
+    expect(wb.SheetNames).toContain("Alterations");
     expect(wb.SheetNames).toContain("Audit Trail");
     // additional sheets come AFTER the matched ones
-    expect(wb.SheetNames.indexOf("Per-student exclusions")).toBeGreaterThan(2);
+    expect(wb.SheetNames.indexOf("Alterations")).toBeGreaterThan(2);
     expect(wb.SheetNames.indexOf("Audit Trail")).toBeGreaterThan(2);
   });
 

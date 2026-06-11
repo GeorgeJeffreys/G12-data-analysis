@@ -6,7 +6,8 @@
  *   2. Student Grades       — the main deliverable: per-student section levels +
  *                             scores + percentages, overall award, and the
  *                             Distinction-safeguard cap / override columns.
- *   3. Per-student Exclusions — the canonical per-student exclusion sheet.
+ *   3. Alterations          — the canonical record of human-decided raw-mark
+ *                             alterations (from the Adjustments incident triage).
  *   4. Audit Trail          — every audit entry that produced these grades.
  *
  * Performance-level cells are colour-filled (Outstanding green → Doesn't-yet-meet
@@ -23,15 +24,13 @@ import {
   styleCell,
   roundOrNull,
 } from "./sheet-utils";
-import {
-  buildPerStudentExclusionsSheet,
-} from "./per-student-exclusions";
+import { buildAlterationsSheet } from "./alterations";
 import type { GradesInput, StudentGradeRow, SubjectColumn } from "./types";
 
 export const GRADES_SHEETS = [
   "Grade Summary",
   "Student Grades",
-  "Per-student Exclusions",
+  "Alterations",
   "Audit Trail",
 ] as const;
 
@@ -219,7 +218,7 @@ export function buildGradesWorkbook(input: GradesInput): XLSX.WorkBook {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, buildGradeSummarySheet(input), GRADES_SHEETS[0]);
   XLSX.utils.book_append_sheet(wb, buildStudentGradesSheet(input), GRADES_SHEETS[1]);
-  XLSX.utils.book_append_sheet(wb, buildPerStudentExclusionsSheet(input.perStudentExclusions), GRADES_SHEETS[2]);
+  XLSX.utils.book_append_sheet(wb, buildAlterationsSheet(input.alterations), GRADES_SHEETS[2]);
   XLSX.utils.book_append_sheet(wb, buildAuditTrailSheet(input), GRADES_SHEETS[3]);
   return wb;
 }

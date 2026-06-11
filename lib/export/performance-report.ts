@@ -29,8 +29,8 @@ import {
   styleCell,
   sanitizeSheetName,
 } from "./sheet-utils";
-import { buildPerStudentExclusionsSheet, PER_STUDENT_EXCLUSION_SHEET_NAME } from "./per-student-exclusions";
-import type { GradeAuditEntry, PerStudentExclusionRecord } from "./types";
+import { buildAlterationsSheet, ALTERATIONS_SHEET_NAME } from "./alterations";
+import type { GradeAuditEntry, AlterationRecord } from "./types";
 
 export const PERFORMANCE_REPORT_SHEETS = [
   "Class Performance",
@@ -88,7 +88,7 @@ export interface PerformanceReportInput {
   summarySubjects: PRSummarySubject[];
   students: PRStudent[];
   awardDistribution: { level: string; count: number; pct: number }[];
-  perStudentExclusions: PerStudentExclusionRecord[];
+  alterations: AlterationRecord[];
   audit: GradeAuditEntry[];
 }
 
@@ -299,7 +299,7 @@ export function buildPerformanceReportWorkbook(input: PerformanceReportInput): X
   append(PERFORMANCE_REPORT_SHEETS[1], buildStudentSummarySheet(input));
   append(PERFORMANCE_REPORT_SHEETS[2], buildStudentProfilesSheet(input));
   // clearly-additional sheets appended AFTER the matched layout
-  append(PER_STUDENT_EXCLUSION_SHEET_NAME, buildPerStudentExclusionsSheet(input.perStudentExclusions));
+  append(ALTERATIONS_SHEET_NAME, buildAlterationsSheet(input.alterations));
   append("Audit Trail", buildAuditTrailSheet(input));
   return wb;
 }

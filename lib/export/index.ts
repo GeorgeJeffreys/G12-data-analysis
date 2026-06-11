@@ -43,5 +43,10 @@ export {
   PER_STUDENT_EXCLUSION_HEADERS,
   PER_STUDENT_EXCLUSION_SHEET_NAME,
 } from "./per-student-exclusions";
+export {
+  buildAlterationsSheet,
+  ALTERATION_HEADERS,
+  ALTERATIONS_SHEET_NAME,
+} from "./alterations";
 export { workbookToBuffer, sanitizeSheetName, RATING_STYLES, PERFORMANCE_STYLES } from "./sheet-utils";
 export type * from "./types";

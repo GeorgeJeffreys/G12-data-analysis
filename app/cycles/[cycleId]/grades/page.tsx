@@ -297,22 +297,22 @@ async function exportExcel(provider: DataProvider, cycleId: string, model: Grade
   const exp = await import("@/lib/export");
   const report = provider.getPerformanceReport(cycleId);
   if (!report) return;
-  const review = provider.getStudentReview(cycleId);
+  const adj = provider.getAdjustments(cycleId);
   const audit = provider.getAuditLog(cycleId, "all", "");
 
-  const perStudentExclusions = (review?.incidents ?? [])
-    .filter((i) => i.decision === "excluded" && i.itemId)
-    .map((i) => ({
-      participantId: i.studentId,
-      participantName: i.studentName,
-      assessmentName: i.assessmentName,
-      questionId: i.itemId!,
-      questionWording: i.wording,
-      demandLevel: i.demand,
-      reason: i.reason ?? "Confirmed technical fault",
-      decidedBy: i.by ?? "",
-      decidedAt: i.at ?? "",
-    }));
+  // One Alterations record per applied alteration (whole-subject decisions expand
+  // to one row per roster student), built from the decided incidents.
+  const subjectName = (id: string | null) => adj?.subjects.find((s) => s.id === id)?.name ?? id ?? "—";
+  const nameOf = (id: string | null) => adj?.roster.find((r) => r.id === id)?.name ?? id ?? "—";
+  const alterations = (adj?.incidents ?? [])
+    .filter((i) => i.applyTo === "student" || i.applyTo === "subject")
+    .flatMap((i) => {
+      const base = { subject: subjectName(i.subjectId), marks: i.marks, reason: i.reason ?? "", decidedBy: i.decidedBy ?? "", decidedAt: i.decidedAt ?? "", sourceIncident: i.studentName || i.source };
+      if (i.applyTo === "subject") {
+        return (adj?.roster ?? []).map((r) => ({ participantId: r.id, participantName: r.name, ...base }));
+      }
+      return [{ participantId: i.studentId ?? "", participantName: nameOf(i.studentId), ...base }];
+    });
 
   const auditEntries = audit.entries.map((e) => ({
     timestamp: e.ts,
@@ -325,7 +325,7 @@ async function exportExcel(provider: DataProvider, cycleId: string, model: Grade
 
   const wb = exp.buildPerformanceReportWorkbook({
     ...report,
-    perStudentExclusions,
+    alterations,
     audit: auditEntries,
   });
   const buf = exp.workbookToBuffer(wb);
