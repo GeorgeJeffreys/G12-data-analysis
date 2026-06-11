@@ -73,9 +73,9 @@ export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Setting
           <Link
             key={it.k}
             href={it.href}
-            title={it.k}
             aria-label={it.k}
             aria-current={on ? "page" : undefined}
+            className="nav-item"
             style={{
               width: 40,
               height: 40,
@@ -90,6 +90,7 @@ export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Setting
             <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
               <path d={it.d} />
             </svg>
+            <span className="nav-label">{it.k}</span>
           </Link>
         );
       })}

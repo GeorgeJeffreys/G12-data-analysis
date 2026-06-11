@@ -58,6 +58,7 @@ export default function StudentReviewPage({ params }: { params: { cycleId: strin
     subnav: cyclesSubnav(cycleId, "pipeline"),
     stageIndex: 3,
     done: 3,
+    cycleId,
     actions: (
       <Link href={`/cycles/${cycleId}/audit`}>
         <Button variant="ghost"><Icon name="doc" />Audit log</Button>

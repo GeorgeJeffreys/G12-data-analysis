@@ -228,6 +228,44 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
+/* nav-rail items reveal a label on hover/focus */
+.nav-item {
+  position: relative;
+}
+.nav-label {
+  position: absolute;
+  left: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 9px;
+  border-radius: 7px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.12s;
+  z-index: 50;
+  box-shadow: 0 4px 14px rgba(31, 42, 49, 0.22);
+}
+.nav-item:hover .nav-label,
+.nav-item:focus-visible .nav-label,
+.nav-item:focus-within .nav-label {
+  opacity: 1;
+  visibility: visible;
+}
+
+/* clickable pipeline steps */
+.hf-step {
+  transition: background 0.12s;
+}
+.hf-step:hover {
+  background: var(--pink-soft2);
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

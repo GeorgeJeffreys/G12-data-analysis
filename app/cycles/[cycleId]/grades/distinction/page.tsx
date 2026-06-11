@@ -59,6 +59,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
       ]}
       stageIndex={6}
       done={6}
+      cycleId={cycleId}
       actions={
         <Link href={`/cycles/${cycleId}/audit`}>
           <Button variant="ghost"><Icon name="doc" />Audit log</Button>

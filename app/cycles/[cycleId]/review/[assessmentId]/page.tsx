@@ -120,6 +120,7 @@ export default function ReviewPage({
         { label: "Item review & scoring" },
       ]}
       stageIndex={2}
+      cycleId={cycleId}
       stageAction={
         <Link href={`/cycles/${cycleId}/student-review`}>
           <Button variant="pri">

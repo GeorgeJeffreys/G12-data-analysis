@@ -48,6 +48,7 @@ export default function IngestPage({ params }: { params: { cycleId: string } }) 
         { label: "Ingest & validate" },
       ]}
       stageIndex={1}
+      cycleId={cycleId}
       actions={
         <Button variant="danger">
           <Icon name="upload" />

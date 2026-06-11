@@ -32,6 +32,7 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
       crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}
       subnav={cycle.mock ? undefined : cyclesSubnav(cycleId, "pipeline")}
       stageIndex={cycle.stageIndex}
+      cycleId={cycleId}
       actions={
         <>
           <Link href={`/cycles/${cycleId}/audit`}>

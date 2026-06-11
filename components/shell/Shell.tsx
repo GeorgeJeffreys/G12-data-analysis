@@ -32,6 +32,7 @@ export function Shell({
   done,
   range,
   stageAction,
+  cycleId,
   children,
 }: {
   crumb: Crumb[];
@@ -44,6 +45,8 @@ export function Shell({
   done?: number;
   range?: [number, number];
   stageAction?: ReactNode;
+  /** When set, the pipeline stepper links each stage to its screen. */
+  cycleId?: string;
   children: ReactNode;
 }) {
   return (
@@ -131,7 +134,7 @@ export function Shell({
               minHeight: 56,
             }}
           >
-            <Pipeline active={stageIndex} done={done} range={range} />
+            <Pipeline active={stageIndex} done={done} range={range} cycleId={cycleId} />
             <div style={{ flex: 1 }} />
             {stageAction}
           </div>
