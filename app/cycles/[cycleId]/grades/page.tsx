@@ -12,6 +12,7 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import type { DataProvider } from "@/lib/data/provider";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
@@ -87,6 +88,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         )
       }
     >
+      <ProvisionalBanner cycleId={cycleId} />
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 20, flex: 1 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>

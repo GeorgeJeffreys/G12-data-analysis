@@ -75,6 +75,9 @@ import {
   type EssaySubjectRef,
   type AdjustmentsModel,
   type AdjustmentIncident,
+  type CompositionModel,
+  type StudentComposition,
+  type SubjectComposition,
   type IncidentDecision,
   type SafeguardConfig,
   type SafeguardResult,
@@ -1437,6 +1440,46 @@ export class InMemoryDataProvider implements DataProvider {
       counts: { incidents: incidents.length, decided, awaiting: incidents.length - decided, alterations },
       netBySubject,
     };
+  }
+
+  getComposition(cycleId: string): CompositionModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const essayIds = new Set(this.essaySubjectIds());
+    const subjects = seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name, hasEssay: essayIds.has(a.id) }));
+    const labelOf = (id: string) => seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+
+    // participant -> assessment -> ParticipantScore
+    const byP = new Map<string, SubjectComposition[]>();
+    for (const a of seed.liveCycle.assessments) {
+      for (const [pid, s] of this.pctByParticipant(cycleId, a)) {
+        const list = byP.get(pid) ?? [];
+        list.push({
+          assessmentId: a.id,
+          name: a.name,
+          hasEssay: essayIds.has(a.id),
+          mcq: s.mcq,
+          essay: s.essay,
+          alterations: s.alterations,
+          total: s.raw,
+          max: s.max,
+          pct: s.pct,
+        });
+        byP.set(pid, list);
+      }
+    }
+
+    const students: StudentComposition[] = [...byP.entries()].map(([pid, subs]) => {
+      const total = subs.reduce((t, s) => t + s.total, 0);
+      const max = subs.reduce((t, s) => t + s.max, 0);
+      return {
+        participantId: pid,
+        name: labelOf(pid),
+        subjects: subs,
+        overall: { total: round(total, 2), max, pct: max ? round((total / max) * 100, 1) : 0 },
+      };
+    });
+    students.sort((a, b) => b.overall.pct - a.overall.pct);
+    return { cycleId, subjects, students };
   }
 
   setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void {

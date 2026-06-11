@@ -1,5 +1,5 @@
 /**
- * Pipeline stepper: Ingest → Validate → Review → Student review → Score →
+ * Pipeline stepper: Ingest → Validate → Review → Adjustments → Score →
  * Boundaries → Grades → Export. Ported from design/hf.jsx (HPipeline). Appears on
  * every cycle screen.
  *
@@ -23,8 +23,8 @@ export function stageHref(cycleId: string, index: number): string {
       return `${base}/ingest`;
     case 2: // Review
       return `${base}/review`;
-    case 3: // Student review
-      return `${base}/student-review`;
+    case 3: // Adjustments
+      return `${base}/adjustments`;
     case 4: // Score
     case 5: // Boundaries
       return `${base}/boundaries`;

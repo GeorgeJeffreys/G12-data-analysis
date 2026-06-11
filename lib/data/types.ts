@@ -21,7 +21,7 @@ export const PIPELINE = [
   "Ingest",
   "Validate",
   "Review",
-  "Student review",
+  "Adjustments",
   "Score",
   "Boundaries",
   "Grades",
@@ -180,6 +180,30 @@ export interface AdjustmentsModel {
   counts: { incidents: number; decided: number; awaiting: number; alterations: number };
   /** Net alteration marks applied per subject (assessmentId → net marks). */
   netBySubject: Record<string, number>;
+}
+
+// --- Mark composition (MCQ + Essay + Alterations = subject total) ------------
+export interface SubjectComposition {
+  assessmentId: string;
+  name: string;
+  hasEssay: boolean;
+  mcq: number;
+  essay: number;
+  alterations: number;
+  total: number;
+  max: number;
+  pct: number;
+}
+export interface StudentComposition {
+  participantId: string;
+  name: string;
+  subjects: SubjectComposition[];
+  overall: { total: number; max: number; pct: number };
+}
+export interface CompositionModel {
+  cycleId: string;
+  subjects: { id: string; name: string; hasEssay: boolean }[];
+  students: StudentComposition[];
 }
 
 // --- Performance report (Students_Performance_Report export) -----------------

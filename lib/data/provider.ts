@@ -46,6 +46,7 @@ import type {
   DistinctionSafeguardModel,
   EssayMarksModel,
   AdjustmentsModel,
+  CompositionModel,
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
@@ -202,6 +203,8 @@ export interface DataProvider {
   clearIncidentLog(cycleId: string): void;
   /** Record (or clear) the human triage decision + alteration for one incident. */
   decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void;
+  /** Transparent per-student per-subject composition: MCQ + Essay + Alterations = total. */
+  getComposition(cycleId: string): CompositionModel | null;
 
   // distinction safeguard (grading stage)
   confirmDistinctionCaps(cycleId: string): void;
