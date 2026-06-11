@@ -71,7 +71,14 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
   // Gate: locked grades required.
   if (!model.locked) {
     return (
-      <Shell crumb={crumb}>
+      <Shell
+        crumb={crumb}
+        actions={
+          <Link href={`/cycles/${cycleId}/grades`}>
+            <Button variant="pri">Go to grades &amp; sign-off<Icon name="arrow" color="#fff" /></Button>
+          </Link>
+        }
+      >
         <div style={{ padding: "40px 32px", maxWidth: 640 }}>
           <div className="hf-h1">Generate documents</div>
           <Card style={{ marginTop: 18, padding: "18px 20px", display: "flex", gap: 13, alignItems: "flex-start", background: H.warnSoft }}>
@@ -130,9 +137,20 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
       crumb={crumb}
       subnav={cyclesSubnav(cycleId, "documents")}
       actions={
-        <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.good, fontWeight: 700, fontSize: 12 }}>
-          <Mark kind="pass" size={14} /> Grades locked
-        </span>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.good, fontWeight: 700, fontSize: 12 }}>
+            <Mark kind="pass" size={14} /> Grades locked
+          </span>
+          <Button
+            variant="pri"
+            disabled={!requiredReady || step === "generating"}
+            onClick={doGenerate}
+            title={requiredReady ? undefined : "Upload the required template(s) first"}
+          >
+            <Icon name="award" color="#fff" />
+            {step === "generating" ? "Generating…" : "Generate documents"}
+          </Button>
+        </div>
       }
     >
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0, flexWrap: "wrap" }}>

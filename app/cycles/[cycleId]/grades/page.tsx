@@ -65,10 +65,24 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           <span style={{ display: "flex", alignItems: "center", gap: 8, color: H.good, fontWeight: 700, fontSize: 12.5 }}>
             <Mark kind="pass" size={16} /> Locked &amp; signed off
           </span>
+        ) : confirming ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="hf-sub" style={{ fontSize: 12 }}>Lock &amp; sign off?</span>
+            <Button variant="pri" onClick={lock}>
+              <Icon name="lock" color="#fff" />
+              Confirm lock
+            </Button>
+            <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>
+          </div>
         ) : (
-          <Button variant="pri" disabled={!model.canLock} onClick={() => setConfirming(true)}>
+          <Button
+            variant="pri"
+            disabled={!model.canLock}
+            onClick={() => setConfirming(true)}
+            title={model.canLock ? undefined : "Only a Lead can lock grades"}
+          >
             <Icon name="lock" color="#fff" />
-            Lock grades
+            Lock grades…
           </Button>
         )
       }
