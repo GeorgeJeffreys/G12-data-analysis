@@ -48,6 +48,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
   const [step, setStep] = useState<Step>("config");
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [previewBig, setPreviewBig] = useState(false);
 
   const kinds: DocKind[] = useMemo(
     () => (choice === "both" ? ["certificate", "report"] : [choice]),
@@ -154,8 +155,8 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
       }
     >
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0, flexWrap: "wrap" }}>
-        {/* left: config */}
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "26px 30px", gap: 22, minWidth: 0, overflow: "auto" }}>
+        {/* left: config — the primary task (~two-thirds) */}
+        <div style={{ display: "flex", flexDirection: "column", flex: "2 1 0%", padding: "26px 30px", gap: 22, minWidth: 320, overflow: "auto" }}>
           <div>
             <div className="hf-h1">Generate documents</div>
             <div className="hf-sub" style={{ marginTop: 7 }}>
@@ -209,14 +210,22 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
           </Section>
         </div>
 
-        {/* right: preview + generate */}
-        <aside style={{ flex: "1 1 340px", minWidth: 300, borderLeft: `1px solid ${H.line2}`, background: H.tint, padding: "26px 24px", display: "flex", flexDirection: "column", gap: 18, overflow: "auto" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
-            <span className="hf-lbl">Preview · first student</span>
-            {first && kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
-            {first && kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
-            <div className="hf-sub" style={{ fontSize: 11.5, textAlign: "center" }}>
-              Sample using {first ? first.name : "the first student"}’s data · highlighted fields are merged
+        {/* right: compact preview + generate (~one-third) */}
+        <aside style={{ flex: "1 1 300px", minWidth: 270, maxWidth: 380, borderLeft: `1px solid ${H.line2}`, background: H.tint, padding: "22px 20px", display: "flex", flexDirection: "column", gap: 16, overflow: "auto" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="hf-lbl">Preview · first student</span>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setPreviewBig(true)} className="hf-btn ghost" style={{ fontSize: 11, padding: "3px 7px" }} title="Expand the preview">
+                Expand
+              </button>
+            </div>
+            <div style={{ transform: "scale(0.86)", transformOrigin: "top center", display: "flex", flexDirection: "column", gap: 10 }}>
+              {first && kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
+              {first && kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
+            </div>
+            <div className="hf-sub" style={{ fontSize: 11, textAlign: "center", marginTop: -10 }}>
+              {first ? first.name : "First student"}’s data · highlighted fields are merged · <button onClick={() => setPreviewBig(true)} style={{ border: "none", background: "transparent", color: H.pink, cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>see closer</button>
             </div>
           </div>
 
@@ -256,6 +265,21 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
           )}
         </aside>
       </div>
+
+      {/* expanded preview — a closer look without owning the viewport */}
+      {previewBig && first && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24 }} onClick={() => setPreviewBig(false)}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflow: "auto", maxWidth: 520, width: "100%" }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>Preview · {first.name}</span>
+              <div style={{ flex: 1 }} />
+              <Button variant="ghost" onClick={() => setPreviewBig(false)} style={{ background: H.paper }}>Close</Button>
+            </div>
+            {kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
+            {kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }
