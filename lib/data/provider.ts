@@ -45,6 +45,7 @@ import type {
   StudentReviewModel,
   DistinctionSafeguardModel,
   EssayMarksModel,
+  AdjustmentsModel,
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
@@ -55,6 +56,36 @@ export interface TechnicalErrorRow {
   student: string;
   question: string;
   error: string;
+}
+
+/** One row of the optional incident log / complaints file (free-text, untriaged). */
+export interface IncidentInput {
+  source: "incident_log" | "complaint";
+  /** Free-text student name from the file. */
+  studentName: string;
+  /** Exam code (AM/ST/AFL/ESL…) — incident_log only. */
+  exam?: string;
+  issueType?: string;
+  actionTaken?: string;
+  questionsAffected?: string;
+  staff?: string;
+  // complaint-only fields
+  email?: string;
+  school?: string;
+  description?: string;
+}
+
+/** A human triage decision recorded against one incident on the Adjustments screen. */
+export interface IncidentDecisionInput {
+  /** Who the alteration applies to (null = undecided). */
+  applyTo: "student" | "subject" | "none";
+  /** Roster student id when applyTo === "student". */
+  studentId?: string | null;
+  /** Subject (assessment) id for the alteration; defaulted from the exam code. */
+  subjectId?: string | null;
+  /** Raw marks added (+) or subtracted (−). */
+  marks?: number;
+  reason?: string | null;
 }
 
 /** One essay row from the optional essay-marks spreadsheet (one per essay). */
@@ -163,6 +194,14 @@ export interface DataProvider {
   uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void;
   loadSampleEssayMarks(cycleId: string): void;
   clearEssayMarks(cycleId: string): void;
+
+  // incident log → alterations triage (Adjustments step)
+  getAdjustments(cycleId: string): AdjustmentsModel | null;
+  uploadIncidentLog(cycleId: string, fileName: string, rows: IncidentInput[]): void;
+  loadSampleIncidentLog(cycleId: string): void;
+  clearIncidentLog(cycleId: string): void;
+  /** Record (or clear) the human triage decision + alteration for one incident. */
+  decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void;
 
   // distinction safeguard (grading stage)
   confirmDistinctionCaps(cycleId: string): void;

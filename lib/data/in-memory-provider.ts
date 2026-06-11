@@ -19,7 +19,14 @@ import type {
 } from "@/lib/engine";
 import seedJson from "./seed.generated.json";
 import type { Seed, SeedAssessment, SeedItem } from "./seed-types";
-import type { DataProvider, SetBoundaryInput, TechnicalErrorRow, EssayUploadRow } from "./provider";
+import type {
+  DataProvider,
+  SetBoundaryInput,
+  TechnicalErrorRow,
+  EssayUploadRow,
+  IncidentInput,
+  IncidentDecisionInput,
+} from "./provider";
 import {
   PIPELINE,
   type AnalyticsCompare,
@@ -66,6 +73,8 @@ import {
   type EssayMarksModel,
   type EssayStudentMark,
   type EssaySubjectRef,
+  type AdjustmentsModel,
+  type AdjustmentIncident,
   type IncidentDecision,
   type SafeguardConfig,
   type SafeguardResult,
@@ -183,7 +192,14 @@ export class InMemoryDataProvider implements DataProvider {
     }
   >();
   // alterations: cycle -> human-decided +/- raw marks per student per subject.
+  // Derived from decided incidents (rebuildAlterations); read by the engine.
   private alterationsByCycle = new Map<string, Alteration[]>();
+  // incident log (Part 3): the triage queue behind the Adjustments step.
+  private incidentLogByCycle = new Map<
+    string,
+    { uploaded: boolean; sample: boolean; fileName: string | null; incidents: AdjustmentIncident[] }
+  >();
+  private adjIncidentSeq = 0;
   private distinctionOverrides = new Map<string, Map<string, { reason: string; by: string }>>();
   private distinctionConfirmed = new Set<string>();
   // safeguard config; empty topDifficultyDemand → resolve to the highest demand present.
@@ -1244,6 +1260,182 @@ export class InMemoryDataProvider implements DataProvider {
       matchedCount: new Set(st.marks.map((m) => m.participantId)).size,
       unmatchedIds: st.unmatchedIds,
       preview,
+    };
+  }
+
+  // ── incident log → alterations triage (Part 3) ────────────────────────────
+  /** The subject (assessment) an exam code maps to. Unknown codes return undefined. */
+  private subjectForExamCode(code: string | null | undefined): SeedAssessment | undefined {
+    const c = (code ?? "").trim();
+    if (!c) return undefined;
+    const A = seed.liveCycle.assessments;
+    const map: [RegExp, RegExp][] = [
+      [/\bAM\b|applicable|math/i, /applicable math/i],
+      [/\bST\b|scientific|science/i, /scientific/i],
+      [/\bAFL\b|arabic/i, /arabic/i],
+      [/\bESL\b|english/i, /english/i],
+      [/\bLSS\b|life/i, /life/i],
+    ];
+    for (const [codeRe, nameRe] of map) if (codeRe.test(c)) return A.find((a) => nameRe.test(a.name));
+    return undefined;
+  }
+  /** Non-binding roster suggestion from a free-text name (never auto-applied). */
+  private suggestStudentId(name: string): string | null {
+    const n = name.trim().toLowerCase();
+    if (!n || /\ball\b/.test(n)) return null; // "All students" → no single suggestion
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
+    const target = new Set(norm(n));
+    let best: { id: string; score: number } | null = null;
+    for (const p of seed.liveCycle.participants) {
+      const toks = norm(p.label);
+      if (toks.length === 0) continue;
+      if (p.label.toLowerCase() === n || p.id.toLowerCase() === n) return p.id;
+      const overlap = toks.filter((t) => target.has(t)).length;
+      const score = overlap / Math.max(toks.length, target.size);
+      if (score > 0.5 && (!best || score > best.score)) best = { id: p.id, score };
+    }
+    return best?.id ?? null;
+  }
+
+  private rebuildAlterations(cycleId: string): void {
+    const st = this.incidentLogByCycle.get(cycleId);
+    const out: Alteration[] = [];
+    if (st) {
+      for (const inc of st.incidents) {
+        if (!inc.subjectId || !inc.marks) continue;
+        if (inc.applyTo === "student" && inc.studentId) {
+          out.push({ participantId: inc.studentId, assessmentId: inc.subjectId, marks: inc.marks });
+        } else if (inc.applyTo === "subject") {
+          // bulk: every roster student in that subject
+          for (const p of seed.liveCycle.participants) {
+            out.push({ participantId: p.id, assessmentId: inc.subjectId, marks: inc.marks });
+          }
+        }
+      }
+    }
+    this.alterationsByCycle.set(cycleId, out);
+  }
+
+  uploadIncidentLog(cycleId: string, fileName: string, rows: IncidentInput[]): void {
+    if (this.locked.has(cycleId)) return;
+    const incidents = rows.map((r) => this.buildTriageIncident(r));
+    this.incidentLogByCycle.set(cycleId, { uploaded: true, sample: false, fileName, incidents });
+    this.rebuildAlterations(cycleId);
+    this.audit("upload", "Added incident log", `${fileName} — ${incidents.length} incident(s) queued for triage`, cycleId);
+    this.bump();
+  }
+
+  private buildTriageIncident(r: IncidentInput): AdjustmentIncident {
+    this.adjIncidentSeq += 1;
+    const subj = this.subjectForExamCode(r.exam);
+    return {
+      id: `inc-${this.adjIncidentSeq}`,
+      source: r.source,
+      studentName: r.studentName ?? "",
+      exam: r.exam ?? null,
+      issueType: r.issueType ?? null,
+      actionTaken: r.actionTaken ?? null,
+      questionsAffected: r.questionsAffected ?? null,
+      staff: r.staff ?? null,
+      email: r.email ?? null,
+      school: r.school ?? null,
+      description: r.description ?? null,
+      suggestedStudentId: this.suggestStudentId(r.studentName ?? ""),
+      suggestedSubjectId: subj?.id ?? null,
+      applyTo: null,
+      studentId: null,
+      subjectId: subj?.id ?? null, // default the subject; reviewer can override
+      marks: 0,
+      reason: null,
+      decidedBy: null,
+      decidedAt: null,
+    };
+  }
+
+  /**
+   * Load a small, clearly-labelled SAMPLE incident log. Names reference real
+   * roster labels (so suggestions resolve) and one row is an "All students"
+   * subject-wide case; flagged `sample: true` everywhere it surfaces. Nothing is
+   * auto-applied — every row still needs a human decision.
+   */
+  loadSampleIncidentLog(cycleId: string): void {
+    if (cycleId !== seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const label = (i: number) => seed.liveCycle.participants[i]?.label ?? `Student ${i}`;
+    const rows: IncidentInput[] = [
+      { source: "incident_log", studentName: label(0), exam: "AM", issueType: "Calculator tool froze", actionTaken: "Allowed 4 extra minutes", questionsAffected: "Q12", staff: "R. Mansour" },
+      { source: "incident_log", studentName: label(3), exam: "ESL", issueType: "Audio clip would not play", actionTaken: "Replayed on staff device", questionsAffected: "n/a", staff: "T. Haddad" },
+      { source: "incident_log", studentName: "All students", exam: "ST", issueType: "Projector flicker for 2 minutes", actionTaken: "Paused the room", questionsAffected: "n/a", staff: "Invigilation team" },
+      { source: "incident_log", studentName: label(8), exam: "AFL", issueType: "النص لم يظهر بشكل صحيح", actionTaken: "Reloaded the item", questionsAffected: "Q5, Q6", staff: "S. Khoury" },
+      { source: "complaint", studentName: label(5), email: "student5@example.org", school: "Alsama Shatila 1", description: "Felt the maths paper started late and was rushed at the end." },
+    ];
+    const incidents = rows.map((r) => this.buildTriageIncident(r));
+    this.incidentLogByCycle.set(cycleId, { uploaded: true, sample: true, fileName: "sample_incident_log.xlsx", incidents });
+    this.rebuildAlterations(cycleId);
+    this.audit("upload", "Loaded sample incident log", `${incidents.length} labelled sample incidents (not from a real file)`, cycleId);
+    this.bump();
+  }
+
+  clearIncidentLog(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    if (!this.incidentLogByCycle.has(cycleId)) return;
+    this.incidentLogByCycle.delete(cycleId);
+    this.rebuildAlterations(cycleId);
+    this.audit("upload", "Removed incident log", "Alterations cleared from subject totals", cycleId);
+    this.bump();
+  }
+
+  decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void {
+    if (this.locked.has(cycleId)) return;
+    const st = this.incidentLogByCycle.get(cycleId);
+    const inc = st?.incidents.find((i) => i.id === incidentId);
+    if (!inc) return;
+    inc.applyTo = decision.applyTo;
+    inc.studentId = decision.applyTo === "student" ? decision.studentId ?? null : null;
+    inc.subjectId = decision.subjectId ?? inc.subjectId;
+    inc.marks = decision.applyTo === "none" ? 0 : Math.trunc(decision.marks ?? 0);
+    inc.reason = decision.reason ?? null;
+    inc.decidedBy = this.user.name;
+    inc.decidedAt = new Date().toISOString();
+    this.rebuildAlterations(cycleId);
+
+    // Audit (who, when, which student/subject, marks, reason, source incident).
+    const subjName = inc.subjectId ? this.assessment(inc.subjectId)?.name ?? inc.subjectId : "—";
+    if (decision.applyTo === "none") {
+      this.audit("student", "Incident — no action", `${inc.studentName || "incident"} (${inc.source}) marked informational`, cycleId);
+    } else if (decision.applyTo === "subject") {
+      const n = seed.liveCycle.participants.length;
+      this.audit("student", "Alteration (whole subject)", `${subjName}: ${inc.marks >= 0 ? "+" : ""}${inc.marks} for all ${n} students — ${inc.reason ?? "no reason"} (source: ${inc.studentName || inc.source})`, cycleId);
+    } else {
+      const who = inc.studentId ? seed.liveCycle.participants.find((p) => p.id === inc.studentId)?.label ?? inc.studentId : inc.studentName;
+      this.audit("student", "Alteration (one student)", `${who} · ${subjName}: ${inc.marks >= 0 ? "+" : ""}${inc.marks} — ${inc.reason ?? "no reason"} (source: ${inc.source})`, cycleId);
+    }
+    this.bump();
+  }
+
+  getAdjustments(cycleId: string): AdjustmentsModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const st = this.incidentLogByCycle.get(cycleId);
+    const incidents = st?.incidents ?? [];
+    const roster = seed.liveCycle.participants.map((p) => ({ id: p.id, name: p.label }));
+    const subjects = seed.liveCycle.assessments.map((a) => ({
+      id: a.id,
+      name: a.name,
+      code: /applicable math/i.test(a.name) ? "AM" : /scientific/i.test(a.name) ? "ST" : /arabic/i.test(a.name) ? "AFL" : /english/i.test(a.name) ? "ESL" : /life/i.test(a.name) ? "LSS" : null,
+    }));
+    const decided = incidents.filter((i) => i.applyTo != null).length;
+    const alterations = this.alterationsFor(cycleId).length;
+    const netBySubject: Record<string, number> = {};
+    for (const alt of this.alterationsFor(cycleId)) netBySubject[alt.assessmentId] = (netBySubject[alt.assessmentId] ?? 0) + alt.marks;
+    return {
+      cycleId,
+      uploaded: !!st?.uploaded,
+      sample: !!st?.sample,
+      fileName: st?.fileName ?? null,
+      incidents,
+      roster,
+      subjects,
+      counts: { incidents: incidents.length, decided, awaiting: incidents.length - decided, alterations },
+      netBySubject,
     };
   }
 

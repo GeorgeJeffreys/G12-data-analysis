@@ -15,7 +15,8 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseTechnicalErrors } from "@/lib/data/parse-technical-errors";
 import { parseEssayMarks } from "@/lib/data/parse-essays";
-import type { DuplicateStrategy, EssayMarksModel, TechnicalErrorsUpload } from "@/lib/data/types";
+import { parseIncidentLog } from "@/lib/data/parse-incidents";
+import type { AdjustmentsModel, DuplicateStrategy, EssayMarksModel, TechnicalErrorsUpload } from "@/lib/data/types";
 
 export default function IngestPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -167,6 +168,9 @@ export default function IngestPage({ params }: { params: { cycleId: string } }) 
 
           {/* OPTIONAL essay-marks upload (English/Arabic; never gates progress) */}
           <EssayMarksPanel cycleId={cycleId} />
+
+          {/* OPTIONAL incident log (triaged into alterations on Adjustments) */}
+          <IncidentLogPanel cycleId={cycleId} />
         </div>
 
         {/* cleaned data preview */}
@@ -422,6 +426,91 @@ function EssayMarksPanel({ cycleId }: { cycleId: string }) {
             <Icon name="upload" size={13} />{busy ? "Reading…" : "Add essay-marks file"}
           </Button>
           <Button variant="ghost" onClick={() => provider.loadSampleEssayMarks(cycleId)} disabled={busy}>
+            Load sample (labelled)
+          </Button>
+          {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Optional incident-log upload (operational record + student complaints). Parsed
+ * client-side and queued for human triage on the Adjustments step — never
+ * auto-applied, never blocks the pipeline. A labelled sample can be loaded.
+ */
+function IncidentLogPanel({ cycleId }: { cycleId: string }) {
+  const provider = useProvider();
+  const model = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await parseIncidentLog(file);
+      if (rows.length === 0) setError("No incidents found. Expected an Incident_Log sheet (header on row 3) and/or a Students Complaints sheet.");
+      else provider.uploadIncidentLog(cycleId, file.name, rows);
+    } catch {
+      setError("Couldn’t read that file. Use a .xlsx with Incident_Log / Students Complaints sheets.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  if (!model) return null;
+
+  return (
+    <div className="hf-card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span className="hf-h2">Incident log</span>
+            <span style={{ fontSize: 9, color: H.ink2, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 6px", letterSpacing: 0.4 }}>OPTIONAL</span>
+          </div>
+          <div className="hf-sub" style={{ fontSize: 12, marginTop: 4, maxWidth: 580 }}>
+            The operational record (<span className="hf-mono" style={{ fontSize: 11 }}>Incident_Log</span>) plus student
+            complaints. Each row is <b style={{ color: H.ink }}>queued for human triage</b> on the Adjustments step —
+            nothing is auto-applied. This <b style={{ color: H.ink }}>never blocks</b> the pipeline.
+          </div>
+        </div>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.ink3 }}>
+          <Icon name="lock" size={12} color={H.ink3} />
+          <span className="hf-sub" style={{ fontSize: 11 }}>optional</span>
+        </span>
+      </div>
+
+      {model.uploaded ? (
+        <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", background: model.sample ? H.pinkSoft2 : H.tint, borderBottom: `1px solid ${H.line2}` }}>
+            <Mark kind="pass" size={16} />
+            <span style={{ fontSize: 12.5, fontWeight: 600 }}>{model.fileName}</span>
+            {model.sample && <Badge tone="accent">SAMPLE</Badge>}
+            <span style={{ flex: 1 }} />
+            <span className="hf-sub" style={{ fontSize: 11.5 }}>
+              {model.counts.incidents} incidents · {model.counts.awaiting} awaiting triage
+            </span>
+            <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.clearIncidentLog(cycleId)}>
+              <Icon name="trash" size={13} />Remove
+            </Button>
+          </div>
+          <div className="hf-sub" style={{ fontSize: 11.5, padding: "10px 14px" }}>
+            Triage each incident into an alteration (per student or whole subject) on the{" "}
+            <Link href={`/cycles/${cycleId}/student-review`} style={{ color: H.pink, fontWeight: 600 }}>Adjustments</Link> step.
+          </div>
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <Button onClick={() => fileRef.current?.click()} disabled={busy}>
+            <Icon name="upload" size={13} />{busy ? "Reading…" : "Add incident log"}
+          </Button>
+          <Button variant="ghost" onClick={() => provider.loadSampleIncidentLog(cycleId)} disabled={busy}>
             Load sample (labelled)
           </Button>
           {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}

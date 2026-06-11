@@ -141,6 +141,47 @@ export interface EssayMarksModel {
   preview: { headers: string[]; rows: (string | number | null)[][] };
 }
 
+// --- Adjustments: incident triage → alterations ------------------------------
+export interface AdjustmentIncident {
+  id: string;
+  source: "incident_log" | "complaint";
+  /** Free-text context straight from the file. */
+  studentName: string;
+  exam: string | null;
+  issueType: string | null;
+  actionTaken: string | null;
+  questionsAffected: string | null;
+  staff: string | null;
+  email: string | null;
+  school: string | null;
+  description: string | null;
+  /** Non-binding suggestions (never auto-applied). */
+  suggestedStudentId: string | null;
+  suggestedSubjectId: string | null;
+  /** Decision (null applyTo = still in the queue). */
+  applyTo: "student" | "subject" | "none" | null;
+  studentId: string | null;
+  subjectId: string | null;
+  marks: number;
+  reason: string | null;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
+export interface AdjustmentsModel {
+  cycleId: string;
+  uploaded: boolean;
+  sample: boolean;
+  fileName: string | null;
+  incidents: AdjustmentIncident[];
+  /** Roster for the student typeahead. */
+  roster: { id: string; name: string }[];
+  /** Subjects for the subject picker. */
+  subjects: { id: string; name: string; code: string | null }[];
+  counts: { incidents: number; decided: number; awaiting: number; alterations: number };
+  /** Net alteration marks applied per subject (assessmentId → net marks). */
+  netBySubject: Record<string, number>;
+}
+
 // --- Performance report (Students_Performance_Report export) -----------------
 export interface PerfElementResult {
   /** Overall performance level for the subject. */
