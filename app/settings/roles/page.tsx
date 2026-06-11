@@ -19,6 +19,8 @@ export default function RolesPage() {
   const [adding, setAdding] = useState(false);
   const [newName, setNewName] = useState("");
   const [editingRole, setEditingRole] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
+  const isLead = provider.getCurrentUser().role === "lead_admin";
 
   const addRole = () => {
     if (newName.trim()) provider.createRole(newName.trim());
@@ -71,6 +73,16 @@ export default function RolesPage() {
                         </button>
                       )}
                       <span style={{ fontSize: 9, fontWeight: 500, color: H.ink3, textTransform: "none", letterSpacing: 0 }}>{r.memberCount} {r.memberCount === 1 ? "member" : "members"}</span>
+                      {isLead && !r.isLead && (
+                        <button
+                          onClick={() => setDeleting({ id: r.id, name: r.name })}
+                          disabled={r.memberCount > 0}
+                          title={r.memberCount > 0 ? "Reassign its members before deleting" : "Delete role"}
+                          style={{ border: "none", background: "transparent", cursor: r.memberCount > 0 ? "not-allowed" : "pointer", color: r.memberCount > 0 ? H.ink3 : H.bad, fontSize: 9.5, fontWeight: 600, textTransform: "none", letterSpacing: 0, opacity: r.memberCount > 0 ? 0.5 : 1, padding: 0, marginTop: 1 }}
+                        >
+                          Delete
+                        </button>
+                      )}
                     </div>
                   </th>
                 ))}
@@ -101,8 +113,27 @@ export default function RolesPage() {
             </tbody>
           </table>
         </Card>
-        <div className="hf-sub" style={{ fontSize: 12 }}>Click a role name to rename it. New roles start with no capabilities — tick what they need.</div>
+        <div className="hf-sub" style={{ fontSize: 12 }}>Click a role name to rename it. New roles start with no capabilities — tick what they need. A role with members must be reassigned before it can be deleted.</div>
       </div>
+
+      {deleting && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.32)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }} onClick={() => setDeleting(null)}>
+          <div className="hf-card" style={{ padding: "20px 22px", maxWidth: 460, width: "100%", background: H.paper }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+              <Icon name="lock" />
+              <span className="hf-h2">Delete role “{deleting.name}”?</span>
+            </div>
+            <div className="hf-sub" style={{ fontSize: 12.5, marginBottom: 18 }}>
+              This removes the role archetype and its capability grants from the workspace. Members keep
+              their accounts but lose this role. This can’t be undone.
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <Button variant="ghost" onClick={() => setDeleting(null)}>Cancel</Button>
+              <Button variant="danger" onClick={() => { provider.deleteRole(deleting.id); setDeleting(null); }}>Delete role</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </Shell>
   );
 }

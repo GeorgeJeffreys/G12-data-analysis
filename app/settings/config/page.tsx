@@ -9,10 +9,11 @@ import type { ReactNode } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
-import { Button, Card, Badge, Toggle } from "@/components/ui/primitives";
+import { Button, Card, Toggle } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { settingsSubnav } from "@/lib/ui/subnav";
 import { GradingDefaultsEditor } from "@/components/settings/GradingDefaultsEditor";
+import { QualityThresholdsEditor } from "@/components/settings/QualityThresholdsEditor";
 
 export default function ConfigPage() {
   const provider = useProvider();
@@ -30,28 +31,8 @@ export default function ConfigPage() {
           <div className="hf-sub" style={{ marginTop: 7 }}>Quality thresholds, grading defaults, data retention and branding for the whole workspace.</div>
         </div>
 
-        <SectionCard title="Item-quality thresholds" sub="The bands that drive the Good / Review / Flag rating on each item statistic. These are the engine's active rules — editing them requires an engine change.">
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th className="hf-th" style={{ paddingLeft: 0 }}>Statistic</th>
-                <th className="hf-th" style={{ textAlign: "right" }}><Badge tone="good">Good</Badge></th>
-                <th className="hf-th" style={{ textAlign: "right" }}><Badge tone="warn">Review</Badge></th>
-                <th className="hf-th" style={{ textAlign: "right", paddingRight: 0 }}><Badge tone="bad">Flag</Badge></th>
-              </tr>
-            </thead>
-            <tbody>
-              {config.thresholds.map((t) => (
-                <tr key={t.metric}>
-                  <td className="hf-td" style={{ paddingLeft: 0, fontSize: 12.5, fontWeight: 600 }}>{t.metric}</td>
-                  <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 11.5 }}>{t.good}</td>
-                  <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 11.5, color: H.ink2 }}>{t.review}</td>
-                  <td className="hf-td hf-mono" style={{ textAlign: "right", paddingRight: 0, fontSize: 11.5, color: H.bad }}>{t.flag}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </SectionCard>
+        {/* item-quality thresholds (editable — drives the engine via prompt 1's config) */}
+        <QualityThresholdsEditor />
 
         {/* grade vocabulary editor (configurable, real) */}
         <GradingDefaultsEditor />

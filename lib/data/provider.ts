@@ -45,7 +45,7 @@ import type {
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
-import type { ScoringConfig } from "@/lib/engine";
+import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
 
 /** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
 export interface TechnicalErrorRow {
@@ -118,6 +118,8 @@ export interface DataProvider {
   ): void;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;
+  /** Edit the engine's item-quality Good/Review/Flag thresholds (Lead/Admin only). */
+  setQualityThresholds(patch: Partial<QualityThresholds>): void;
   setDocumentSettings(cycleId: string, patch: Partial<DocSettings>): void;
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void;
   lockCycle(cycleId: string): void;
@@ -130,6 +132,7 @@ export interface DataProvider {
   resendInvite(memberId: string): void;
   createRole(name: string): void;
   renameRole(roleId: string, name: string): void;
+  deleteRole(roleId: string): void;
   setCapability(roleId: string, capabilityId: string, granted: boolean): void;
 
   // per-student technical exclusions (Student review)

@@ -34,6 +34,7 @@ const TONE: Record<AuditType, BadgeTone> = {
   validate: "neutral",
   student: "warn",
   safeguard: "accent",
+  config: "neutral",
 };
 
 function when(iso: string): { time: string; day: string } {

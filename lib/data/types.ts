@@ -294,7 +294,9 @@ export type AuditType =
   | "validate"
   /** Per-student technical exclusion / keep, and Distinction-safeguard caps & overrides. */
   | "student"
-  | "safeguard";
+  | "safeguard"
+  /** Workspace settings: quality thresholds, grading vocabulary, roles. */
+  | "config";
 
 export interface AuditEntry {
   id: string;

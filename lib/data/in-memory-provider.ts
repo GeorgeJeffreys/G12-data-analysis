@@ -1199,11 +1199,15 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setGradingDefaults(patch: Partial<GradingConfig>): void {
-    this.grading = {
-      ...this.grading,
-      ...patch,
-      starMap: { ...this.grading.starMap, ...(patch.starMap ?? {}) },
-    };
+    if (this.user.role !== "lead_admin") return;
+    // When the level/award arrays are replaced, replace the star map wholesale
+    // (rather than merging) so renamed/removed levels don't leave stale stars.
+    const starMap = patch.starMap
+      ? patch.performanceLevels
+        ? { ...patch.starMap }
+        : { ...this.grading.starMap, ...patch.starMap }
+      : this.grading.starMap;
+    this.grading = { ...this.grading, ...patch, starMap };
     // Drop any boundary state that no longer matches the new band count so it
     // re-derives from the updated defaults.
     const perfLen = this.grading.performanceLevels.length - 1;
@@ -1212,6 +1216,24 @@ export class InMemoryDataProvider implements DataProvider {
       const isAward = key.endsWith(":overall");
       if (st.cuts.length !== (isAward ? awardLen : perfLen)) this.boundaries.delete(key);
     }
+    this.audit(
+      "config",
+      "Updated grading defaults",
+      `${this.grading.performanceLevels.length} performance levels · ${this.grading.awardLevels.length} award levels`,
+      null,
+    );
+    this.bump();
+  }
+
+  setQualityThresholds(patch: Partial<QualityThresholds>): void {
+    if (this.user.role !== "lead_admin") return;
+    this.quality = {
+      pValue: { ...this.quality.pValue, ...(patch.pValue ?? {}) },
+      itemTotal: { ...this.quality.itemTotal, ...(patch.itemTotal ?? {}) },
+      pointBiserial: { ...this.quality.pointBiserial, ...(patch.pointBiserial ?? {}) },
+      discrimination: { ...this.quality.discrimination, ...(patch.discrimination ?? {}) },
+    };
+    this.audit("config", "Changed item-quality thresholds", "Engine Good/Review/Flag rating bands updated", null);
     this.bump();
   }
 
@@ -1324,6 +1346,17 @@ export class InMemoryDataProvider implements DataProvider {
     if (this.user.role !== "lead_admin") return;
     const row = this.matrix[roleId] ?? (this.matrix[roleId] = {});
     row[capabilityId] = granted;
+    this.bump();
+  }
+  deleteRole(roleId: string): void {
+    if (this.user.role !== "lead_admin") return;
+    const role = this.roles.find((r) => r.id === roleId);
+    // The Lead archetype is undeletable, and a role still assigned to members
+    // can't be removed (reassign them first).
+    if (!role || role.isLead || this.roleMemberCount(roleId) > 0) return;
+    this.roles = this.roles.filter((r) => r.id !== roleId);
+    delete this.matrix[roleId];
+    this.audit("config", "Deleted role", `Removed role "${role.name}"`, null);
     this.bump();
   }
 
