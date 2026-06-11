@@ -14,7 +14,8 @@ import { Shell } from "@/components/shell/Shell";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseTechnicalErrors } from "@/lib/data/parse-technical-errors";
-import type { DuplicateStrategy, TechnicalErrorsUpload } from "@/lib/data/types";
+import { parseEssayMarks } from "@/lib/data/parse-essays";
+import type { DuplicateStrategy, EssayMarksModel, TechnicalErrorsUpload } from "@/lib/data/types";
 
 export default function IngestPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -163,6 +164,9 @@ export default function IngestPage({ params }: { params: { cycleId: string } }) 
 
           {/* OPTIONAL technical-errors upload (never gates progress) */}
           <TechnicalErrorsPanel cycleId={cycleId} model={model.technicalErrors} />
+
+          {/* OPTIONAL essay-marks upload (English/Arabic; never gates progress) */}
+          <EssayMarksPanel cycleId={cycleId} />
         </div>
 
         {/* cleaned data preview */}
@@ -316,6 +320,108 @@ function TechnicalErrorsPanel({ cycleId, model }: { cycleId: string; model: Tech
             <Icon name="upload" size={13} />{busy ? "Reading…" : "Add technical-errors file"}
           </Button>
           <Button variant="ghost" onClick={() => provider.loadSampleTechnicalErrors(cycleId)} disabled={busy}>
+            Load sample (labelled)
+          </Button>
+          {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Optional essay-marks upload (English + Arabic only). Parsed client-side; the
+ * marks flow into the Adjustments view and into the subject totals at Score. It
+ * NEVER blocks the pipeline. A clearly-labelled sample can be loaded without a
+ * file. Matched students and any unmatched IDs are surfaced for the team.
+ */
+function EssayMarksPanel({ cycleId }: { cycleId: string }) {
+  const provider = useProvider();
+  const model = useProviderData((p) => p.getEssayMarks(cycleId), [cycleId]) as EssayMarksModel | null;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await parseEssayMarks(file);
+      if (rows.length === 0) {
+        setError("No essay rows found. Expected AFL / ESL sheets with ParticipantID and TotalScore columns.");
+      } else {
+        provider.uploadEssayMarks(cycleId, file.name, rows);
+      }
+    } catch {
+      setError("Couldn’t read that file. Use a .xlsx with per-subject sheets (AFL, ESL).");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  if (!model) return null;
+
+  return (
+    <div className="hf-card" style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+            <span className="hf-h2">Essay marks file</span>
+            <span style={{ fontSize: 9, color: H.ink2, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 6px", letterSpacing: 0.4 }}>OPTIONAL</span>
+          </div>
+          <div className="hf-sub" style={{ fontSize: 12, marginTop: 4, maxWidth: 580 }}>
+            Offline-marked essays for <b style={{ color: H.ink }}>English &amp; Arabic only</b> — per-subject sheets{" "}
+            <span className="hf-mono" style={{ fontSize: 11 }}>AFL · ESL</span>, keyed by ParticipantID, marked out of 20
+            (the <span className="hf-mono" style={{ fontSize: 11 }}>TotalScore</span> column; the rubric D1–D5 columns are ignored).
+            Adds to the subject total. This <b style={{ color: H.ink }}>never blocks</b> the pipeline.
+          </div>
+        </div>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.ink3 }}>
+          <Icon name="lock" size={12} color={H.ink3} />
+          <span className="hf-sub" style={{ fontSize: 11 }}>optional</span>
+        </span>
+      </div>
+
+      {model.uploaded ? (
+        <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 14px", background: model.sample ? H.pinkSoft2 : H.tint, borderBottom: `1px solid ${H.line2}` }}>
+            <Mark kind="pass" size={16} />
+            <span style={{ fontSize: 12.5, fontWeight: 600 }}>{model.fileName}</span>
+            {model.sample && <Badge tone="accent">SAMPLE</Badge>}
+            <span style={{ flex: 1 }} />
+            <span className="hf-sub" style={{ fontSize: 11.5 }}>
+              {model.matchedCount} students matched · {model.subjects.map((s) => `${s.code} ${s.count}`).join(" · ")}
+            </span>
+            <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.clearEssayMarks(cycleId)}>
+              <Icon name="trash" size={13} />Remove
+            </Button>
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+            <thead>
+              <tr>{model.preview.headers.map((h) => <th key={h} className="hf-th" style={{ padding: "7px 12px" }}>{h}</th>)}</tr>
+            </thead>
+            <tbody>
+              {model.preview.rows.map((row, i) => (
+                <tr key={i}>{row.map((c, j) => <td key={j} className="hf-td" style={{ padding: "7px 12px", color: H.ink2 }}>{c}</td>)}</tr>
+              ))}
+            </tbody>
+          </table>
+          {model.unmatchedIds.length > 0 && (
+            <div className="hf-sub" style={{ fontSize: 11, padding: "8px 14px", borderTop: `1px solid ${H.line}` }}>
+              {model.unmatchedIds.length} ParticipantID(s) didn’t match the roster (e.g.{" "}
+              <span className="hf-mono">{model.unmatchedIds.slice(0, 3).join(", ")}</span>) — those marks were skipped.
+            </div>
+          )}
+        </div>
+      ) : (
+        <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+          <Button onClick={() => fileRef.current?.click()} disabled={busy}>
+            <Icon name="upload" size={13} />{busy ? "Reading…" : "Add essay-marks file"}
+          </Button>
+          <Button variant="ghost" onClick={() => provider.loadSampleEssayMarks(cycleId)} disabled={busy}>
             Load sample (labelled)
           </Button>
           {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}

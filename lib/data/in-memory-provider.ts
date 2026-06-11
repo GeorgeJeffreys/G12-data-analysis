@@ -19,7 +19,7 @@ import type {
 } from "@/lib/engine";
 import seedJson from "./seed.generated.json";
 import type { Seed, SeedAssessment, SeedItem } from "./seed-types";
-import type { DataProvider, SetBoundaryInput, TechnicalErrorRow } from "./provider";
+import type { DataProvider, SetBoundaryInput, TechnicalErrorRow, EssayUploadRow } from "./provider";
 import {
   PIPELINE,
   type AnalyticsCompare,
@@ -63,6 +63,9 @@ import {
   type StudentSummary,
   type DistinctionCandidate,
   type DistinctionSafeguardModel,
+  type EssayMarksModel,
+  type EssayStudentMark,
+  type EssaySubjectRef,
   type IncidentDecision,
   type SafeguardConfig,
   type SafeguardResult,
@@ -165,8 +168,20 @@ export class InMemoryDataProvider implements DataProvider {
   private technicalErrors = new Map<string, { uploaded: boolean; sample: boolean; fileName: string | null; incidents: TechnicalIncident[] }>();
   private incidentSeq = 0;
   // three-component scoring inputs (Parts 2 & 3) — empty defaults to MCQ-only.
-  // essayMarks: cycle -> ParticipantID|assessmentId -> mark out of 20.
-  private essayMarksByCycle = new Map<string, EssayMark[]>();
+  // essay marks (Part 2): the scoring-facing marks plus upload metadata.
+  private essayMarksByCycle = new Map<
+    string,
+    {
+      uploaded: boolean;
+      sample: boolean;
+      fileName: string | null;
+      marks: EssayMark[];
+      /** `${participantId}|${assessmentId}` → number of essays averaged. */
+      essayCounts: Map<string, number>;
+      /** File ParticipantIDs that matched no roster student. */
+      unmatchedIds: string[];
+    }
+  >();
   // alterations: cycle -> human-decided +/- raw marks per student per subject.
   private alterationsByCycle = new Map<string, Alteration[]>();
   private distinctionOverrides = new Map<string, Map<string, { reason: string; by: string }>>();
@@ -286,8 +301,14 @@ export class InMemoryDataProvider implements DataProvider {
     }));
   }
   private essayMarksFor(cycleId: string, assessmentId?: string): EssayMark[] {
-    const all = this.essayMarksByCycle.get(cycleId) ?? [];
+    const all = this.essayMarksByCycle.get(cycleId)?.marks ?? [];
     return assessmentId ? all.filter((e) => e.assessmentId === assessmentId) : all;
+  }
+  /** The Arabic/English assessment for an essay subject code (AFL/ESL). */
+  private essayAssessmentForCode(code: string): SeedAssessment | undefined {
+    if (/afl|arabic/i.test(code)) return seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name));
+    if (/esl|english/i.test(code)) return seed.liveCycle.assessments.find((a) => /english/i.test(a.name));
+    return undefined;
   }
   private alterationsFor(cycleId: string, assessmentId?: string): Alteration[] {
     const all = this.alterationsByCycle.get(cycleId) ?? [];
@@ -1099,6 +1120,131 @@ export class InMemoryDataProvider implements DataProvider {
     this.technicalErrors.delete(cycleId);
     this.audit("upload", "Removed technical-errors file", "Per-student exclusions cleared", cycleId);
     this.bump();
+  }
+
+  // ── essay marks (Part 2) ──────────────────────────────────────────────────
+  /**
+   * Aggregate raw essay rows into one mark per student per essay subject.
+   * CONFIRM: the per-student subject mark is the MEAN of that student's per-essay
+   * `TotalScore`s (sum ÷ count). If the real file provides a single final mark,
+   * that single value is used directly (count 1). Change the divisor here if the
+   * marking team aggregates differently.
+   */
+  private buildEssayState(rows: EssayUploadRow[], sample: boolean, fileName: string | null) {
+    const agg = new Map<string, { participantId: string; subjectCode: string; sum: number; count: number }>();
+    for (const r of rows) {
+      const k = `${r.participantId}|${r.subjectCode}`;
+      const e = agg.get(k) ?? { participantId: r.participantId, subjectCode: r.subjectCode, sum: 0, count: 0 };
+      e.sum += r.totalScore;
+      e.count += 1;
+      agg.set(k, e);
+    }
+    const marks: EssayMark[] = [];
+    const essayCounts = new Map<string, number>();
+    const unmatched = new Set<string>();
+    for (const e of agg.values()) {
+      const a = this.essayAssessmentForCode(e.subjectCode);
+      if (!a) continue; // only Arabic/English carry essays
+      const stud = this.matchStudent(e.participantId);
+      const isMatched = seed.liveCycle.participants.some((p) => p.id === stud.id);
+      if (!isMatched) {
+        unmatched.add(e.participantId);
+        continue;
+      }
+      marks.push({ participantId: stud.id, assessmentId: a.id, mark: e.count ? e.sum / e.count : 0 });
+      essayCounts.set(`${stud.id}|${a.id}`, e.count);
+    }
+    return { uploaded: true, sample, fileName, marks, essayCounts, unmatchedIds: [...unmatched] };
+  }
+
+  uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void {
+    if (this.locked.has(cycleId)) return;
+    const st = this.buildEssayState(rows, false, fileName);
+    this.essayMarksByCycle.set(cycleId, st);
+    const students = new Set(st.marks.map((m) => m.participantId)).size;
+    this.audit(
+      "upload",
+      "Added essay-marks file",
+      `${fileName} — ${st.marks.length} subject marks across ${students} students (${st.unmatchedIds.length} unmatched IDs)`,
+      cycleId,
+    );
+    this.bump();
+  }
+
+  /**
+   * Load a small, clearly-labelled SAMPLE essay-marks set. Every row references a
+   * REAL seeded participant (so the marks genuinely flow into Arabic/English
+   * subject totals); flagged `sample: true` everywhere it surfaces. Two essays
+   * per student per subject exercise the averaging rule.
+   */
+  loadSampleEssayMarks(cycleId: string): void {
+    if (cycleId !== seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const ids = seed.liveCycle.participants.slice(0, 10).map((p) => p.id);
+    const rows: EssayUploadRow[] = [];
+    ids.forEach((sid, i) => {
+      // deterministic, plausible marks out of 20 (two essays each)
+      const afl = [11 + (i % 7), 12 + ((i + 3) % 6)];
+      const esl = [10 + ((i + 2) % 8), 13 + (i % 5)];
+      for (const s of afl) rows.push({ participantId: sid, subjectCode: "AFL", totalScore: Math.min(20, s) });
+      for (const s of esl) rows.push({ participantId: sid, subjectCode: "ESL", totalScore: Math.min(20, s) });
+    });
+    this.essayMarksByCycle.set(cycleId, this.buildEssayState(rows, true, "sample_essay_marks.xlsx"));
+    this.audit("upload", "Loaded sample essay marks", `${ids.length} students × 2 essay subjects (labelled sample, not from a real file)`, cycleId);
+    this.bump();
+  }
+
+  clearEssayMarks(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    if (!this.essayMarksByCycle.has(cycleId)) return;
+    this.essayMarksByCycle.delete(cycleId);
+    this.audit("upload", "Removed essay-marks file", "Essay marks cleared from subject totals", cycleId);
+    this.bump();
+  }
+
+  getEssayMarks(cycleId: string): EssayMarksModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const st = this.essayMarksByCycle.get(cycleId);
+    const essayIds = new Set(this.essaySubjectIds());
+    const subjects: EssaySubjectRef[] = seed.liveCycle.assessments
+      .filter((a) => essayIds.has(a.id))
+      .map((a) => ({
+        assessmentId: a.id,
+        code: /arabic/i.test(a.name) ? "AFL" : "ESL",
+        name: a.name,
+        count: st ? new Set(st.marks.filter((m) => m.assessmentId === a.id).map((m) => m.participantId)).size : 0,
+      }));
+
+    if (!st || !st.uploaded) {
+      return { cycleId, uploaded: false, sample: false, fileName: null, subjects, students: [], matchedCount: 0, unmatchedIds: [], preview: { headers: [], rows: [] } };
+    }
+
+    const labelOf = (id: string) => seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    const byStudent = new Map<string, EssayStudentMark>();
+    for (const m of st.marks) {
+      let s = byStudent.get(m.participantId);
+      if (!s) {
+        s = { participantId: m.participantId, name: labelOf(m.participantId), marks: {}, essayCounts: {} };
+        byStudent.set(m.participantId, s);
+      }
+      s.marks[m.assessmentId] = round(m.mark, 1);
+      s.essayCounts[m.assessmentId] = st.essayCounts.get(`${m.participantId}|${m.assessmentId}`) ?? 1;
+    }
+    const students = [...byStudent.values()].sort((a, b) => a.name.localeCompare(b.name));
+    const preview = {
+      headers: ["Student", ...subjects.map((s) => `${s.name} /20`)],
+      rows: students.slice(0, 6).map((s) => [s.name, ...subjects.map((sr) => s.marks[sr.assessmentId] ?? "—")] as (string | number | null)[]),
+    };
+    return {
+      cycleId,
+      uploaded: true,
+      sample: st.sample,
+      fileName: st.fileName,
+      subjects,
+      students,
+      matchedCount: new Set(st.marks.map((m) => m.participantId)).size,
+      unmatchedIds: st.unmatchedIds,
+      preview,
+    };
   }
 
   setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void {

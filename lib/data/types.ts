@@ -110,6 +110,37 @@ export interface BreakItem {
   v: number;
 }
 
+// --- Essay marks (optional upload at Ingest; English/Arabic only) ------------
+export interface EssaySubjectRef {
+  assessmentId: string;
+  /** Subject code in the file (AFL / ESL). */
+  code: string;
+  name: string;
+  /** Students with an essay mark for this subject. */
+  count: number;
+}
+export interface EssayStudentMark {
+  participantId: string;
+  name: string;
+  /** assessmentId → essay mark out of 20 (averaged across the student's essays). */
+  marks: Record<string, number>;
+  /** How many essays were averaged into each subject mark (assessmentId → n). */
+  essayCounts: Record<string, number>;
+}
+export interface EssayMarksModel {
+  cycleId: string;
+  uploaded: boolean;
+  sample: boolean;
+  fileName: string | null;
+  subjects: EssaySubjectRef[];
+  students: EssayStudentMark[];
+  /** Distinct file ParticipantIDs that matched a roster student. */
+  matchedCount: number;
+  /** File ParticipantIDs that did not match any roster student. */
+  unmatchedIds: string[];
+  preview: { headers: string[]; rows: (string | number | null)[][] };
+}
+
 // --- Performance report (Students_Performance_Report export) -----------------
 export interface PerfElementResult {
   /** Overall performance level for the subject. */

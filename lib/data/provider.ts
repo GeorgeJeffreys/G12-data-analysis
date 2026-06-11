@@ -44,6 +44,7 @@ import type {
   BrandingConfig,
   StudentReviewModel,
   DistinctionSafeguardModel,
+  EssayMarksModel,
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
@@ -54,6 +55,16 @@ export interface TechnicalErrorRow {
   student: string;
   question: string;
   error: string;
+}
+
+/** One essay row from the optional essay-marks spreadsheet (one per essay). */
+export interface EssayUploadRow {
+  /** Real ParticipantID from the file (e.g. A-A-260506). */
+  participantId: string;
+  /** Subject sheet code: AFL (Arabic 1st Language) or ESL (English 2nd Language). */
+  subjectCode: "AFL" | "ESL";
+  /** The essay's final mark out of 20 (the TotalScore column). */
+  totalScore: number;
 }
 
 export interface SetBoundaryInput {
@@ -146,6 +157,12 @@ export interface DataProvider {
   loadSampleTechnicalErrors(cycleId: string): void;
   clearTechnicalErrors(cycleId: string): void;
   setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void;
+
+  // essay marks (English/Arabic only — optional, non-blocking upload at Ingest)
+  getEssayMarks(cycleId: string): EssayMarksModel | null;
+  uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void;
+  loadSampleEssayMarks(cycleId: string): void;
+  clearEssayMarks(cycleId: string): void;
 
   // distinction safeguard (grading stage)
   confirmDistinctionCaps(cycleId: string): void;
