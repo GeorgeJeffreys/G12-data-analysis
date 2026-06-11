@@ -47,6 +47,11 @@ import {
   type Member,
   type MembersModel,
   type NewCycleModel,
+  type PerformanceReportModel,
+  type PerfReportStudent,
+  type PerfReportSubject,
+  type PerfElementResult,
+  type PerfReportSummarySubject,
   type QualityThresholdRow,
   type RetentionConfig,
   type ReviewModel,
@@ -790,6 +795,100 @@ export class InMemoryDataProvider implements DataProvider {
       performanceLevels: perfLevels,
       locked: this.locked.has(cycleId),
       canLock: this.user.role === "lead_admin" && !this.locked.has(cycleId),
+    };
+  }
+
+  /**
+   * Per-student, per-assessment, per-major-element performance levels for the
+   * Students_Performance_Report export. Element levels are computed from the
+   * student's retained responses on that element's items, classified with the
+   * same per-assessment cut-points the overall subject level uses. All real
+   * computed data — nothing fabricated.
+   */
+  getPerformanceReport(cycleId: string): PerformanceReportModel | null {
+    const grades = this.getGrades(cycleId);
+    if (!grades) return null;
+    const perfLevels = this.grading.performanceLevels;
+
+    // subjects with ordered major elements + per-(participant,element) levels
+    const subjects: PerfReportSubject[] = [];
+    const elementLevelByP = new Map<string, Map<string, Map<string, string>>>(); // assessmentId -> pid -> element -> level
+    for (const a of seed.liveCycle.assessments) {
+      const cuts = this.boundaryState(cycleId, a.id).cuts;
+      const itemMajor = new Map<string, string | null>();
+      const majorOrder: string[] = [];
+      for (const it of a.items) {
+        itemMajor.set(it.id, it.major);
+        if (it.major && !majorOrder.includes(it.major)) majorOrder.push(it.major);
+      }
+      subjects.push({ assessmentId: a.id, name: a.name, majorElements: majorOrder });
+
+      const excluded = this.excludedSet(cycleId, a.id);
+      const ps = new Set(this.perStudentExclusions(cycleId, a.id).map((e) => `${e.participantId} ${e.itemId}`));
+      // accumulate raw/n per (participant, element)
+      const acc = new Map<string, Map<string, { raw: number; n: number }>>();
+      for (const r of this.responsesOf(a)) {
+        if (excluded.has(r.itemId)) continue;
+        if (ps.has(`${r.participantId} ${r.itemId}`)) continue;
+        const el = itemMajor.get(r.itemId);
+        if (!el) continue;
+        let byEl = acc.get(r.participantId);
+        if (!byEl) acc.set(r.participantId, (byEl = new Map()));
+        const cell = byEl.get(el) ?? { raw: 0, n: 0 };
+        cell.raw += r.score;
+        cell.n += 1;
+        byEl.set(el, cell);
+      }
+      const pMap = new Map<string, Map<string, string>>();
+      for (const [pid, byEl] of acc) {
+        const lvls = new Map<string, string>();
+        for (const [el, cell] of byEl) {
+          const pct = cell.n ? (cell.raw / cell.n) * 100 : 0;
+          lvls.set(el, classify(pct, perfLevels, cuts));
+        }
+        pMap.set(pid, lvls);
+      }
+      elementLevelByP.set(a.id, pMap);
+    }
+
+    const students: PerfReportStudent[] = grades.rows.map((row) => {
+      const sub: Record<string, PerfElementResult> = {};
+      for (const a of seed.liveCycle.assessments) {
+        const level = row.grades[a.id]?.level ?? "";
+        const elements: Record<string, string> = {};
+        const lvls = elementLevelByP.get(a.id)?.get(row.id);
+        if (lvls) for (const [el, lv] of lvls) elements[el] = lv;
+        sub[a.id] = { level, elements };
+      }
+      return { participantId: row.id, name: row.label, award: row.award, subjects: sub };
+    });
+
+    // canonical Student-Summary columns mapped by subject alias (keyword)
+    const refs = grades.assessments;
+    const aliasFor = (re: RegExp) => refs.find((r) => re.test(r.id) || re.test(r.name))?.id ?? null;
+    const summarySubjects: PerfReportSummarySubject[] = [
+      { label: "Applicable Maths", assessmentId: aliasFor(/applicable math/i) },
+      { label: "Scientific Thinking", assessmentId: aliasFor(/scientific/i) },
+      { label: "Arabic 1st Language", assessmentId: aliasFor(/arabic/i) },
+      { label: "English 2nd Language", assessmentId: aliasFor(/english/i) },
+      { label: "Life Success Skills", assessmentId: aliasFor(/life/i) },
+    ];
+
+    const n = grades.rows.length;
+    const awardDistribution = grades.distribution.map((d) => ({
+      level: d.level,
+      count: d.count,
+      pct: n ? round((d.count / n) * 100, 1) : 0,
+    }));
+
+    return {
+      cycleName: seed.liveCycle.name,
+      performanceLevels: perfLevels,
+      awardLevels: this.grading.awardLevels,
+      subjects,
+      summarySubjects,
+      students,
+      awardDistribution,
     };
   }
 

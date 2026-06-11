@@ -27,6 +27,18 @@ export {
   DEFAULT_SUBJECT_COLUMNS,
 } from "./grades";
 export {
+  buildPerformanceReportWorkbook,
+  PERFORMANCE_REPORT_SHEETS,
+  STUDENT_SUMMARY_HEADERS,
+} from "./performance-report";
+export type {
+  PerformanceReportInput,
+  PRSubject,
+  PRStudent,
+  PRStudentSubject,
+  PRSummarySubject,
+} from "./performance-report";
+export {
   buildPerStudentExclusionsSheet,
   PER_STUDENT_EXCLUSION_HEADERS,
   PER_STUDENT_EXCLUSION_SHEET_NAME,

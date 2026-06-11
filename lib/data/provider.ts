@@ -35,6 +35,7 @@ import type {
   IngestModel,
   MembersModel,
   NewCycleModel,
+  PerformanceReportModel,
   RetentionConfig,
   ReviewModel,
   ItemDetailModel,
@@ -82,6 +83,8 @@ export interface DataProvider {
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null;
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null;
   getGrades(cycleId: string): GradesModel | null;
+  /** Per-student performance + per-element levels for the performance-report export. */
+  getPerformanceReport(cycleId: string): PerformanceReportModel | null;
   getGradingDefaults(): GradingDefaultsModel;
   /** Per-student technical exclusions (optional Student-review step). */
   getStudentReview(cycleId: string): StudentReviewModel | null;

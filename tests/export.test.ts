@@ -23,6 +23,9 @@ import {
   DEFAULT_SUBJECT_COLUMNS,
   RATING_STYLES,
   PERFORMANCE_STYLES,
+  buildPerformanceReportWorkbook,
+  PERFORMANCE_REPORT_SHEETS,
+  STUDENT_SUMMARY_HEADERS,
 } from "@/lib/export";
 import type {
   ItemResponseFact,
@@ -548,5 +551,82 @@ describe("grades workbook — canonical layout", () => {
     expect(wb.SheetNames).toContain("Per-student Exclusions");
     const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student Exclusions");
     expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
+  });
+});
+
+describe("performance report workbook — Students_Performance_Report layout", () => {
+  const CYCLE = "may-2026";
+
+  function build(): XLSXR.WorkBook {
+    const provider = new InMemoryDataProvider();
+    // Bring real candidates into the upper bands so the level rows are populated.
+    provider.setBoundary(CYCLE, "applicable-math", { cuts: [60, 40, 20] });
+    const report = provider.getPerformanceReport(CYCLE)!;
+    const wb = buildPerformanceReportWorkbook({
+      ...report,
+      perStudentExclusions: exclusionRecordsFromProvider(provider, CYCLE),
+      audit: provider.getAuditLog(CYCLE, "all", "").entries.map((e) => ({
+        timestamp: e.ts,
+        actor: e.actorName,
+        action: e.action,
+        detail: e.detail,
+        entity: e.type,
+        entityId: e.cycleId ?? "",
+      })),
+    });
+    const buf = workbookToBuffer(wb);
+    return XLSXR.read(buf, { type: "buffer" });
+  }
+
+  it("emits the three matched sheets, then exclusions + audit, in order", () => {
+    const wb = build();
+    expect(wb.SheetNames.slice(0, 3)).toEqual([...PERFORMANCE_REPORT_SHEETS]);
+    expect(wb.SheetNames).toContain("Per-student exclusions");
+    expect(wb.SheetNames).toContain("Audit Trail");
+    // additional sheets come AFTER the matched ones
+    expect(wb.SheetNames.indexOf("Per-student exclusions")).toBeGreaterThan(2);
+    expect(wb.SheetNames.indexOf("Audit Trail")).toBeGreaterThan(2);
+  });
+
+  it("Class Performance has the title, a row per performance level, and the award block", () => {
+    const wb = build();
+    const report = new InMemoryDataProvider().getPerformanceReport(CYCLE)!;
+    const aoa = aoaOf(wb, "Class Performance");
+    expect(aoa[0]?.[0]).toBe("Class Performance Report");
+    expect(aoa[3]?.[0]).toBe("% Performance");
+    // r5.. one row per performance level (best → lowest), label in col A
+    report.performanceLevels.forEach((lvl, i) => {
+      expect(aoa[4 + i]?.[0]).toBe(lvl);
+    });
+    // Award Level Distribution block follows
+    const flat = aoa.map((r) => String(r?.[0] ?? ""));
+    const awardTitle = flat.indexOf("Award Level Distribution");
+    expect(awardTitle).toBeGreaterThan(0);
+    expect(aoa[awardTitle + 1]).toEqual(["Award Level", "Number of Students", "% of Class"]);
+  });
+
+  it("Student Summary matches the canonical 8-column header with one row per student", () => {
+    const wb = build();
+    const report = new InMemoryDataProvider().getPerformanceReport(CYCLE)!;
+    const aoa = aoaOf(wb, "Student Summary");
+    expect(aoa[2]?.slice(0, STUDENT_SUMMARY_HEADERS.length)).toEqual([...STUDENT_SUMMARY_HEADERS]);
+    // one data row per student, last column "Open profile"
+    expect(aoa[3]?.[STUDENT_SUMMARY_HEADERS.length - 1]).toBe("Open profile");
+    const dataRows = aoa.slice(3).filter((r) => r && r[0]);
+    expect(dataRows.length).toBe(report.students.length);
+    // Legend block sits in the right-hand column (col J = index 9)
+    expect(aoa[0]?.[9]).toBe("Legend");
+  });
+
+  it("Student Profiles repeats an Award Level / Subject block per student", () => {
+    const wb = build();
+    const report = new InMemoryDataProvider().getPerformanceReport(CYCLE)!;
+    const aoa = aoaOf(wb, "Student Profiles");
+    const flat = aoa.map((r) => String(r?.[0] ?? ""));
+    expect(flat.filter((v) => v === "Award Level").length).toBe(report.students.length);
+    expect(flat.filter((v) => v === "Subject").length).toBe(report.students.length);
+    // "Back" appears in the last column of each student's name row
+    const backs = aoa.filter((r) => r?.[2] === "Back");
+    expect(backs.length).toBe(report.students.length);
   });
 });

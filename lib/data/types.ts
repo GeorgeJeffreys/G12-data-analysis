@@ -110,6 +110,39 @@ export interface BreakItem {
   v: number;
 }
 
+// --- Performance report (Students_Performance_Report export) -----------------
+export interface PerfElementResult {
+  /** Overall performance level for the subject. */
+  level: string;
+  /** Major element → performance level. */
+  elements: Record<string, string>;
+}
+export interface PerfReportStudent {
+  participantId: string;
+  name: string;
+  award: string;
+  /** Keyed by assessmentId. */
+  subjects: Record<string, PerfElementResult>;
+}
+export interface PerfReportSubject {
+  assessmentId: string;
+  name: string;
+  majorElements: string[];
+}
+export interface PerfReportSummarySubject {
+  label: string;
+  assessmentId: string | null;
+}
+export interface PerformanceReportModel {
+  cycleName: string;
+  performanceLevels: string[];
+  awardLevels: string[];
+  subjects: PerfReportSubject[];
+  summarySubjects: PerfReportSummarySubject[];
+  students: PerfReportStudent[];
+  awardDistribution: { level: string; count: number; pct: number }[];
+}
+
 /** Full per-question deep-dive for the Item review right panel. */
 export interface ItemDetailModel {
   id: string;

@@ -54,9 +54,9 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             <Icon name="doc" />
             Export CSV
           </Button>
-          <Button variant="ghost" onClick={() => { exportExcel(provider, cycleId, model); provider.recordExport(cycleId, "Grades workbook (Excel)"); }}>
+          <Button variant="ghost" onClick={() => { exportExcel(provider, cycleId, model); provider.recordExport(cycleId, "Students' Performance Report (Excel)"); }}>
             <Icon name="doc" />
-            Export Excel
+            Performance report
           </Button>
         </div>
       }
@@ -271,81 +271,18 @@ function exportCsv(model: GradesModel) {
   downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "grades_may_2026.csv");
 }
 
-// Canonical subject slot → assessment alias (keyword), matching the document
-// generator's slot mapping.
-const SUBJECT_ALIAS: Record<string, RegExp> = {
-  ApplicableMath: /applicable math/i,
-  EnglishL2: /english/i,
-  ScientificThinking: /scientific/i,
-  ArabicL1: /arabic/i,
-  LifeSuccessSkills: /life/i,
-};
-
 async function exportExcel(provider: DataProvider, cycleId: string, model: GradesModel) {
-  // Assembles the canonical grades workbook from the REAL provider read-models
-  // (grades, the Distinction safeguard, per-student incidents and the audit log).
-  // Per-subject raw scores aren't exposed by the provider read-models, so the
-  // Score/Pct cells are left blank here; the Level, award, cap, exclusion and
-  // audit columns are all real.
+  // Students_Performance_Report workbook (Class Performance / Student Summary /
+  // Student Profiles), then the clearly-additional Per-student Exclusions and
+  // Audit Trail sheets. All cells come from the REAL provider read-models —
+  // per-student per-element levels via getPerformanceReport, exclusions via the
+  // Student-review incidents, and the audit log.
+  void model;
   const exp = await import("@/lib/export");
-  const cycle = provider.getCycle(cycleId);
+  const report = provider.getPerformanceReport(cycleId);
+  if (!report) return;
   const review = provider.getStudentReview(cycleId);
-  const safeguard = provider.getDistinctionSafeguard(cycleId);
   const audit = provider.getAuditLog(cycleId, "all", "");
-
-  const subjects = exp.DEFAULT_SUBJECT_COLUMNS.map((s) => ({
-    ...s,
-    assessmentId:
-      model.assessments.find((a) => SUBJECT_ALIAS[s.key]?.test(a.name) || SUBJECT_ALIAS[s.key]?.test(a.id))?.id ?? null,
-  }));
-
-  const capByP = new Map<string, { applied: boolean; reason: string | null; overridden: boolean; overrideReason: string | null }>();
-  if (safeguard) {
-    for (const c of safeguard.candidates) {
-      capByP.set(c.id, {
-        applied: c.result === "capped",
-        reason:
-          c.result === "capped"
-            ? `Fewer than ${safeguard.threshold} top-difficulty (${safeguard.topDifficultyDemand}) questions attempted`
-            : null,
-        overridden: c.result === "override",
-        overrideReason: c.overrideReason,
-      });
-    }
-  }
-
-  const students = model.rows.map((r) => {
-    const cap = capByP.get(r.id);
-    const perAssessment: Record<string, { level: string; score: number | null; pct: number | null }> = {};
-    for (const a of model.assessments) perAssessment[a.id] = { level: r.grades[a.id]?.level ?? "", score: null, pct: null };
-    return {
-      participantId: r.id,
-      participantName: r.label,
-      perAssessment,
-      overallAward: r.award,
-      overallPct: null,
-      capApplied: cap?.applied ?? false,
-      capReason: cap?.reason ?? null,
-      capOverridden: cap?.overridden ?? false,
-      overrideReason: cap?.overrideReason ?? null,
-    };
-  });
-
-  const n = model.rows.length;
-  const awardDistribution = model.distribution.map((d) => ({
-    level: d.level,
-    count: d.count,
-    pct: n ? Math.round((d.count / n) * 1000) / 10 : 0,
-  }));
-  const performanceDistribution = model.assessments.map((a) => {
-    const counts: Record<string, number> = {};
-    for (const lvl of model.performanceLevels) counts[lvl] = 0;
-    for (const r of model.rows) {
-      const lvl = r.grades[a.id]?.level;
-      if (lvl) counts[lvl] = (counts[lvl] ?? 0) + 1;
-    }
-    return { assessmentName: a.name, counts };
-  });
 
   const perStudentExclusions = (review?.incidents ?? [])
     .filter((i) => i.decision === "excluded" && i.itemId)
@@ -370,23 +307,13 @@ async function exportExcel(provider: DataProvider, cycleId: string, model: Grade
     entityId: e.cycleId ?? "",
   }));
 
-  const wb = exp.buildGradesWorkbook({
-    cycleName: cycle?.name ?? "May 2026",
-    participantCount: n,
-    assessmentCount: model.assessments.length,
-    lockedAt: model.locked ? "Locked" : null,
-    signedOffBy: model.locked ? provider.getCurrentUser().name : null,
-    awardLevels: model.awardLevels,
-    performanceLevels: model.performanceLevels,
-    subjects,
-    students,
-    awardDistribution,
-    performanceDistribution,
+  const wb = exp.buildPerformanceReportWorkbook({
+    ...report,
     perStudentExclusions,
     audit: auditEntries,
   });
   const buf = exp.workbookToBuffer(wb);
   const bytes = new Uint8Array(buf.byteLength);
   bytes.set(buf);
-  downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "grades_may_2026.xlsx");
+  downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "students_performance_report_may_2026.xlsx");
 }
