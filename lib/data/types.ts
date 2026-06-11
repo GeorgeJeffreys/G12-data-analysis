@@ -110,6 +110,42 @@ export interface BreakItem {
   v: number;
 }
 
+/** Full per-question deep-dive for the Item review right panel. */
+export interface ItemDetailModel {
+  id: string;
+  qLabel: string;
+  wording: string | null;
+  major: string | null;
+  sub: string | null;
+  demand: string | null;
+  excluded: boolean;
+  reason: string | null;
+  /** Participants who answered (engine n) and were presented the item. */
+  answered: number;
+  presented: number;
+  notAnswered: number;
+  pValue: number;
+  pRating: QualityRating;
+  itemTotal: number | null;
+  itRating: QualityRating;
+  pointBiserial: number | null;
+  pbRating: QualityRating;
+  discrimination: number;
+  discRating: QualityRating;
+  overallReview: QualityRating;
+  qualityIndex: number;
+  /** Discrimination upper/lower groups (top/bottom ~third by rest-total). */
+  groups: { size: number; upperMean: number; lowerMean: number };
+  /**
+   * Outcome distribution for this dichotomous item — the Questionmark score
+   * export carries only correct/incorrect (not the chosen option), so this is the
+   * honest response breakdown, not a fabricated per-option A/B/C/D split.
+   */
+  outcome: { correct: number; incorrect: number; notAnswered: number };
+  /** Plain-language reasoning for each statistic's Good/Review/Flag rating. */
+  reasons: { p: string; it: string; pb: string; disc: string; overall: string };
+}
+
 export interface ReviewModel {
   assessment: AssessmentRef;
   assessments: AssessmentRef[];

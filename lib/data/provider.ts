@@ -37,6 +37,7 @@ import type {
   NewCycleModel,
   RetentionConfig,
   ReviewModel,
+  ItemDetailModel,
   RolesModel,
   BoundaryModel,
   BrandingConfig,
@@ -77,6 +78,8 @@ export interface DataProvider {
   getCycle(cycleId: string): CycleDetail | null;
   getIngest(cycleId: string): IngestModel | null;
   getReview(cycleId: string, assessmentId: string): ReviewModel | null;
+  /** Full per-question deep-dive for the Item review right panel. */
+  getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null;
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null;
   getGrades(cycleId: string): GradesModel | null;
   getGradingDefaults(): GradingDefaultsModel;

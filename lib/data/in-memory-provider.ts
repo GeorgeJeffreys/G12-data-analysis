@@ -42,6 +42,7 @@ import {
   type GradesModel,
   type GradingDefaultsModel,
   type IngestModel,
+  type ItemDetailModel,
   type ItemRow,
   type Member,
   type MembersModel,
@@ -488,6 +489,111 @@ export class InMemoryDataProvider implements DataProvider {
       byElement,
       byDemand,
     };
+  }
+
+  getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== seed.liveCycle.id || !a) return null;
+    const index = a.items.findIndex((it) => it.id === itemId);
+    if (index < 0) return null;
+    const item = a.items[index]!;
+
+    // Full live ItemStat (same engine call as the table) so the per-statistic
+    // ratings reflect any per-student exclusions and the configured thresholds.
+    const perStudent = this.perStudentExclusions(cycleId, assessmentId);
+    const stats = engine.computeItemStats({
+      responses: this.responsesOf(a),
+      perStudentExcluded: perStudent,
+      scoringConfig: this.scoringConfig(),
+    });
+    const s = stats.find((x) => x.itemId === itemId);
+
+    // Live response rows for this item (per-student-excluded responses dropped),
+    // for the outcome split and the discrimination upper/lower groups.
+    const ps = new Set(perStudent.map((e) => `${e.participantId} ${e.itemId}`));
+    const recs = this.responsesOf(a).filter((r) => !ps.has(`${r.participantId} ${r.itemId}`));
+    const totalByP = new Map<string, number>();
+    for (const r of recs) totalByP.set(r.participantId, (totalByP.get(r.participantId) ?? 0) + r.score);
+    const rows = recs
+      .filter((r) => r.itemId === itemId)
+      .map((r) => ({ score: r.score, total: totalByP.get(r.participantId) ?? r.score }));
+    const answered = rows.length;
+    const correct = rows.reduce((acc, r) => acc + (r.score > 0 ? 1 : 0), 0);
+    const incorrect = answered - correct;
+    const presented = item.participantsPresented;
+    const notAnswered = Math.max(0, presented - answered);
+
+    // upper/lower group means (top/bottom g≈n/3 by rest-total desc, tie by total)
+    const g = Math.max(1, Math.round(answered / 3));
+    const ranked = rows
+      .map((r) => ({ score: r.score, rest: r.total - r.score, total: r.total }))
+      .sort((x, y) => y.rest - x.rest || y.total - x.total);
+    const gmean = (grp: { score: number }[]) => (grp.length ? grp.reduce((acc, r) => acc + r.score, 0) / grp.length : 0);
+    const upperMean = round(gmean(ranked.slice(0, g)), 2);
+    const lowerMean = round(gmean(ranked.slice(answered - g)), 2);
+
+    const pValue = s?.pValue ?? item.pValue;
+    const itemTotal = s ? s.itemTotal : item.itemTotal;
+    const pointBiserial = s ? s.pointBiserial : item.pointBiserial;
+    const discrimination = s?.discrimination ?? item.discrimination;
+    const pRating = s?.pRating ?? item.pRating;
+    const itRating = s?.itRating ?? item.itRating;
+    const pbRating = s?.pbRating ?? item.pbRating;
+    const discRating = s?.discRating ?? item.discRating;
+    const overallReview = s?.overallReview ?? item.overallReview;
+
+    return {
+      id: itemId,
+      qLabel: `Q${String(index + 1).padStart(2, "0")}`,
+      wording: item.wording,
+      major: item.major,
+      sub: item.sub,
+      demand: item.demand,
+      excluded: this.excludedSet(cycleId, assessmentId).has(itemId),
+      reason: this.reasons.get(`${cycleId}:${assessmentId}:${itemId}`) ?? null,
+      answered,
+      presented,
+      notAnswered,
+      pValue,
+      pRating,
+      itemTotal,
+      itRating,
+      pointBiserial,
+      pbRating,
+      discrimination,
+      discRating,
+      overallReview,
+      qualityIndex: s ? this.qualityIndexOf(s) : item.qualityIndex,
+      groups: { size: g, upperMean, lowerMean },
+      outcome: { correct, incorrect, notAnswered },
+      reasons: {
+        p: this.reasonForP(pValue, pRating),
+        it: this.reasonForCorr("item-total correlation", itemTotal, itRating),
+        pb: this.reasonForCorr("point-biserial", pointBiserial, pbRating),
+        disc: this.reasonForCorr("discrimination", discrimination, discRating),
+        overall: `Overall review is ${overallReview} — the worst of the four statistic ratings.`,
+      },
+    };
+  }
+
+  /** Plain-language reason for a p-value rating, using the live thresholds. */
+  private reasonForP(p: number, rating: QualityRating): string {
+    const t = this.quality.pValue;
+    const v = p.toFixed(2);
+    if (rating === "Good") return `p-value ${v} sits in the healthy ${t.reviewBelow.toFixed(2)}–${t.goodUpTo.toFixed(2)} band — a sensible difficulty.`;
+    if (p < t.reviewBelow) return `p-value ${v} is below ${t.reviewBelow.toFixed(2)} — hard; few students answered correctly.`;
+    if (p > t.goodUpTo) return `p-value ${v} is above ${t.goodUpTo.toFixed(2)} — easy; most students answered correctly.`;
+    return `p-value ${v} is just outside the Good band.`;
+  }
+
+  /** Plain-language reason for a correlation-type rating, using the live thresholds. */
+  private reasonForCorr(name: string, value: number | null, rating: QualityRating): string {
+    const t = this.quality.itemTotal; // correlation metrics share the band shape
+    if (value === null || Number.isNaN(value)) return `${name} is undefined (zero variance) — treated as Flag.`;
+    const v = value.toFixed(2);
+    if (rating === "Good") return `${name} ${v} is at or above ${t.reviewBelow.toFixed(2)} — discriminates well between stronger and weaker students.`;
+    if (value < t.flagBelow) return `${name} ${v} is below ${t.flagBelow.toFixed(2)} — little or negative discrimination.`;
+    return `${name} ${v} is between ${t.flagBelow.toFixed(2)} and ${t.reviewBelow.toFixed(2)} — weak discrimination, worth a look.`;
   }
 
   // ── scoring & grade boundaries ──────────────────────────────────────────---
