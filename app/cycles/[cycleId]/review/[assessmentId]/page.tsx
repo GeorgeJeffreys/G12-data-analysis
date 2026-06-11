@@ -5,15 +5,15 @@
  * quality and decide exclusions; the KPIs, score distribution and breakdowns
  * recompute live (through the provider → engine) on every exclusion.
  *
- * Layout (prompt 2 · B):
- *  - the cohort summary (distribution / by-element / by-demand) lives in a
- *    collapsible strip across the top, above the table;
- *  - the table is zoomable (density control) and each question shows only its
- *    first line, truncated, with an expand control;
- *  - the right panel is blank until a row is clicked, then shows that item's full
- *    statistical deep-dive; it is collapsible and drag-resizable.
+ * Layout (realigned to the original design proportions):
+ *  - the table is the full-height dominant element (slim stats row + one filter
+ *    row above it, nothing else stacked);
+ *  - the compact right panel is DUAL-MODE — the cohort summary (distribution /
+ *    by-element / by-demand) by default, switching to the selected item's
+ *    deep-dive (with "← Back to cohort") when a row is clicked;
+ *  - the table is zoomable with explicit − / + density controls.
  */
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
@@ -22,7 +22,7 @@ import { Shell } from "@/components/shell/Shell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
-import { Histogram } from "@/components/ui/charts";
+import { Histogram, BreakdownBars } from "@/components/ui/charts";
 
 const REASONS = [
   "Negative discrimination",
@@ -34,13 +34,16 @@ const REASONS = [
 
 type QualityFilter = "all" | "review" | "poor";
 type SortKey = "q" | "pValue" | "itemTotal" | "pointBiserial" | "discrimination" | "quality";
-type Zoom = "compact" | "normal" | "comfortable";
 
-const ZOOM: Record<Zoom, { pad: string; font: number }> = {
-  compact: { pad: "5px 12px", font: 12 },
-  normal: { pad: "11px 12px", font: 12.5 },
-  comfortable: { pad: "16px 12px", font: 13.5 },
-};
+/** Row-density / text-size steps, controlled by the + / − zoom buttons. */
+const ZOOM_STEPS: { pad: string; font: number }[] = [
+  { pad: "3px 12px", font: 11 },
+  { pad: "5px 12px", font: 11.5 },
+  { pad: "9px 12px", font: 12.5 },
+  { pad: "13px 12px", font: 13.5 },
+  { pad: "17px 12px", font: 14.5 },
+];
+const ZOOM_DEFAULT = 2;
 
 function fmtStat(v: number | null): string {
   if (v === null || Number.isNaN(v)) return "—";
@@ -70,13 +73,11 @@ export default function ReviewPage({
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "discrimination", dir: 1 });
   const [reasonFor, setReasonFor] = useState<string | null>(null);
 
-  // B: selection, cohort strip, zoom, expand, resizable panel
+  // Selection drives the dual-mode right panel; zoom controls table density.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [cohortOpen, setCohortOpen] = useState(true);
-  const [zoom, setZoom] = useState<Zoom>("normal");
+  const [zoom, setZoom] = useState<number>(ZOOM_DEFAULT);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [panelWidth, setPanelWidth] = useState(360);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [panelWidth, setPanelWidth] = useState(322);
 
   const detail = useProviderData(
     (p) => (selectedId ? p.getItemDetail(cycleId, assessmentId, selectedId) : null),
@@ -133,10 +134,7 @@ export default function ReviewPage({
     setReasonFor(null);
   };
   const restore = (itemId: string) => provider.setItemExcluded(cycleId, assessmentId, itemId, false);
-  const select = (itemId: string) => {
-    setSelectedId(itemId);
-    setPanelOpen(true);
-  };
+  const select = (itemId: string) => setSelectedId((cur) => (cur === itemId ? null : itemId));
 
   const Num = ({ v }: { v: number | null }) => (
     <span className="hf-mono" style={{ fontSize: 12.5, color: v !== null && v < 0.2 ? H.bad : H.ink }}>
@@ -151,7 +149,7 @@ export default function ReviewPage({
     </th>
   );
 
-  const z = ZOOM[zoom];
+  const z = ZOOM_STEPS[zoom] ?? ZOOM_STEPS[ZOOM_DEFAULT]!;
 
   return (
     <Shell
@@ -202,10 +200,7 @@ export default function ReviewPage({
         </label>
       </div>
 
-      {/* cohort summary strip — collapsible, across the top */}
-      <CohortStrip open={cohortOpen} onToggle={() => setCohortOpen((v) => !v)} model={model} />
-
-      {/* filter + zoom row */}
+      {/* single filter + zoom row (cohort summary now lives in the right panel) */}
       <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 26px", borderBottom: `1px solid ${H.line}`, flexWrap: "wrap", background: H.paper }}>
         <span className="hf-lbl" style={{ marginRight: 2 }}>Filter</span>
         <Chip on={quality === "all"} onClick={() => setQuality("all")}>All quality</Chip>
@@ -215,7 +210,7 @@ export default function ReviewPage({
         <Dropdown label="Element" value={element} onChange={setElement} options={elements} />
         <Dropdown label="Demand" value={demand} onChange={setDemand} options={["D1", "D2", "D3"]} />
         <div style={{ flex: 1, minWidth: 8 }} />
-        <ZoomControl zoom={zoom} onZoom={setZoom} />
+        <ZoomControl zoom={zoom} onZoom={setZoom} max={ZOOM_STEPS.length - 1} />
       </div>
 
       {/* table + deep-dive */}
@@ -261,87 +256,97 @@ export default function ReviewPage({
           </div>
         </div>
 
-        {/* right deep-dive — collapsible + drag-resizable */}
-        {panelOpen ? (
-          <DeepDivePanel
-            width={panelWidth}
-            onResize={setPanelWidth}
-            onCollapse={() => setPanelOpen(false)}
-            detail={detail}
-            onExclude={exclude}
-            onRestore={restore}
-          />
-        ) : (
-          <button
-            onClick={() => setPanelOpen(true)}
-            title="Show item deep-dive"
-            style={{ flex: "0 0 auto", width: 34, border: "none", borderLeft: `1px solid ${H.line2}`, background: H.tint, cursor: "pointer", color: H.ink2, writingMode: "vertical-rl", fontSize: 11, fontWeight: 700, letterSpacing: 0.5, padding: "10px 0" }}
-          >
-            ‹ Item deep-dive
-          </button>
-        )}
+        {/* right panel — dual-mode: cohort summary by default, deep-dive when a row is selected */}
+        <RightPanel
+          width={panelWidth}
+          onResize={setPanelWidth}
+          selected={!!selectedId}
+          onBack={() => setSelectedId(null)}
+          detail={detail}
+          model={model}
+          onExclude={exclude}
+          onRestore={restore}
+        />
       </div>
     </Shell>
   );
 }
 
-// ── cohort summary strip (slim, inline) ─────────────────────────────────────
-function CohortStrip({ open, onToggle, model }: { open: boolean; onToggle: () => void; model: ReviewModel }) {
+// ── right panel: dual-mode (cohort summary ⇄ item deep-dive) ────────────────
+function RightPanel({
+  width,
+  onResize,
+  selected,
+  onBack,
+  detail,
+  model,
+  onExclude,
+  onRestore,
+}: {
+  width: number;
+  onResize: (w: number) => void;
+  selected: boolean;
+  onBack: () => void;
+  detail: ItemDetailModel | null | undefined;
+  model: ReviewModel;
+  onExclude: (itemId: string, reason: string) => void;
+  onRestore: (itemId: string) => void;
+}) {
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = width;
+    const move = (ev: PointerEvent) => onResize(Math.max(280, Math.min(560, startW + (startX - ev.clientX))));
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  };
   return (
-    <div
-      className="hf-pad"
-      style={{ flex: "0 0 auto", borderBottom: `1px solid ${H.line}`, background: H.canvas, display: "flex", alignItems: "center", gap: 18, padding: "7px 26px", flexWrap: "wrap", minHeight: 40 }}
-    >
-      <button
-        onClick={onToggle}
-        title={open ? "Collapse cohort summary" : "Expand cohort summary"}
-        style={{ display: "flex", alignItems: "center", gap: 7, border: "none", background: "transparent", cursor: "pointer", color: H.ink2, padding: 0, flex: "0 0 auto" }}
-      >
-        <Chevron open={open} />
-        <span className="hf-lbl">Cohort summary</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 9.5, color: H.pink, fontWeight: 700, marginLeft: 4 }}>
-          <span style={{ width: 5, height: 5, borderRadius: 999, background: H.pink }} /> LIVE
-        </span>
-      </button>
-
-      {open && (
-        <>
-          {/* condensed distribution */}
-          <div style={{ display: "flex", alignItems: "center", gap: 9, flex: "0 0 auto" }}>
-            <div style={{ width: 132 }}><Histogram data={model.distribution} height={34} /></div>
-            <span className="hf-sub" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
-              mean <b style={{ color: H.ink }}>{model.cohortMean}%</b> · σ {model.cohortSd}
-            </span>
+    <aside style={{ width, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", display: "flex", position: "relative", minWidth: 0 }}>
+      <div onPointerDown={startResize} title="Drag to resize" style={{ position: "absolute", left: -3, top: 0, bottom: 0, width: 6, cursor: "ew-resize", zIndex: 2 }} />
+      <div style={{ flex: 1, overflow: "auto", padding: 20, minWidth: 0 }}>
+        {selected ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            <button onClick={onBack} className="hf-btn ghost" style={{ alignSelf: "flex-start", fontSize: 12 }}>
+              ← Back to cohort
+            </button>
+            {detail ? <DetailBody detail={detail} onExclude={onExclude} onRestore={onRestore} /> : (
+              <div className="hf-sub" style={{ padding: 20 }}>Loading…</div>
+            )}
           </div>
-          <Sep />
-          <CompactGroup label="Element" items={model.byElement} />
-          <Sep />
-          <CompactGroup label="Demand" items={model.byDemand} />
-        </>
-      )}
-    </div>
+        ) : (
+          <CohortPanel model={model} />
+        )}
+      </div>
+    </aside>
   );
 }
 
-function Sep() {
-  return <span style={{ width: 1, height: 22, background: H.line2, flex: "0 0 auto" }} />;
-}
-
-/** Condensed inline summary: label + small "key n" chips with a thin fill bar. */
-function CompactGroup({ label, items }: { label: string; items: { k: string; v: number }[] }) {
-  const max = Math.max(1, ...items.map((i) => i.v));
+/** The default right-panel content: the cohort summary (the original right rail). */
+function CohortPanel({ model }: { model: ReviewModel }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", minWidth: 0 }}>
-      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
-      {items.map((it) => (
-        <span key={it.k} title={`${it.k}: ${it.v}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: H.ink2, background: H.paper, border: `1px solid ${H.line2}`, borderRadius: 999, padding: "1px 7px", maxWidth: 150 }}>
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.k}</span>
-          <span style={{ width: 22, height: 4, background: H.tint2, borderRadius: 2, flex: "0 0 auto" }}>
-            <span style={{ display: "block", width: `${(it.v / max) * 100}%`, height: "100%", background: H.bar, borderRadius: 2 }} />
+    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+      <div>
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 11 }}>
+          <span className="hf-lbl">Score distribution</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: H.pink, fontWeight: 700 }}>
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} /> LIVE
           </span>
-          <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink }}>{it.v}</span>
-        </span>
-      ))}
+        </div>
+        <Histogram data={model.distribution} height={94} />
+        <div className="hf-sub" style={{ marginTop: 7 }}>Cohort mean {model.cohortMean}% · σ {model.cohortSd}</div>
+      </div>
+      <div>
+        <div className="hf-lbl" style={{ marginBottom: 11 }}>By curriculum element</div>
+        <BreakdownBars items={model.byElement} />
+      </div>
+      <div>
+        <div className="hf-lbl" style={{ marginBottom: 11 }}>By demand level</div>
+        <BreakdownBars items={model.byDemand} />
+      </div>
     </div>
   );
 }
@@ -355,25 +360,27 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-function ZoomControl({ zoom, onZoom }: { zoom: Zoom; onZoom: (z: Zoom) => void }) {
-  const opts: { k: Zoom; label: string }[] = [
-    { k: "compact", label: "Compact" },
-    { k: "normal", label: "Normal" },
-    { k: "comfortable", label: "Roomy" },
-  ];
+/** Row-density / text-size zoom: explicit − / + controls so more rows fit on demand. */
+function ZoomControl({ zoom, onZoom, max }: { zoom: number; onZoom: (z: number) => void; max: number }) {
+  const step = (d: -1 | 1) => onZoom(Math.max(0, Math.min(max, zoom + d)));
+  const btn = (label: string, d: -1 | 1, disabled: boolean) => (
+    <button
+      onClick={() => step(d)}
+      disabled={disabled}
+      aria-label={d < 0 ? "Smaller rows" : "Larger rows"}
+      title={d < 0 ? "Denser rows" : "Roomier rows"}
+      style={{ width: 26, height: 24, fontSize: 14, fontWeight: 700, background: H.paper, color: disabled ? H.ink3 : H.ink2, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}
+    >
+      {label}
+    </button>
+  );
   return (
     <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
       <span className="hf-lbl" style={{ fontSize: 9.5 }}>Density</span>
-      <span style={{ display: "flex", border: `1px solid ${H.line2}`, borderRadius: 7, overflow: "hidden" }}>
-        {opts.map((o, i) => (
-          <button
-            key={o.k}
-            onClick={() => onZoom(o.k)}
-            style={{ padding: "5px 10px", fontSize: 11.5, fontWeight: zoom === o.k ? 700 : 500, background: zoom === o.k ? H.pinkSoft : H.paper, color: zoom === o.k ? H.pink : H.ink2, border: "none", borderLeft: i > 0 ? `1px solid ${H.line2}` : "none", cursor: "pointer" }}
-          >
-            {o.label}
-          </button>
-        ))}
+      <span style={{ display: "flex", alignItems: "center", border: `1px solid ${H.line2}`, borderRadius: 7, overflow: "hidden" }}>
+        {btn("−", -1, zoom <= 0)}
+        <span style={{ width: 1, height: 16, background: H.line2 }} />
+        {btn("+", 1, zoom >= max)}
       </span>
     </span>
   );
@@ -460,9 +467,9 @@ function ItemRowView({
           )}
         </div>
       </td>
-      <td style={td}>
-        <div style={{ fontSize: zoom.font - 0.5, fontWeight: 600 }}>{it.major ?? "—"}</div>
-        <div className="hf-sub" style={{ fontSize: 11 }}>{it.sub ?? ""}</div>
+      <td style={{ ...td, maxWidth: 150, width: 150 }}>
+        <div title={it.major ?? undefined} style={{ fontSize: zoom.font - 0.5, fontWeight: 600, maxWidth: 138, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.major ?? "—"}</div>
+        <div title={it.sub ?? undefined} className="hf-sub" style={{ fontSize: 11, maxWidth: 138, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub ?? ""}</div>
       </td>
       <td style={td}>{it.demand ? <Pill>{it.demand}</Pill> : null}</td>
       <td style={td}><QualityBar v={it.qualityIndex} width={70} /></td>
@@ -490,64 +497,6 @@ function ItemRowView({
         )}
       </td>
     </tr>
-  );
-}
-
-// ── deep-dive panel ─────────────────────────────────────────────────────────
-function DeepDivePanel({
-  width,
-  onResize,
-  onCollapse,
-  detail,
-  onExclude,
-  onRestore,
-}: {
-  width: number;
-  onResize: (w: number) => void;
-  onCollapse: () => void;
-  detail: ItemDetailModel | null | undefined;
-  onExclude: (itemId: string, reason: string) => void;
-  onRestore: (itemId: string) => void;
-}) {
-  const startResize = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = width;
-    const move = (ev: PointerEvent) => {
-      const next = Math.max(280, Math.min(640, startW + (startX - ev.clientX)));
-      onResize(next);
-    };
-    const up = () => {
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-  };
-
-  return (
-    <aside style={{ width, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", display: "flex", position: "relative", minWidth: 0 }}>
-      {/* drag handle */}
-      <div onPointerDown={startResize} title="Drag to resize" style={{ position: "absolute", left: -3, top: 0, bottom: 0, width: 6, cursor: "ew-resize", zIndex: 2 }} />
-      <div style={{ flex: 1, overflow: "auto", padding: 20, minWidth: 0 }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
-          <span className="hf-lbl">Item deep-dive</span>
-          <div style={{ flex: 1 }} />
-          <button onClick={onCollapse} title="Collapse panel" className="hf-btn ghost" style={{ padding: "2px 7px", fontSize: 14 }}>›</button>
-        </div>
-        {!detail ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: "60px 16px", textAlign: "center", color: H.ink3 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 999, border: `1.5px dashed ${H.line2}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <Icon name="search" color={H.ink3} />
-            </div>
-            <div style={{ fontSize: 13, fontWeight: 600, color: H.ink2 }}>Select a question</div>
-            <div className="hf-sub" style={{ fontSize: 12 }}>Click any row to see its full statistical deep-dive — difficulty, discrimination groups, the rating reasoning and the response breakdown.</div>
-          </div>
-        ) : (
-          <DetailBody detail={detail} onExclude={onExclude} onRestore={onRestore} />
-        )}
-      </div>
-    </aside>
   );
 }
 
