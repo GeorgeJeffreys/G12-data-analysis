@@ -5,32 +5,29 @@
  *  - Per-assessment performance level (best → lowest): four bands → three cuts.
  *  - Overall award level (best → lowest): a separate four-band classification.
  *
- * Everything here is a *default*; the labels, star mapping and cut-points are
- * configurable through Settings → Grading defaults (see GradingConfig), so
- * nothing downstream hardcodes the band names or thresholds.
+ * The authoritative *defaults* for the vocabulary (labels, star mapping and
+ * default cut-points) now live in the engine's `ScoringConfig`
+ * (`@/lib/engine/config`) — the single source the scoring core reads. The
+ * constants below are derived from it so there is exactly one definition; the
+ * labels, star mapping and cut-points stay configurable through Settings →
+ * Grading defaults (see GradingConfig), so nothing downstream hardcodes the band
+ * names or thresholds.
  */
 
-export const PERFORMANCE_LEVELS = [
-  "Outstanding performance",
-  "Exceeds expectations",
-  "Meets expectations",
-  "Doesn't yet meet expectations",
-] as const;
+import {
+  DEFAULT_SCORING_CONFIG,
+  classifyByCuts,
+  awardLabels,
+  performanceLabels,
+  starMapOf,
+} from "@/lib/engine/config";
 
-export const AWARD_LEVELS = [
-  "Distinction award",
-  "Advanced achievement award",
-  "Secondary achievement award",
-  "No Award",
-] as const;
+export const PERFORMANCE_LEVELS = performanceLabels(DEFAULT_SCORING_CONFIG);
+
+export const AWARD_LEVELS = awardLabels(DEFAULT_SCORING_CONFIG);
 
 /** Star mapping used in the performance reports (derived from level, never typed). */
-export const DEFAULT_STAR_MAP: Record<string, string> = {
-  "Outstanding performance": "***",
-  "Exceeds expectations": "**",
-  "Meets expectations": "*",
-  "Doesn't yet meet expectations": "",
-};
+export const DEFAULT_STAR_MAP: Record<string, string> = starMapOf(DEFAULT_SCORING_CONFIG);
 
 /** Compact labels for tight UI (matrix pills, chart bands). */
 export const AWARD_SHORT: Record<string, string> = {
@@ -43,14 +40,14 @@ export const AWARD_SHORT: Record<string, string> = {
 // Default cut-points = minimum score (percent) for each non-lowest band, top →
 // bottom. Length is (levels − 1). These thresholds are placeholders and fully
 // configurable; the *vocabulary* is what's authoritative here.
-export const DEFAULT_PERFORMANCE_CUTS = [78, 58, 40]; // Outstanding / Exceeds / Meets
+export const DEFAULT_PERFORMANCE_CUTS = [...DEFAULT_SCORING_CONFIG.performanceCuts]; // Outstanding / Exceeds / Meets
 export const DEFAULT_PERFORMANCE_TARGETS = [15, 30, 35]; // cohort % for the top three bands
 
 // CONFIRM: the real overall-award derivation rule is NOT in the source files.
 // This default classifies the overall score into the four award levels using
 // configurable cut-points (mirroring per-assessment banding). It is a
 // placeholder rule, not a verified one — confirm with the assessment team.
-export const DEFAULT_AWARD_CUTS = [75, 55, 35]; // Distinction / Advanced / Secondary
+export const DEFAULT_AWARD_CUTS = [...DEFAULT_SCORING_CONFIG.awardCuts]; // Distinction / Advanced / Secondary
 export const DEFAULT_AWARD_TARGETS = [10, 25, 35];
 
 export interface GradingConfig {
@@ -82,10 +79,7 @@ export function defaultGradingConfig(): GradingConfig {
  * lowest level is the implicit remainder.
  */
 export function classify(score: number, levels: string[], cuts: number[]): string {
-  for (let i = 0; i < cuts.length; i++) {
-    if (score >= (cuts[i] ?? 0)) return levels[i] ?? levels[levels.length - 1] ?? "";
-  }
-  return levels[levels.length - 1] ?? "";
+  return classifyByCuts(score, levels, cuts);
 }
 
 export function starsFor(level: string, starMap: Record<string, string>): string {

@@ -5,8 +5,15 @@
  * reload — there is no database in this build.
  */
 
-import { getEngine } from "@/lib/engine";
-import type { ItemStat, PerStudentExclusion, QualityRating, ResponseRecord } from "@/lib/engine";
+import { getEngine, defaultScoringConfig } from "@/lib/engine";
+import type {
+  ItemStat,
+  PerStudentExclusion,
+  QualityRating,
+  QualityThresholds,
+  ResponseRecord,
+  ScoringConfig,
+} from "@/lib/engine";
 import seedJson from "./seed.generated.json";
 import type { Seed, SeedAssessment, SeedItem } from "./seed-types";
 import type { DataProvider, SetBoundaryInput, TechnicalErrorRow } from "./provider";
@@ -39,6 +46,7 @@ import {
   type Member,
   type MembersModel,
   type NewCycleModel,
+  type QualityThresholdRow,
   type RetentionConfig,
   type ReviewModel,
   type RoleDef,
@@ -66,7 +74,6 @@ import {
   ANALYTICS_CYCLE_LABELS,
   CAPABILITY_GROUPS,
   DEFAULT_ROLES,
-  QUALITY_THRESHOLDS,
   defaultMatrix,
   defaultMembers,
   mockPriors,
@@ -102,6 +109,32 @@ function round(x: number, d = 1): number {
   return Math.round(x * f) / f;
 }
 
+/**
+ * Render the numeric item-quality thresholds into the Configuration screen's
+ * display rows, so the screen always mirrors whatever bands the engine is using
+ * rather than a hand-typed copy.
+ */
+function qualityThresholdRows(q: QualityThresholds): QualityThresholdRow[] {
+  const f = (n: number) => n.toFixed(2);
+  const p = q.pValue;
+  const corr = (t: QualityThresholds["itemTotal"], includeUndefined: boolean) => ({
+    good: `≥ ${f(t.reviewBelow)}`,
+    review: `${f(t.flagBelow)} – ${f(t.reviewBelow)}`,
+    flag: includeUndefined ? `< ${f(t.flagBelow)} / undefined` : `< ${f(t.flagBelow)}`,
+  });
+  return [
+    {
+      metric: "p-value (difficulty)",
+      good: `${f(p.reviewBelow)} – ${f(p.goodUpTo)}`,
+      review: `${f(p.flagBelow)}–${f(p.reviewBelow)} / ${f(p.goodUpTo)}–${f(p.reviewUpTo)}`,
+      flag: `< ${f(p.flagBelow)} / > ${f(p.reviewUpTo)}`,
+    },
+    { metric: "Item-total correlation", ...corr(q.itemTotal, true) },
+    { metric: "Point-biserial", ...corr(q.pointBiserial, true) },
+    { metric: "Discrimination", ...corr(q.discrimination, false) },
+  ];
+}
+
 export class InMemoryDataProvider implements DataProvider {
   private version = 0;
   private listeners = new Set<() => void>();
@@ -112,6 +145,11 @@ export class InMemoryDataProvider implements DataProvider {
   private boundaries = new Map<string, BoundaryState>(); // cycle:scope -> state
   private locked = new Set<string>();
   private grading: GradingConfig = defaultGradingConfig();
+  // Item-quality Good/Review/Flag thresholds — the configurable half of the
+  // engine's ScoringConfig (the level/award vocabulary is `this.grading`). The
+  // Settings editor that mutates these arrives in the next prompt; for now the
+  // default reproduces the engine's published ratings exactly.
+  private quality: QualityThresholds = defaultScoringConfig().quality;
   private docSettingsByCycle = new Map<string, DocSettings>();
 
   // technical errors / per-student exclusions + distinction safeguard
@@ -225,6 +263,26 @@ export class InMemoryDataProvider implements DataProvider {
     }
     return out;
   }
+  /**
+   * The live ScoringConfig the engine reads — the item-quality thresholds
+   * (`this.quality`) plus the level/award vocabulary and default cut-points
+   * (`this.grading`). This is the single config object the settings read-model
+   * exposes (`getScoringConfig`) and that threads into every engine call, so
+   * editing it actually changes scoring.
+   */
+  private scoringConfig(): ScoringConfig {
+    return {
+      quality: this.quality,
+      performanceLevels: this.grading.performanceLevels.map((label) => ({
+        label,
+        stars: this.grading.starMap[label] ?? "",
+      })),
+      awardLevels: this.grading.awardLevels.map((label) => ({ label })),
+      performanceCuts: [...this.grading.performanceCuts],
+      awardCuts: [...this.grading.awardCuts],
+    };
+  }
+
   /** Levels + default cuts/targets for a scope (assessment → performance, overall → award). */
   private schemeFor(scope: string): { levels: string[]; cuts: number[]; targets: number[]; isAward: boolean } {
     if (scope === "overall") {
@@ -649,6 +707,7 @@ export class InMemoryDataProvider implements DataProvider {
     const stats = engine.computeItemStats({
       responses: this.responsesOf(a),
       perStudentExcluded: this.perStudentExclusions(cycleId, a.id),
+      scoringConfig: this.scoringConfig(),
     });
     const out = new Map<
       string,
@@ -1026,6 +1085,14 @@ export class InMemoryDataProvider implements DataProvider {
     }
 
     const grades = this.getGrades(cycleId)!;
+    // DOWNSTREAM: the Student Summary carries each subject's performance `level`
+    // + its report `stars`, and the overall `award`, as free strings. Stars come
+    // from the configured level→stars map (ScoringConfig), so an added/removed
+    // performance level needs a star mapping (already part of the config), and an
+    // added/removed award needs the certificate/report template to handle that
+    // award label. The next prompt (Settings CRUD + certificates) wires the
+    // validation that every configured level has a star mapping and every award
+    // has a template slot before generation.
     const students: StudentSummary[] = grades.rows.map((r) => ({
       participantId: r.id,
       name: r.label,
@@ -1263,7 +1330,9 @@ export class InMemoryDataProvider implements DataProvider {
   // ── configuration ─────────────────────────────────────────────────────────
   getConfig(): ConfigModel {
     return {
-      thresholds: QUALITY_THRESHOLDS,
+      // Display rows derived from the *live* item-quality thresholds, so the
+      // Configuration screen reflects whatever the engine is actually using.
+      thresholds: qualityThresholdRows(this.quality),
       retention: { ...this.retention },
       branding: { ...this.branding },
       safeguard: {
@@ -1272,6 +1341,10 @@ export class InMemoryDataProvider implements DataProvider {
         demandLevels: this.allDemandLevels(),
       },
     };
+  }
+
+  getScoringConfig(): ScoringConfig {
+    return this.scoringConfig();
   }
   setRetention(patch: Partial<RetentionConfig>): void {
     this.retention = { ...this.retention, ...patch };

@@ -8,6 +8,8 @@
  * Next.js or SheetJS.
  */
 
+import type { ScoringConfig } from "./config";
+
 export type QualityRating = "Good" | "Review" | "Flag";
 
 /** One participant's score on one item, tagged with its assessment. */
@@ -126,6 +128,11 @@ export interface ItemStatsInput {
   items?: ItemMeta[];
   /** Responses to drop per-student before computing item stats. */
   perStudentExcluded?: PerStudentExclusion[];
+  /**
+   * Scoring configuration (item-quality thresholds + level/award sets). Defaults
+   * to `DEFAULT_SCORING_CONFIG`, which reproduces the published ratings exactly.
+   */
+  scoringConfig?: ScoringConfig;
 }
 
 // --- Ingest contract (Section 8: ingestAndClean) ----------------------------

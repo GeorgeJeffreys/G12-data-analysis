@@ -45,6 +45,7 @@ import type {
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
+import type { ScoringConfig } from "@/lib/engine";
 
 /** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
 export interface TechnicalErrorRow {
@@ -92,6 +93,12 @@ export interface DataProvider {
 
   // settings: configuration
   getConfig(): ConfigModel;
+  /**
+   * The full scoring configuration the engine reads — item-quality thresholds
+   * plus the performance/award level definitions and default cut-points. This is
+   * the single object the Settings editor (next prompt) will mutate.
+   */
+  getScoringConfig(): ScoringConfig;
 
   // audit & analytics
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel;

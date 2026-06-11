@@ -73,6 +73,11 @@ export const GRADES_STUDENT_HEADERS = [
 const AUDIT_HEADER = ["Timestamp", "Actor", "Action", "Detail", "Entity", "EntityId"];
 
 function studentHeader(subjects: SubjectColumn[]): string[] {
+  // DOWNSTREAM: the cap columns are named after the "Distinction" top award. The
+  // safeguard logic itself reads the configured top award (awardLevels[0]); only
+  // these column labels bake in the default name. If a non-default ScoringConfig
+  // renames the top award, the next prompt should derive these labels from the
+  // configured top-award name rather than hardcoding "Distinction".
   return [
     "ParticipantID",
     "ParticipantFullName",
@@ -172,6 +177,10 @@ function buildStudentGradesSheet(input: GradesInput): XLSX.WorkSheet {
       const level = subj.assessmentId ? s.perAssessment[subj.assessmentId]?.level : undefined;
       if (!level) return;
       const lvlIdx = input.performanceLevels.indexOf(level);
+      // DOWNSTREAM: PERFORMANCE_STYLES is a fixed 4-entry palette. A 5th+ level
+      // from a non-default ScoringConfig yields `undefined` here and renders with
+      // no fill. The next prompt (Settings CRUD + exports) must extend the palette
+      // to N levels or validate the level count before export.
       const style = lvlIdx >= 0 ? PERFORMANCE_STYLES[lvlIdx] : undefined;
       if (style) styleCell(ws, rowIdx, levelColOf(sIdx), style);
     });

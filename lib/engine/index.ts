@@ -75,7 +75,13 @@ class TypeScriptEngine implements ComputationEngine {
   }
 
   computeItemStats(input: ItemStatsInput): ItemStat[] {
-    return computeItemStatsImpl(input.responses, this.version, input.items, input.perStudentExcluded);
+    return computeItemStatsImpl(
+      input.responses,
+      this.version,
+      input.items,
+      input.perStudentExcluded,
+      input.scoringConfig,
+    );
   }
 
   computeScores(
@@ -110,6 +116,22 @@ export {
 } from "./stats";
 export { computeScores } from "./scores";
 export { rollUp } from "./rollup";
+export {
+  DEFAULT_SCORING_CONFIG,
+  defaultScoringConfig,
+  classifyByCuts,
+  performanceLabels,
+  awardLabels,
+  starMapOf,
+} from "./config";
+export type {
+  ScoringConfig,
+  QualityThresholds,
+  PValueThresholds,
+  CorrelationThresholds,
+  PerformanceLevelDef,
+  AwardLevelDef,
+} from "./config";
 export type {
   ItemMeta,
   ItemStat,

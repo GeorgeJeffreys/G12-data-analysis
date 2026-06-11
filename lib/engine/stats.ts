@@ -17,11 +17,13 @@
  *                     the corrected (item-excluded) total, descending, with ties
  *                     broken by the full total descending.
  *
- * Ratings (verified thresholds):
+ * Ratings (verified default thresholds, now read from `ScoringConfig.quality`):
  *   p-value: <0.20 Flag · <0.30 Review · ≤0.85 Good · ≤0.90 Review · else Flag
  *   item-total / point-biserial / discrimination:
  *           undefined (zero variance) → Flag · <0.10 Flag · <0.30 Review · else Good
  *   overall = worst of the four (Flag > Review > Good).
+ * The defaults reproduce the published behaviour exactly (parity gate); a
+ * non-default `ScoringConfig` re-rates items per its bands (see ./config).
  */
 
 import type {
@@ -31,6 +33,12 @@ import type {
   QualityRating,
   ResponseRecord,
 } from "./types";
+import {
+  DEFAULT_SCORING_CONFIG,
+  rateCorrelation,
+  rateP,
+  type ScoringConfig,
+} from "./config";
 
 /** Canonical key for a (participant, item) per-student exclusion. */
 export function perStudentKey(participantId: string, itemId: string): string {
@@ -84,22 +92,11 @@ export function pearson(x: readonly number[], y: readonly number[]): number | nu
   return (n * sxy - sx * sy) / denom;
 }
 
-/** Rating for the p-value (difficulty), a two-sided band. */
-export function rateP(p: number): QualityRating {
-  if (p < 0.2) return "Flag";
-  if (p < 0.3) return "Review";
-  if (p <= 0.85) return "Good";
-  if (p <= 0.9) return "Review";
-  return "Flag";
-}
-
-/** Rating for item-total / point-biserial / discrimination. */
-export function rateCorrelation(value: number | null): QualityRating {
-  if (value === null || Number.isNaN(value)) return "Flag";
-  if (value < 0.1) return "Flag";
-  if (value < 0.3) return "Review";
-  return "Good";
-}
+// The Good/Review/Flag bands for the four statistics are no longer hardcoded
+// here — they come from `ScoringConfig.quality` (see ./config). `rateP` and
+// `rateCorrelation` are re-exported for callers that still import them from the
+// engine surface; with the default thresholds they behave exactly as before.
+export { rateP, rateCorrelation };
 
 /** Worst-of severity across the four per-statistic ratings. */
 export function worstRating(ratings: QualityRating[]): QualityRating {
@@ -153,7 +150,9 @@ export function computeItemStats(
   engineVersion: string,
   items?: readonly ItemMeta[],
   perStudentExcluded?: readonly PerStudentExclusion[],
+  scoringConfig: ScoringConfig = DEFAULT_SCORING_CONFIG,
 ): ItemStat[] {
+  const q = scoringConfig.quality;
   const metaByItem = new Map<string, ItemMeta>();
   if (items) for (const it of items) metaByItem.set(it.itemId, it);
 
@@ -218,10 +217,10 @@ export function computeItemStats(
       const pointBiserial = pearson(scores, totals);
       const disc = discrimination(rows);
 
-      const pRating = rateP(pValue);
-      const itRating = rateCorrelation(itemTotal);
-      const pbRating = rateCorrelation(pointBiserial);
-      const discRating = rateCorrelation(disc);
+      const pRating = rateP(pValue, q.pValue);
+      const itRating = rateCorrelation(itemTotal, q.itemTotal);
+      const pbRating = rateCorrelation(pointBiserial, q.pointBiserial);
+      const discRating = rateCorrelation(disc, q.discrimination);
       const overallReview = worstRating([pRating, itRating, pbRating, discRating]);
 
       const meta = metaByItem.get(itemId);

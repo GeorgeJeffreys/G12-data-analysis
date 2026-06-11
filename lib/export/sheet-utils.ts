@@ -35,6 +35,12 @@ export const RATING_STYLES: Record<string, CellStyle> = {
  * amber, red. The green / amber / red reuse the item-analysis rating palette;
  * the second band is a lighter green. Applied by the level's index in the
  * (configurable) performance-levels list, so it never hardcodes band names.
+ *
+ * DOWNSTREAM: this palette is a FIXED 4-entry list indexed by performance-level
+ * position. A ScoringConfig with N≠4 performance levels has no colour for the
+ * extra band(s) (grades.ts falls back to "no fill"). The next prompt (Settings
+ * CRUD + exports) must either generate a colour ramp of length N or validate
+ * that the configured level count matches the available styles before export.
  */
 export const PERFORMANCE_STYLES: CellStyle[] = [
   { fill: { patternType: "solid", fgColor: { rgb: "C6EFCE" } }, font: { color: { rgb: "006100" } } },

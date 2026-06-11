@@ -22,7 +22,7 @@ this document describes the *implementation*.
 - **Supabase** (Postgres/Auth/Storage/RLS) — env-var-based clients in
   `lib/supabase/`. Not yet wired to the UI. No keys committed; see `.env.example`.
 - **SheetJS (`xlsx`) / `xlsx-js-style`** for Excel I/O.
-- **Vitest** for tests. `npm test` runs 214 tests, all passing.
+- **Vitest** for tests. `npm test` runs 236 tests, all passing.
 
 ## Repository layout
 
@@ -130,6 +130,53 @@ For dichotomous (0/1) items, grouped per assessment:
   - p-value: `<0.20` Flag · `<0.30` Review · `≤0.85` Good · `≤0.90` Review · else Flag.
   - item-total / point-biserial / discrimination: undefined→Flag · `<0.10` Flag · `<0.30` Review · else Good.
   - overall = worst of the four (Flag > Review > Good).
+
+### ScoringConfig — the engine's configuration (and parity-against-defaults)
+
+The engine no longer hardcodes its *judgement* — only the verified *maths*. A
+single **`ScoringConfig`** object (`lib/engine/config.ts`) holds everything that
+is policy rather than arithmetic, so editing it in Settings actually changes
+scoring:
+
+```ts
+interface ScoringConfig {
+  quality: {                        // Good/Review/Flag bands per statistic
+    pValue:        { flagBelow; reviewBelow; goodUpTo; reviewUpTo };
+    itemTotal:     { flagBelow; reviewBelow };
+    pointBiserial: { flagBelow; reviewBelow };
+    discrimination:{ flagBelow; reviewBelow };
+  };
+  performanceLevels: { label; stars }[];  // per-assessment, best → lowest, N levels
+  awardLevels:       { label }[];         // overall awards, best → lowest, N awards
+  performanceCuts: number[];              // default cut-points (length L−1)
+  awardCuts: number[];                    // default cut-points (length M−1)
+}
+```
+
+- **N levels / N awards, not fixed at four.** Nothing reads a hardcoded level
+  name or count: `computeItemStats` rates items from `quality`, and the
+  score→level / score→award classification (`classifyByCuts`) reads the
+  configured ordered sets and their cut-points. Cut-points are referenced *by
+  the configured set*; the live per-cycle cuts still live with the boundary
+  state, defaulting from `performanceCuts` / `awardCuts`.
+- **Where the defaults live.** `DEFAULT_SCORING_CONFIG` (and the cloning
+  `defaultScoringConfig()`) in `lib/engine/config.ts` is the single source of
+  truth for the default thresholds and the grade/award vocabulary. The grade
+  vocabulary constants in `lib/data/grading.ts` are *derived* from it, so there
+  is exactly one definition.
+- **Where it lives at runtime.** `ScoringConfig` is a new, **defaulted** input on
+  `computeItemStats` (`ItemStatsInput.scoringConfig`). The provider assembles the
+  live config (`this.quality` + the grading vocabulary), threads it into every
+  engine item-stats call, and exposes it as a settings read-model
+  (`DataProvider.getScoringConfig()`). It will persist in Supabase after the
+  provider swap; the Settings editor that mutates it is the next prompt.
+- **Parity-against-defaults guarantee.** The default config reproduces the
+  previous hardcoded behaviour **byte-for-byte**, so the 177-item parity test
+  (which runs with no config, i.e. the default) stays green — that is what keeps
+  the maths guarded now that thresholds are configurable.
+  `tests/engine.config.test.ts` proves the other direction: a changed quality
+  threshold re-rates an item, an added/removed performance level changes the
+  classification, and a changed cut-point moves a score between levels.
 
 ### Parity (the trust gate)
 
@@ -336,9 +383,11 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   mean/median/σ, items excluded, mean item quality, award distribution,
   per-assessment means); **prior cycles are clearly-labelled MOCK** (a "MOCK
   PRIORS" banner + tags), since there's no real cross-cycle history.
-- **Configuration** (`getConfig`): the item-quality thresholds shown are the
-  engine's **real active rating rules** (display-only — editing them needs an
-  engine change); the grade-vocabulary defaults editor is real and editable; the
+- **Configuration** (`getConfig` / `getScoringConfig`): the item-quality
+  thresholds shown are the engine's **real active rating rules**, now read from
+  the live `ScoringConfig` the engine consumes (so the screen mirrors what
+  scoring actually uses); the editor that mutates them lands with the next
+  prompt. The grade-vocabulary defaults editor is real and editable; the
   **Distinction-safeguard** block (threshold + top-difficulty demand) is real and
   drives the grading-stage safeguard; data-retention and branding are mock
   per-workspace settings.
@@ -402,7 +451,10 @@ nothing hardcodes band names or counts:
   carries `levels`, a `cuts` array and `isAward`; `GradesModel` carries
   per-assessment `{ level, stars }` cells plus the overall `award`.
 - **Labels, star mapping and default cut-points are configurable** in Settings →
-  Grading defaults (`getGradingDefaults` / `setGradingDefaults`).
+  Grading defaults (`getGradingDefaults` / `setGradingDefaults`). The default
+  vocabulary itself is now sourced from the engine's `DEFAULT_SCORING_CONFIG`
+  (see "ScoringConfig" above) — one definition, shared by the engine and the
+  grade read-models.
 - **`// CONFIRM:` the overall-award derivation rule is a placeholder** — the real
   rule isn't in the source files. The default classifies the overall score into
   the four awards by configurable cut-point; the Settings screen surfaces this as
@@ -522,7 +574,7 @@ on the Python renderer or LibreOffice directly.
 npm install
 npm run dev       # the app (in-memory provider, real engine)
 npm run seed      # regenerate lib/data/seed.generated.json from the sample export
-npm test          # 214 tests incl. the 177-item parity gate
+npm test          # 236 tests incl. the 177-item parity gate
 npm run typecheck # tsc --noEmit, strict
 npm run build     # next build
 ```
