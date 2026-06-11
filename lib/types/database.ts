@@ -43,7 +43,8 @@ export interface ExamCycleRow {
 
 export interface MembershipRow {
   id: string;
-  cycle_id: string;
+  /** NULL means a workspace-level membership: the role applies to ALL cycles. */
+  cycle_id: string | null;
   user_id: string;
   role: MemberRole;
   created_at: string;
