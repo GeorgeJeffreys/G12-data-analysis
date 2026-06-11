@@ -11,6 +11,7 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow } from "@/lib/data/types";
 import { H, ratingColor } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { Histogram, BreakdownBars } from "@/components/ui/charts";
@@ -130,6 +131,7 @@ export default function ReviewPage({
         </Link>
       }
     >
+      <LockBanner cycleId={cycleId} />
       {/* assessment tabs */}
       <div
         style={{

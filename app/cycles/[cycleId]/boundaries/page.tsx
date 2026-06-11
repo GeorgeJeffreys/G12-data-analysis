@@ -14,6 +14,7 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
+import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, StatBlock } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 
@@ -110,6 +111,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
         </Link>
       }
     >
+      <LockBanner cycleId={cycleId} />
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>

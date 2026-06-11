@@ -13,6 +13,7 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Badge, Avatar, StatBlock } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { cyclesSubnav } from "@/lib/ui/subnav";
@@ -134,6 +135,7 @@ export default function StudentReviewPage({ params }: { params: { cycleId: strin
 
   return (
     <Shell {...shellProps} stageAction={continueAction}>
+      <LockBanner cycleId={cycleId} />
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {/* header band */}
         <div style={{ display: "flex", flexDirection: "column", padding: "22px 28px 16px", gap: 16, borderBottom: `1px solid ${H.line}`, background: H.paper }}>
