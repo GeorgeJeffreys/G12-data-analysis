@@ -75,6 +75,7 @@ import {
   type EssaySubjectRef,
   type AdjustmentsModel,
   type AdjustmentIncident,
+  type DiagnosticsModel,
   type CompositionModel,
   type StudentComposition,
   type SubjectComposition,
@@ -1439,6 +1440,20 @@ export class InMemoryDataProvider implements DataProvider {
       subjects,
       counts: { incidents: incidents.length, decided, awaiting: incidents.length - decided, alterations },
       netBySubject,
+    };
+  }
+
+  getDiagnostics(cycleId: string): DiagnosticsModel | null {
+    if (cycleId !== seed.liveCycle.id) return null;
+    const shortOf = new Map(seed.liveCycle.assessments.map((a) => [a.id, a.shortName]));
+    return {
+      cycleId,
+      assessments: (seed.liveCycle.diagnostics ?? []).map((d) => ({
+        assessmentId: d.assessmentId,
+        assessmentName: d.assessmentName,
+        shortName: shortOf.get(d.assessmentId) ?? d.assessmentName,
+        groups: d.groups,
+      })),
     };
   }
 

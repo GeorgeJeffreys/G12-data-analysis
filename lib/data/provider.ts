@@ -47,6 +47,7 @@ import type {
   EssayMarksModel,
   AdjustmentsModel,
   CompositionModel,
+  DiagnosticsModel,
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
@@ -205,6 +206,8 @@ export interface DataProvider {
   decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void;
   /** Transparent per-student per-subject composition: MCQ + Essay + Alterations = total. */
   getComposition(cycleId: string): CompositionModel | null;
+  /** Speededness & timing diagnostics (informational; not part of grading). */
+  getDiagnostics(cycleId: string): DiagnosticsModel | null;
 
   // distinction safeguard (grading stage)
   confirmDistinctionCaps(cycleId: string): void;

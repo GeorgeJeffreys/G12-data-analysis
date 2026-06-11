@@ -5,6 +5,7 @@
  */
 
 import type { QualityRating } from "@/lib/engine";
+import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { SeedPreview } from "./seed-types";
 
@@ -180,6 +181,24 @@ export interface AdjustmentsModel {
   counts: { incidents: number; decided: number; awaiting: number; alterations: number };
   /** Net alteration marks applied per subject (assessmentId → net marks). */
   netBySubject: Record<string, number>;
+}
+
+// --- Diagnostics (speededness & timing — informational) ----------------------
+export interface DiagnosticsGroup {
+  /** "Overall" or a major-element name. */
+  key: string;
+  speeded: SpeededResult;
+  timing: TimingResult;
+}
+export interface DiagnosticsAssessment {
+  assessmentId: string;
+  assessmentName: string;
+  shortName: string;
+  groups: DiagnosticsGroup[];
+}
+export interface DiagnosticsModel {
+  cycleId: string;
+  assessments: DiagnosticsAssessment[];
 }
 
 // --- Mark composition (MCQ + Essay + Alterations = subject total) ------------

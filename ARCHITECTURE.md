@@ -22,7 +22,7 @@ this document describes the *implementation*.
 - **Supabase** (Postgres/Auth/Storage/RLS) — env-var-based clients in
   `lib/supabase/`. Not yet wired to the UI. No keys committed; see `.env.example`.
 - **SheetJS (`xlsx`) / `xlsx-js-style`** for Excel I/O.
-- **Vitest** for tests. `npm test` runs 248 tests, all passing.
+- **Vitest** for tests. `npm test` runs 256 tests, all passing.
 
 ## Repository layout
 
@@ -387,6 +387,7 @@ the shell.
 | Cycles | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
 | Cycles | Grades & sign-off | `/cycles/[cycleId]/grades` |
 | Cycles | Distinction safeguard | `/cycles/[cycleId]/grades/distinction` |
+| Cycles | Diagnostics (speededness & timing) | `/cycles/[cycleId]/diagnostics` |
 | Cycles | Audit log | `/cycles/[cycleId]/audit` |
 | Cycles | Certificates / documents | `/cycles/[cycleId]/documents` |
 | Analytics | Trends | `/analytics` |
@@ -463,6 +464,26 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   (the export's fixed 4-colour `PERFORMANCE_STYLES` palette / certificate slots,
   see the `// DOWNSTREAM:` notes) — via a confirm dialog, with invalid sets
   blocked.
+
+### Speededness & timing diagnostics (informational)
+
+`lib/diagnostics/` computes, from the raw export's response-time and answer
+columns, the team's notebook metrics — never affecting grading:
+
+- **Speededness / omission / completion** per assessment and major element:
+  omission = blank-answer presentations ÷ total; completion = 1 − omission; late
+  items = the final 25% of unique items by presented order (ceil, min 1);
+  **Speededness Index** = (max(0, lateOmission − earlyOmission) + max(0,
+  earlyAccuracy − lateAccuracy)) ÷ 2, with the Good ≤0.05 / Review ≤0.15 / Flag
+  bands (and omission ≤0.05/≤0.10, completion ≥0.95/≥0.90).
+- **Timing–performance**: aggregate to student level (score %, median item time),
+  then Pearson + Spearman with strength labels.
+
+These are computed at **seed-build time** over the cleaned responses
+(`scripts/build-seed.mts` → `lib/data/seed.generated.json`, presentation order =
+export order, `// CONFIRM:`), exposed by `getDiagnostics` and surfaced read-only
+on the **Diagnostics** cycle tab. `tests/diagnostics.test.ts` pins the
+computations against hand-computed values.
 
 ### Adjustments & Distinction safeguard (the workflow)
 
@@ -642,7 +663,7 @@ on the Python renderer or LibreOffice directly.
 npm install
 npm run dev       # the app (in-memory provider, real engine)
 npm run seed      # regenerate lib/data/seed.generated.json from the sample export
-npm test          # 248 tests incl. the 177-item parity gate
+npm test          # 256 tests incl. the 177-item parity gate
 npm run typecheck # tsc --noEmit, strict
 npm run build     # next build
 ```

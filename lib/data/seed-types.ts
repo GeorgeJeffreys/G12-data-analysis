@@ -9,6 +9,7 @@
  */
 
 import type { QualityRating } from "@/lib/engine";
+import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 
 export interface SeedItem {
@@ -62,6 +63,19 @@ export interface SeedPreview {
   rows: (string | number | null)[][];
 }
 
+/** Speededness & timing diagnostics for one group (Overall or a major element). */
+export interface SeedDiagGroup {
+  key: string;
+  speeded: SpeededResult;
+  timing: TimingResult;
+}
+/** Diagnostics for one assessment: an Overall group followed by per-element groups. */
+export interface SeedAssessmentDiagnostics {
+  assessmentId: string;
+  assessmentName: string;
+  groups: SeedDiagGroup[];
+}
+
 export interface SeedLiveCycle {
   id: string;
   name: string;
@@ -77,6 +91,8 @@ export interface SeedLiveCycle {
   duplicates: number;
   participants: SeedParticipant[];
   assessments: SeedAssessment[];
+  /** Informational speededness/timing diagnostics, computed at build time. */
+  diagnostics: SeedAssessmentDiagnostics[];
 }
 
 export interface SeedPriorCycle {

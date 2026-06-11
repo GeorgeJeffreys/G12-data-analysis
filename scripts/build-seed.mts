@@ -17,9 +17,12 @@ import type { ItemMeta, QualityRating, ResponseRecord } from "../lib/engine";
 import type {
   Seed,
   SeedAssessment,
+  SeedAssessmentDiagnostics,
+  SeedDiagGroup,
   SeedItem,
   SeedResponse,
 } from "../lib/data/seed-types";
+import { speededness, timingPerformance, groupBy, type DiagResponse } from "../lib/diagnostics";
 
 const engine = getEngine();
 
@@ -86,11 +89,35 @@ function main() {
   }));
 
   const assessments: SeedAssessment[] = [];
+  const diagnosticsRaw: (SeedAssessmentDiagnostics & { _order: number })[] = [];
 
   for (const [rawName, recs] of byRaw) {
     const info = classify(rawName);
     if (!info) continue;
     const assessmentId = info.name;
+
+    // Speededness & timing diagnostics over the RAW sitting (all responses).
+    // Presentation order = first appearance of each item in the export rows.
+    // CONFIRM: there is no explicit presented-order column; export order is the
+    // proxy. correct = full mark (dichotomous items).
+    const itemOrder = new Map<string, number>();
+    for (const r of recs) if (!itemOrder.has(r.qmQuestionId)) itemOrder.set(r.qmQuestionId, itemOrder.size);
+    const diagRecs: DiagResponse[] = recs.map((r) => ({
+      participantId: r.participantPseudonym,
+      itemId: r.qmQuestionId,
+      majorElement: r.majorElement,
+      order: itemOrder.get(r.qmQuestionId)!,
+      answered: !!r.answerGiven,
+      correct: r.answerScore === 1,
+      responseTime: r.responseTime,
+    }));
+    const diagGroups: SeedDiagGroup[] = [
+      { key: "Overall", speeded: speededness(diagRecs), timing: timingPerformance(diagRecs) },
+    ];
+    for (const [el, sub] of groupBy(diagRecs, (r) => r.majorElement)) {
+      diagGroups.push({ key: el, speeded: speededness(sub), timing: timingPerformance(sub) });
+    }
+    diagnosticsRaw.push({ assessmentId, assessmentName: info.name, groups: diagGroups, _order: info.order });
 
     // Distinct items (first occurrence) with metadata.
     const itemMetaMap = new Map<string, ItemMeta>();
@@ -183,6 +210,12 @@ function main() {
   );
   for (const a of assessments) delete (a as unknown as { _order?: number })._order;
 
+  diagnosticsRaw.sort((a, b) => a._order - b._order);
+  const diagnostics: SeedAssessmentDiagnostics[] = diagnosticsRaw.map(({ _order, ...d }) => {
+    void _order;
+    return d;
+  });
+
   // Cleaned-data preview: first 5 participants × first few items of assessment 1.
   const first = assessments[0]!;
   const previewItems = first.items.slice(0, 4).map((it) => it.id);
@@ -221,6 +254,7 @@ function main() {
       duplicates: validationReport.checks.find((c) => c.id === "duplicates")?.count ?? 0,
       participants,
       assessments,
+      diagnostics,
     },
     priorCycles: [
       { id: "jan-2026", name: "January 2026", stageIndex: 7, stepsDone: 8, participants: 4503, assessments: 5, lastActivity: "12 Feb 2026", locked: true, mock: true },

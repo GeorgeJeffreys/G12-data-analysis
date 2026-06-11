@@ -12,6 +12,7 @@ import {
   correlationStrength,
   type DiagResponse,
 } from "@/lib/diagnostics";
+import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 
 function r(participantId: string, itemId: string, order: number, answered: boolean, correct: boolean, responseTime: number | null): DiagResponse {
   return { participantId, itemId, majorElement: null, order, answered, correct, responseTime };
@@ -90,5 +91,28 @@ describe("correlations", () => {
     expect(res.pearson).toBeCloseTo(1, 4);
     expect(res.spearman).toBeCloseTo(1, 4);
     expect(res.pearsonStrength).toBe("Very strong positive");
+  });
+});
+
+describe("provider diagnostics read-model", () => {
+  it("exposes per-assessment groups (Overall + elements) from the seed", () => {
+    const p = new InMemoryDataProvider();
+    const model = p.getDiagnostics("may-2026")!;
+    expect(model.assessments.length).toBe(5);
+    for (const a of model.assessments) {
+      expect(a.groups.length).toBeGreaterThanOrEqual(1);
+      expect(a.groups[0]!.key).toBe("Overall");
+      // statuses are valid bands and rates are in [0,1]
+      const s = a.groups[0]!.speeded;
+      expect(["Good", "Review", "Flag"]).toContain(s.speededStatus);
+      expect(s.omissionRate).toBeGreaterThanOrEqual(0);
+      expect(s.completion).toBeLessThanOrEqual(1);
+      // timing correlation is in [-1, 1] or null
+      const t = a.groups[0]!.timing;
+      if (t.pearson !== null) {
+        expect(t.pearson).toBeGreaterThanOrEqual(-1);
+        expect(t.pearson).toBeLessThanOrEqual(1);
+      }
+    }
   });
 });
