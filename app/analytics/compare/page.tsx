@@ -50,9 +50,9 @@ export default function ComparePage() {
 
         {model.priorsAreMock && <MockBanner text="The prior column is illustrative mock data — only the live cycle is computed from real results." />}
 
-        <div style={{ display: "flex", gap: 16, flex: 1, minHeight: 0, alignItems: "stretch" }}>
+        <div style={{ display: "flex", gap: 16, flex: 1, minHeight: 0, alignItems: "stretch", flexWrap: "wrap" }}>
           {/* metrics table */}
-          <Card style={{ flex: 1, overflow: "auto" }}>
+          <Card style={{ flex: "1 1 420px", minWidth: 300, overflow: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -88,7 +88,7 @@ export default function ComparePage() {
           </Card>
 
           {/* award distribution grouped */}
-          <Card style={{ flex: "0 0 380px", padding: "18px 20px" }}>
+          <Card style={{ flex: "1 1 320px", minWidth: 280, padding: "18px 20px" }}>
             <div className="hf-lbl" style={{ marginBottom: 16 }}>Award distribution</div>
             <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: 170 }}>
               {model.awardLevels.map((g, i) => (

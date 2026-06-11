@@ -135,7 +135,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
         </span>
       }
     >
-      <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
+      <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0, flexWrap: "wrap" }}>
         {/* left: config */}
         <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "26px 30px", gap: 22, minWidth: 0, overflow: "auto" }}>
           <div>
@@ -192,7 +192,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
         </div>
 
         {/* right: preview + generate */}
-        <aside style={{ width: 392, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.tint, padding: "26px 24px", display: "flex", flexDirection: "column", gap: 18, overflow: "auto" }}>
+        <aside style={{ flex: "1 1 340px", minWidth: 300, borderLeft: `1px solid ${H.line2}`, background: H.tint, padding: "26px 24px", display: "flex", flexDirection: "column", gap: 18, overflow: "auto" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: 11 }}>
             <span className="hf-lbl">Preview · first student</span>
             {first && kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}

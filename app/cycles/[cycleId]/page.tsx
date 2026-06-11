@@ -57,9 +57,9 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 18, alignItems: "stretch" }}>
+        <div style={{ display: "flex", gap: 18, alignItems: "stretch", flexWrap: "wrap" }}>
           {/* Do next */}
-          <div style={{ flex: "0 0 330px", borderRadius: 12, padding: "22px 24px", background: H.slate, color: H.cream, position: "relative", overflow: "hidden" }}>
+          <div style={{ flex: "1 1 300px", minWidth: 280, borderRadius: 12, padding: "22px 24px", background: H.slate, color: H.cream, position: "relative", overflow: "hidden" }}>
             <div className="hf-lbl" style={{ color: "rgba(233,237,241,.6)" }}>Do next</div>
             <div className="hf-h2" style={{ margin: "10px 0 6px", fontSize: 17, color: "#fff" }}>{cycle.doNext.title}</div>
             <div style={{ fontSize: 12.5, color: "rgba(233,237,241,.8)", marginBottom: 18, lineHeight: 1.5 }}>{cycle.doNext.body}</div>
@@ -72,7 +72,7 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
           </div>
 
           {/* Assessments */}
-          <div className="hf-card" style={{ flex: 1, minWidth: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div className="hf-card" style={{ flex: "1 1 420px", minWidth: 300, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "13px 20px", borderBottom: `1px solid ${H.line}`, background: H.tint }}>
               <span className="hf-lbl" style={{ flex: 1 }}>Assessments in this cycle</span>
               <span className="hf-lbl">Stage</span>

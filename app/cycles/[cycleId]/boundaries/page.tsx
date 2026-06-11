@@ -131,7 +131,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 20, alignItems: "stretch", flex: 1, minHeight: 0 }}>
+        <div className="hf-split" style={{ flex: 1, minHeight: 0 }}>
           {/* chart card */}
           <div className="hf-card" style={{ flex: 1, padding: "20px 24px 14px", minWidth: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -172,7 +172,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </div>
 
           {/* table card */}
-          <div className="hf-card" style={{ flex: "0 0 480px", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          <div className="hf-card" style={{ flex: "1 1 440px", minWidth: 320, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
               <thead>
                 <tr>

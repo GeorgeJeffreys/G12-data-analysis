@@ -219,6 +219,49 @@ tr.hf-hover:hover {
   background: var(--pink-soft2);
 }
 
+/* ── Responsive helpers ────────────────────────────────────────────────────
+   The app is a dense, multi-column tool. These rules keep it usable as the
+   viewport narrows: tables scroll inside their own container rather than
+   pushing the page wide, two-column work areas reflow, and horizontal padding
+   tightens. Individual screens opt in with .hf-split / .hf-scroll-x. */
+
+/* a table that should scroll horizontally within its card instead of forcing
+   the whole page wider */
+.hf-scroll-x {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+/* a two-column work area (main + side panel) that reflows to one column when
+   there isn't room for both */
+.hf-split {
+  display: flex;
+  gap: 20px;
+  align-items: stretch;
+  min-width: 0;
+}
+@media (max-width: 1024px) {
+  .hf-split {
+    flex-wrap: wrap;
+  }
+  .hf-split > * {
+    min-width: 0;
+  }
+}
+
+/* tighten dense paddings on narrow viewports so content stops overlapping */
+@media (max-width: 820px) {
+  .hf-th,
+  .hf-td {
+    padding-left: 9px;
+    padding-right: 9px;
+  }
+  .hf-pad {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
+
 /* focus visibility for accessibility */
 .hf-btn:focus-visible,
 .hf-chip:focus-visible,

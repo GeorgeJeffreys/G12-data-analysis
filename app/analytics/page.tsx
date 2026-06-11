@@ -49,9 +49,9 @@ export default function TrendsPage() {
           ))}
         </div>
 
-        <div style={{ display: "flex", gap: 16, flex: 1, minHeight: 0, alignItems: "stretch" }}>
+        <div style={{ display: "flex", gap: 16, flex: 1, minHeight: 0, alignItems: "stretch", flexWrap: "wrap" }}>
           {/* cohort mean by assessment */}
-          <Card style={{ flex: 1, padding: "18px 20px", overflow: "auto" }}>
+          <Card style={{ flex: "1 1 360px", minWidth: 280, padding: "18px 20px", overflow: "auto" }}>
             <div className="hf-lbl" style={{ marginBottom: 4 }}>Cohort mean by assessment</div>
             {model.byAssessment.map((m, i) => (
               <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 0", borderBottom: i < model.byAssessment.length - 1 ? `1px solid ${H.line}` : "none" }}>
@@ -64,7 +64,7 @@ export default function TrendsPage() {
           </Card>
 
           {/* award distribution over time */}
-          <Card style={{ flex: "0 0 400px", padding: "18px 20px" }}>
+          <Card style={{ flex: "1 1 340px", minWidth: 280, padding: "18px 20px" }}>
             <div className="hf-lbl" style={{ marginBottom: 4 }}>Award distribution over time</div>
             <div className="hf-sub" style={{ fontSize: 11, marginBottom: 16 }}>% of cohort in each award level</div>
             <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: 168 }}>
