@@ -22,7 +22,7 @@ this document describes the *implementation*.
 - **Supabase** (Postgres/Auth/Storage/RLS) — env-var-based clients in
   `lib/supabase/`. Not yet wired to the UI. No keys committed; see `.env.example`.
 - **SheetJS (`xlsx`) / `xlsx-js-style`** for Excel I/O.
-- **Vitest** for tests. `npm test` runs 236 tests, all passing.
+- **Vitest** for tests. `npm test` runs 240 tests, all passing.
 
 ## Repository layout
 
@@ -282,19 +282,30 @@ build silently drops styles on write. Import/parsing still uses `xlsx`.
   — `assembleScoreAnalysis(...)` drops both cohort-excluded items and per-student
   (participant, item) exclusions upfront (mirroring the engine's scoring), so each
   participant's total and percentage cover exactly the items that counted.
-- **Grades** — the self-contained, auditable record of a cycle's grades, four
-  sheets (`GRADES_SHEETS`): `Grade Summary` (cycle metadata, award distribution,
-  per-assessment performance-level distribution); **`Student Grades`** (the main
-  deliverable — per-student section level/score/pct across the five canonical
-  subject columns, overall award, and the Distinction-safeguard
-  `DistinctionCapApplied` / `CapReason` / `CapOverridden` / `OverrideReason`
-  columns; `GRADES_STUDENT_HEADERS`, sorted best-award-first then overall-pct
-  desc, with performance-level cells colour-filled via `PERFORMANCE_STYLES`);
-  `Per-student Exclusions` (the shared canonical sheet); and `Audit Trail` (every
-  audit entry for the cycle, oldest first). Subject columns map to the suite's
-  assessments by alias (`DEFAULT_SUBJECT_COLUMNS`). The grades download button
-  assembles its input from the real provider read-models (`getGrades`,
-  `getDistinctionSafeguard`, `getStudentReview`, `getAuditLog`).
+- **Students' Performance Report** — the grades download, reworked to match the
+  original `Students_Performance_Report` file (`buildPerformanceReportWorkbook`,
+  `PERFORMANCE_REPORT_SHEETS`). Three matched sheets, then the
+  clearly-additional `Per-student exclusions` and `Audit Trail` sheets appended
+  **after** them:
+  - **`Class Performance`** — title, per-assessment group headers spanning each
+    assessment's major-element columns, then one row per performance level whose
+    cells are the **proportion of students at that level** for each
+    assessment/major-element column, followed by the `Award Level Distribution`
+    block (`Award Level | Number of Students | % of Class`).
+  - **`Student Summary`** — one row per student: `Student Name | Award Level | the
+    five subjects (by alias) | Open Profile` (`STUDENT_SUMMARY_HEADERS`), with a
+    `Legend` block in the right-hand column (col J).
+  - **`Student Profiles`** — a repeating per-student block: name + `Back`, `Award
+    Level`, then `Subject | Subject Performance | Major Elements Performance` with
+    one row per subject and a bulleted per-element level breakdown.
+  - Performance-level cells carry the item-analysis semantic fills
+    (`PERFORMANCE_STYLES`), keyed by the level's index in the configured set.
+  - The provider read-model **`getPerformanceReport`** computes the per-student,
+    per-assessment, **per-major-element** levels from real retained responses
+    (the same per-assessment cut-points as the overall subject level); the grades
+    download adds the exclusions + audit and calls the builder. The legacy
+    `buildGradesWorkbook` (Grade Summary / Student Grades / …) remains in the
+    module and under test for the auditable grade record.
 
 `workbookToBuffer` serialises for download/storage. `tests/export.test.ts`
 asserts the exact layouts, the README & Summary and per-student-exclusions sheets,
@@ -383,16 +394,49 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   mean/median/σ, items excluded, mean item quality, award distribution,
   per-assessment means); **prior cycles are clearly-labelled MOCK** (a "MOCK
   PRIORS" banner + tags), since there's no real cross-cycle history.
-- **Configuration** (`getConfig` / `getScoringConfig`): the item-quality
-  thresholds shown are the engine's **real active rating rules**, now read from
-  the live `ScoringConfig` the engine consumes (so the screen mirrors what
-  scoring actually uses); the editor that mutates them lands with the next
-  prompt. The grade-vocabulary defaults editor is real and editable; the
-  **Distinction-safeguard** block (threshold + top-difficulty demand) is real and
-  drives the grading-stage safeguard; data-retention and branding are mock
-  per-workspace settings.
+- **Configuration** (`getConfig` / `getScoringConfig`) — full CRUD, Lead/Admin
+  only, with downstream warnings (see "Settings CRUD" below): the item-quality
+  thresholds are **editable** (`QualityThresholdsEditor` → `setQualityThresholds`)
+  and drive the engine via the live `ScoringConfig`; the grade-vocabulary editor
+  supports **add / remove / rename / reorder** of performance and award levels
+  plus cut-points and star mapping (`GradingDefaultsEditor` → `setGradingDefaults`),
+  warning before a destructive save. The **Distinction-safeguard** block
+  (threshold + top-difficulty demand) is real and drives the grading-stage
+  safeguard; data-retention and branding are mock per-workspace settings.
+- **Roles & permissions** — the capability grid plus add / rename / **delete**
+  role (`deleteRole`, Lead-only, blocked while members are assigned).
 - **New cycle** (`createCycle`): records the intent in the audit log and returns
   the live cycle (no DB) — clearly labelled mock.
+
+### UI pass (navigation, responsiveness, item review, lock, Settings CRUD)
+
+- **Navigation.** Nav-rail items reveal a label on hover/focus; the pipeline
+  stepper is clickable — each stage links to its screen via `stageHref`
+  (Ingest/Validate → ingest, Score/Boundaries → boundaries, Export → documents),
+  threaded from the `Shell`'s `cycleId`.
+- **Responsive.** Two-column work areas reflow via `.hf-split` / `flexWrap` with
+  sensible min-widths (boundaries, documents, analytics, cycle overview); tables
+  scroll inside their card (`.hf-scroll-x`); dense paddings tighten under 820px.
+- **Item review deep-dive.** The cohort summary moved to a collapsible strip
+  across the top; the table is zoomable (density control) and truncates each
+  question to its first line with a more/less control; the right panel is blank
+  until a row is selected, then shows that item's full deep-dive (four statistics
+  with rating **reasoning**, discrimination upper/lower groups, and an honest
+  correct/incorrect/not-answered outcome split — the score export carries no
+  per-option data) and is collapsible + drag-resizable. New read-model
+  `getItemDetail`.
+- **Grades / lock.** Grades are viewable any time after scoring without locking;
+  locking is the publish/freeze step. A locked cycle stays fully navigable and
+  read-only — `LockBanner` surfaces the state and the Lead-only, audit-logged
+  **Re-open cycle** (unlock) on the editable screens.
+- **Settings CRUD** (Lead/Admin only, audit-logged via the `config` audit type).
+  Item-quality thresholds and the full performance/award level sets are editable
+  (add/remove/rename/reorder, cut-points, stars); destructive saves surface the
+  downstream impact first — a removed level/award still **in use** by current
+  results, a new level without a star mapping, or a level/award count change
+  (the export's fixed 4-colour `PERFORMANCE_STYLES` palette / certificate slots,
+  see the `// DOWNSTREAM:` notes) — via a confirm dialog, with invalid sets
+  blocked.
 
 ### Student review & Distinction safeguard (the new workflow)
 
@@ -574,7 +618,7 @@ on the Python renderer or LibreOffice directly.
 npm install
 npm run dev       # the app (in-memory provider, real engine)
 npm run seed      # regenerate lib/data/seed.generated.json from the sample export
-npm test          # 236 tests incl. the 177-item parity gate
+npm test          # 240 tests incl. the 177-item parity gate
 npm run typecheck # tsc --noEmit, strict
 npm run build     # next build
 ```
