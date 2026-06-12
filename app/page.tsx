@@ -8,8 +8,9 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useProviderData } from "@/lib/data/context";
-import { H } from "@/lib/ui/tokens";
+import { H, PIPELINE_STAGES } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { stageHref } from "@/components/shell/Pipeline";
 import { Button, Chip } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 
@@ -95,14 +96,14 @@ export default function CyclesDashboard() {
                         <span style={{ width: 9, height: 9, borderRadius: 999, background: H.pink, flex: "0 0 auto" }} />
                       )}
                       <span style={{ fontWeight: 500, fontSize: 12.5 }}>{c.stageLabel}</span>
-                      <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{c.stepsDone}/8</span>
+                      <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{c.stepsDone}/{PIPELINE_STAGES.length}</span>
                     </div>
                   </td>
                   <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{c.participants.toLocaleString()}</td>
                   <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{c.assessments}</td>
                   <td className="hf-td hf-sub">{c.lastActivity}</td>
                   <td className="hf-td" style={{ textAlign: "right" }}>
-                    <Link href={`/cycles/${c.id}`}>
+                    <Link href={stageHref(c.id, c.stageIndex)}>
                       <Button>
                         {c.locked ? "View" : <>Open<Icon name="arrow" /></>}
                       </Button>
