@@ -33,7 +33,6 @@ export default function RolesPage() {
       active="Settings"
       crumb={[{ label: "Settings" }, { label: "Roles & permissions" }]}
       subnav={settingsSubnav("roles")}
-      actions={<Button variant="ghost" onClick={() => setAdding(true)}><Icon name="plus" />Add role</Button>}
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 30px", gap: 18, flex: 1 }}>
         <div style={{ maxWidth: 660 }}>
@@ -43,15 +42,22 @@ export default function RolesPage() {
           </div>
         </div>
 
-        {adding && (
-          <Card style={{ padding: "12px 14px", display: "flex", gap: 10, alignItems: "center", maxWidth: 760 }}>
-            <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addRole()} placeholder="New role name" style={{ flex: 1, border: `1px solid ${H.line2}`, borderRadius: 7, padding: "8px 10px", fontSize: 12.5, outline: "none" }} />
-            <Button variant="pri" onClick={addRole} disabled={!newName.trim()}>Add role</Button>
-            <Button variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
-          </Card>
-        )}
-
-        <Card style={{ overflow: "auto", maxWidth: 880 }}>
+        <Card style={{ overflow: "hidden", maxWidth: 880 }}>
+          {/* table header toolbar — Add role lives here, beside the roles header */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: `1px solid ${H.line}`, background: H.tint }}>
+            <span className="hf-lbl">Roles &amp; capabilities</span>
+            <div style={{ flex: 1 }} />
+            {adding ? (
+              <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <input autoFocus value={newName} onChange={(e) => setNewName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addRole()} placeholder="New role name" style={{ width: 200, border: `1px solid ${H.line2}`, borderRadius: 7, padding: "6px 9px", fontSize: 12, outline: "none" }} />
+                <Button variant="pri" style={{ fontSize: 11.5, padding: "6px 11px" }} onClick={addRole} disabled={!newName.trim()}>Add</Button>
+                <Button variant="ghost" style={{ fontSize: 11.5, padding: "6px 9px" }} onClick={() => setAdding(false)}>Cancel</Button>
+              </div>
+            ) : (
+              <Button variant="ghost" style={{ fontSize: 11.5, padding: "6px 11px" }} onClick={() => setAdding(true)}><Icon name="plus" size={13} />Add role</Button>
+            )}
+          </div>
+          <div style={{ overflow: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -68,8 +74,9 @@ export default function RolesPage() {
                           style={{ width: 110, fontSize: 11.5, padding: "2px 4px", border: `1px solid ${H.pink}`, borderRadius: 4, textAlign: "center" }}
                         />
                       ) : (
-                        <button onClick={() => setEditingRole(r.id)} title="Click to rename" style={{ border: "none", background: "transparent", cursor: "pointer", font: "inherit", color: r.isLead ? H.pink : H.ink, fontWeight: 700 }}>
+                        <button onClick={() => setEditingRole(r.id)} title="Rename role" style={{ border: "none", background: "transparent", cursor: "pointer", font: "inherit", color: r.isLead ? H.pink : H.ink, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 4 }}>
                           {r.name}
+                          <span aria-hidden="true" style={{ fontSize: 9, color: H.ink3 }}>✎</span>
                         </button>
                       )}
                       <span style={{ fontSize: 9, fontWeight: 500, color: H.ink3, textTransform: "none", letterSpacing: 0 }}>{r.memberCount} {r.memberCount === 1 ? "member" : "members"}</span>
@@ -112,8 +119,9 @@ export default function RolesPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </Card>
-        <div className="hf-sub" style={{ fontSize: 12 }}>Click a role name to rename it. New roles start with no capabilities — tick what they need. A role with members must be reassigned before it can be deleted.</div>
+        <div className="hf-sub" style={{ fontSize: 12 }}>Click a role name (✎) to rename it. New roles start with no capabilities — tick what they need. A role with members must be reassigned before it can be deleted.</div>
       </div>
 
       {deleting && (
