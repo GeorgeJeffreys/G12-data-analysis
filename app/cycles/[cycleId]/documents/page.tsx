@@ -96,7 +96,9 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
     );
   }
 
-  const requiredReady = kinds.every((k) => (k === "certificate" ? certFile : reportFile));
+  // Built-in templates ship in the repo, so generation never blocks on an
+  // upload; an optional upload (below) just overrides the built-in for that kind.
+  const requiredReady = true;
   const first = model.students[0];
 
   const doGenerate = async () => {
@@ -115,8 +117,15 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
       });
       setResult(res);
       setStep("results");
+      // Trigger the browser download of the combined .zip of .pptx files.
+      if (res.zipUrl) {
+        const a = document.createElement("a");
+        a.href = res.zipUrl;
+        a.download = res.zipName ?? "documents.zip";
+        a.click();
+      }
       const total = Object.values(res.kinds).reduce((s, k) => s + (k?.complete ?? 0), 0);
-      provider.recordDocuments(cycleId, `${total} PDF(s) across ${kinds.join(" + ")}`);
+      provider.recordDocuments(cycleId, `${total} .pptx across ${kinds.join(" + ")} (zip)`);
     } catch (e) {
       setError((e as Error).message);
       setStep("config");
@@ -158,7 +167,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
           <div>
             <div className="hf-h1">Generate documents</div>
             <div className="hf-sub" style={{ marginTop: 7 }}>
-              Upload your PowerPoint template(s), confirm the merge fields, preview, then generate one document per student. {model.students.length} students.
+              Fills the built-in PowerPoint templates with each student’s values and downloads one <b>.pptx per student</b> in a single <b>.zip</b>. Open them and export to PDF to finalise. {model.students.length} students.
             </div>
           </div>
 
@@ -177,8 +186,11 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
             </div>
           </Section>
 
-          <Section n={2} title="Template(s)">
+          <Section n={2} title="Template(s) — built-in (optional override)">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="hf-sub" style={{ fontSize: 12 }}>
+                The repo’s certificate and report templates are used by default. Upload a .pptx only to override one.
+              </div>
               {kinds.includes("certificate") && (
                 <TemplateUpload label="Certificate template" file={certFile} onFile={setCertFile} />
               )}
@@ -246,7 +258,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
                 <div style={{ width: "45%", height: "100%", background: H.pink, borderRadius: 5 }} />
               </div>
               <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 10 }}>
-                Merging {model.students.length} students × {kinds.length} document type(s), converting to PDF…
+                Filling {model.students.length} students × {kinds.length} template(s) and bundling into a .zip…
               </div>
             </Card>
           ) : (
@@ -321,18 +333,14 @@ function ResultsView({
       page="Certificates"
       area="documents"
       primary={
-        <div style={{ display: "flex", gap: 8 }}>
-          {kinds.map((k) =>
-            result.kinds[k]?.zipUrl ? (
-              <a key={k} href={result.kinds[k]!.zipUrl} download>
-                <Button variant="pri">
-                  <Icon name="download" color="#fff" />
-                  {k === "certificate" ? "Certificates" : "Reports"} (.zip)
-                </Button>
-              </a>
-            ) : null,
-          )}
-        </div>
+        result.zipUrl ? (
+          <a href={result.zipUrl} download={result.zipName ?? "documents.zip"}>
+            <Button variant="pri">
+              <Icon name="download" color="#fff" />
+              Download .zip
+            </Button>
+          </a>
+        ) : null
       }
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -393,12 +401,12 @@ function ResultsView({
                     return (
                       <td key={k} className="hf-td" style={{ textAlign: "center" }}>
                         {d?.status === "complete" ? (
-                          <a href={d.downloadUrl} download style={{ textDecoration: "none" }}>
-                            <Button style={{ fontSize: 11.5 }}><Icon name="download" size={13} />PDF</Button>
-                          </a>
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: H.good, fontWeight: 600 }}>
+                            <Mark kind="pass" size={13} /> In&nbsp;zip
+                          </span>
                         ) : (
                           <span title={d?.error} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: H.bad, fontWeight: 700 }}>
-                            <Mark kind="fail" size={12} /> {d?.error?.includes("Name") ? "Name empty" : "Failed"}
+                            <Mark kind="fail" size={12} /> Failed
                           </span>
                         )}
                       </td>
@@ -409,7 +417,7 @@ function ResultsView({
             </tbody>
           </table>
           <div className="hf-sub" style={{ padding: "14px 30px" }}>
-            Showing {rows.length} of {result.perStudent.length} · PDFs rendered from your template via LibreOffice
+            Showing {rows.length} of {result.perStudent.length} · one .pptx per student per type, bundled in the .zip — open and export to PDF to finalise
           </div>
         </div>
       </div>
