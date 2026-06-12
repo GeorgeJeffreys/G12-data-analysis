@@ -6,9 +6,11 @@ stubbed. The source of truth for *intent* is `G12pp_Exam_Suite_Design_Spec.md`;
 this document describes the *implementation*.
 
 > **Scope note.** The backend (schema, parity-verified engine, ingest/export)
-> and the **six-screen front end** are both built. The UI runs entirely against
-> an in-memory `DataProvider` seeded from real engine output — **no Supabase,
-> no live database** yet (see "Frontend (UI)" below).
+> and the **six-screen front end** are both built. The provider has **two
+> implementations behind one interface**: an in-memory provider (the default —
+> tests + no-network demo) and a live **`SupabaseDataProvider`** with real
+> `@supabase/ssr` auth, selected by `NEXT_PUBLIC_DATA_PROVIDER` (see "Frontend
+> (UI)" below). Migrations `0001`–`0003` define the schema/RLS/RPCs.
 
 ## Stack
 
@@ -352,10 +354,66 @@ directly.
 
 `InMemoryDataProvider` (`lib/data/in-memory-provider.ts`) seeds itself from
 **genuine engine output** and keeps decisions (exclusions, boundaries, locks) in
-memory. To go live: implement `DataProvider` backed by Supabase (queries + the
-`SECURITY DEFINER` RPCs from migration 0001) and construct it in
-`lib/data/context.tsx` instead of the in-memory one — **no screen or component
-changes**.
+memory. The live implementation, **`SupabaseDataProvider`**
+(`lib/data/supabase-provider.ts`), satisfies the same interface, and
+`lib/data/context.tsx` selects between them on `NEXT_PUBLIC_DATA_PROVIDER`
+(`supabase` → live; anything else → in-memory). **No screen or component
+changes** — only the provider.
+
+#### SupabaseDataProvider — hydrate-replay-delegate
+
+The `DataProvider` is **synchronous**; Supabase is async. So the provider:
+
+1. **Hydrates** a `Seed` from the database (`lib/data/supabase-hydrate.ts`),
+   using the real row **UUIDs as the Seed ids** so write RPCs can pass ids
+   straight through. Item statistics come from `item_stats`; diagnostics are
+   recomputed from `responses` via `lib/diagnostics`.
+2. Constructs an inner `InMemoryDataProvider` from that seed (the provider now
+   accepts an injected seed + user) and **replays** the stored decisions
+   (exclusions, boundaries, essays, incident triage, distinction, lock, config
+   blobs) through that provider's own mutators — reaching a faithful, fully
+   computed mirror. **Reads delegate** to it, so every read-model works unchanged.
+3. **Writes** apply optimistically to the inner provider (instant UI) **and** call
+   the `SECURITY DEFINER` RPCs over the RLS-scoped client — the only sanctioned
+   path for status/decision/computed columns. The database enforces authorization
+   (RLS + each function's role check), so an unauthorized write is rejected
+   server-side even though the optimistic local copy updated.
+
+Hydration is async; until it finishes the provider serves an empty cycle, then
+bumps its version (`useSyncExternalStore`) so screens re-render.
+
+#### Auth (real, `@supabase/ssr`)
+
+Email/password (no Microsoft SSO yet). `lib/supabase/{client,server}.ts` are the
+RLS-scoped clients (publishable key); `middleware.ts` refreshes the session
+cookie each request (inert when Supabase isn't configured). **Invite-only:** the
+signed-in user comes from the session and their role from the **`memberships`**
+table; an `AccessGate` in `context.tsx` routes to `/signin` (no session) and
+`/access-denied` (signed in but not a member). Provisioning = an admin adding a
+`memberships` row.
+
+#### Engine write path (server-side only)
+
+Recompute must not run in the browser. `POST /api/cycles/:id/recompute`
+(`lib/server/engine-write.ts`) authorizes the caller as a cycle `lead_admin` via
+the session client, then reads responses/essays/alterations and runs the
+**unchanged** engine with the **secret-key admin client**, writing `item_stats`
+and `participant_scores` **directly** (the SECURITY DEFINER role-checks need an
+`auth.uid()`, which the secret client lacks; the secret role bypasses RLS and the
+`authenticated` column revokes, so it is the sanctioned privileged writer). The
+secret key (`SUPABASE_SECRET_KEY`) is server-only — `lib/supabase/admin.ts` is
+guarded by `import "server-only"`.
+
+#### Environment & schema
+
+New-format keys only: `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (client), `SUPABASE_SECRET_KEY` (server) —
+documented in `.env.example`. Migration **`0003`** extends `0001`/`0002` with the
+tables + SECURITY DEFINER RPCs the current interface needs beyond the original
+surface (essays, incidents, alterations, distinction, document settings, and a
+`workspace_settings` blob store), plus `write_scores` (the participant-scores
+writer `0001` lacked). See `supabase/RUNBOOK.md` to set `.env.local`, seed, and
+run the RLS smoke test.
 
 ### Seeding with real data
 
@@ -367,6 +425,14 @@ every exclusion, boundary drag and lock — so the item-review KPIs, the live
 histogram, the boundary band counts and the grade matrix are all real computed
 numbers, not hand-typed mocks. Reactivity is via `useSyncExternalStore`
 (`lib/data/context.tsx`).
+
+For the **live** database, `scripts/seed-supabase.mts` (run via
+`npm run seed:supabase`) runs the same ingest + engine over the sample export and
+inserts the cycle (cycle, assessments, items, participants, responses) with the
+secret-key admin client, then persists `item_stats` + `participant_scores`
+through the shared engine write path — giving the deployed app a working demo
+cycle. The owner is an existing Supabase auth user (granted a `lead_admin`
+membership). See `supabase/RUNBOOK.md`.
 
 ### Screens (routes)
 
