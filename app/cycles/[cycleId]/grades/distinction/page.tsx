@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Badge, Avatar, StatBlock } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { AWARD_SHORT } from "@/lib/data/grading";
@@ -74,21 +75,12 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
         </Link>
       }
     >
-      {/* assessment tabs (top-difficulty questions are per assessment) */}
-      <div style={{ display: "flex", flex: "0 0 auto", borderBottom: `1px solid ${H.line}`, padding: "0 24px", gap: 4, background: H.paper }}>
-        {model.scopes.map((s) => {
-          const on = s.id === model.scope;
-          return (
-            <button
-              key={s.id}
-              onClick={() => setScope(s.id)}
-              style={{ padding: "13px 15px", fontSize: 13, fontWeight: on ? 700 : 500, color: on ? H.pink : H.ink2, borderBottom: `3px solid ${on ? H.pink : "transparent"}`, background: "transparent", border: "none", cursor: "pointer" }}
-            >
-              {s.label}
-            </button>
-          );
-        })}
-      </div>
+      {/* assessment selector — shared canonical chip-tab row (per-assessment rule) */}
+      <AssessmentTabs
+        activeId={model.scope}
+        tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
+        onSelect={setScope}
+      />
 
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 30px", gap: 18, flex: 1, minHeight: 0 }}>
         <div>

@@ -13,6 +13,7 @@ import { Button, Avatar, Badge, type BadgeTone } from "@/components/ui/primitive
 import { Icon } from "@/components/ui/icons";
 import type { AuditFilter, AuditType } from "@/lib/data/types";
 import { cyclesSubnav } from "@/lib/ui/subnav";
+import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 const FILTERS: { key: AuditFilter; label: string }[] = [
   { key: "all", label: "All actions" },
@@ -53,6 +54,7 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
   const [filter, setFilter] = useState<AuditFilter>("all");
   const [search, setSearch] = useState("");
   const model = useProviderData((p) => p.getAuditLog(cycleId, filter, search), [cycleId, filter, search]);
+  const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   return (
     <Shell
@@ -71,10 +73,12 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
             <span key={f.key} className={`hf-chip ${filter === f.key ? "on" : ""}`} onClick={() => setFilter(f.key)} style={{ cursor: "pointer" }}>{f.label}</span>
           ))}
           <div style={{ flex: 1 }} />
+          <ZoomControl zoom={zoom} onZoom={setZoom} />
           <span className="hf-sub">{model.total} events</span>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", background: H.paper }}>
+        <div ref={scrollRef} style={{ flex: 1, overflow: "auto", background: H.paper }}>
+          <div style={zoomWrapStyle}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
@@ -111,6 +115,7 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
           </table>
           <div className="hf-sub" style={{ padding: "14px 26px" }}>
             Showing {model.entries.length} of {model.total} events · every consequential action is recorded and cannot be edited.
+          </div>
           </div>
         </div>
       </div>
