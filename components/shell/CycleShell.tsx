@@ -2,30 +2,44 @@
 
 /**
  * CycleShell — the single canonical chrome every cycle page renders, so the
- * breadcrumb, cycle tab bar, pipeline stepper, subject chips and primary action
- * never move or change form between pages. Pages supply only their body (plus a
- * primary action, optional subject chips, and a single consolidated alerts area);
- * the shell fixes everything else in place.
+ * breadcrumb, pipeline stepper, subject chips and the cycle-area links never move
+ * or change form between pages. Pages supply only their body (plus a primary
+ * action, optional subject chips, and a single consolidated alerts area).
  *
  * Order, always identical:
  *   breadcrumb (G12++ › Cycles › <cycle> › <page>)
- *   cycle tab bar   — Pipeline · Diagnostics · Audit log · Certificates
+ *       …with Diagnostics · Audit log · Certificates as quiet top-right links
  *   pipeline stepper — pipeline-area pages only, with the top-right primary action
  *   subject chip row — pipeline per-subject pages only
  *   alerts area      — one predictable place per page for every notice
  *   page body
  *
- * Diagnostics / Audit / Certificates are reached via the tab bar and show no
- * stepper; their primary action (if any) sits top-right in the header.
+ * "Pipeline" is the default cycle view (no link needed — the breadcrumb cycle
+ * name returns to it). Diagnostics / Audit / Certificates show no stepper; their
+ * primary action (if any) sits top-right in the header.
  */
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "./Shell";
 import { LockStatus } from "./LockBanner";
-import { cyclesSubnav } from "@/lib/ui/subnav";
 import { Mark, type MarkKind } from "@/components/ui/icons";
 
 export type CycleArea = "pipeline" | "diagnostics" | "audit" | "documents";
+
+/** A quiet grey text link in the top-right header (the cycle-area nav). */
+function CycleNavLink({ href, on, children }: { href: string; on: boolean; children: ReactNode }) {
+  return (
+    <Link
+      href={href}
+      aria-current={on ? "page" : undefined}
+      className="hf-btn ghost"
+      style={{ fontSize: 12.5, fontWeight: on ? 700 : 500, color: on ? H.pink : H.ink2, padding: "6px 9px", whiteSpace: "nowrap" }}
+    >
+      {children}
+    </Link>
+  );
+}
 
 export function CycleShell({
   cycleId,
@@ -64,12 +78,22 @@ export function CycleShell({
     ? [{ label: "Cycles", href: "/" }, { label: cycleName, href: `/cycles/${cycleId}` }, { label: page }]
     : [{ label: "Cycles", href: "/" }, { label: cycleName }];
 
+  // Cycle-area nav as quiet top-right links (replaces the old full-width tab band).
+  const cycleNav = (
+    <span style={{ display: "flex", alignItems: "center", gap: 2 }}>
+      <CycleNavLink href={`/cycles/${cycleId}/diagnostics`} on={area === "diagnostics"}>Diagnostics</CycleNavLink>
+      <CycleNavLink href={`/cycles/${cycleId}/audit`} on={area === "audit"}>Audit log</CycleNavLink>
+      <CycleNavLink href={`/cycles/${cycleId}/documents`} on={area === "documents"}>Certificates</CycleNavLink>
+    </span>
+  );
+  const headerPrimary = isPipeline ? null : primary;
+  const hasTrailing = !!actions || !!headerPrimary;
+
   return (
     <Shell
       active="Cycles"
       crumb={crumb}
       status={<LockStatus cycleId={cycleId} />}
-      subnav={cyclesSubnav(cycleId, area)}
       stageIndex={isPipeline ? (stageIndex ?? 0) : undefined}
       done={done}
       range={range}
@@ -77,9 +101,12 @@ export function CycleShell({
       // pipeline pages pin the primary in the stepper row; other areas in the header
       stageAction={isPipeline ? primary : undefined}
       actions={
-        isPipeline ? actions : (
-          (actions || primary) ? <>{actions}{primary}</> : undefined
-        )
+        <>
+          {cycleNav}
+          {hasTrailing && <span style={{ width: 1, height: 20, background: H.line2, margin: "0 4px" }} />}
+          {actions}
+          {headerPrimary}
+        </>
       }
     >
       {subjectTabs}

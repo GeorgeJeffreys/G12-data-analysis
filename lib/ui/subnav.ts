@@ -4,14 +4,8 @@
  */
 import type { SubnavItem } from "@/components/shell/Shell";
 
-export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "documents" | "diagnostics"): SubnavItem[] {
-  return [
-    { label: "Pipeline", href: `/cycles/${cycleId}`, on: active === "pipeline" },
-    { label: "Diagnostics", href: `/cycles/${cycleId}/diagnostics`, on: active === "diagnostics" },
-    { label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" },
-    { label: "Certificates", href: `/cycles/${cycleId}/documents`, on: active === "documents" },
-  ];
-}
+// Cycle pages no longer use a subnav band — Diagnostics/Audit/Certificates are
+// quiet top-right links rendered by CycleShell. Analytics/Settings keep theirs.
 
 export function analyticsSubnav(active: "trends" | "compare"): SubnavItem[] {
   return [
