@@ -21,7 +21,6 @@ import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
 import { H, ratingColor } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
-import { LockBanner } from "@/components/shell/LockBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
@@ -158,7 +157,6 @@ export default function ReviewPage({
           </Button>
         </Link>
       }
-      alerts={<LockBanner cycleId={cycleId} />}
       subjectTabs={
         <AssessmentTabs
           activeId={assessmentId}

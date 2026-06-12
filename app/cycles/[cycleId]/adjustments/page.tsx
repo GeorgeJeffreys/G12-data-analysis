@@ -13,7 +13,6 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
-import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import type { AdjustmentIncident, AdjustmentsModel } from "@/lib/data/types";
@@ -30,7 +29,6 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
     page: "Adjustments",
     stageIndex: 2,
     done: 2,
-    alerts: <LockBanner cycleId={cycleId} />,
     primary: (
       <Link href={`/cycles/${cycleId}/boundaries`}>
         <Button variant="pri">Continue to scoring<Icon name="arrow" color="#fff" /></Button>

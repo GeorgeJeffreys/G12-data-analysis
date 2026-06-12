@@ -1,50 +1,55 @@
 "use client";
 
 /**
- * Read-only banner shown on the editable cycle screens once a cycle is locked.
+ * Locked / read-only indicator for the cycle screens once a cycle is locked.
  * A locked cycle stays fully navigable — every page is viewable — but edits are
- * frozen (the provider rejects writes while locked). This makes that state
- * explicit and surfaces the Lead-only "Re-open cycle" (unlock) action, which is
- * audit-logged in the provider.
+ * frozen (the provider rejects writes while locked).
+ *
+ * This is a STATUS, not an action item, so it is shown as a quiet inline pill
+ * near the breadcrumb (via CycleShell) rather than a full-width coloured banner
+ * competing in the alerts strip with real, action-required notices. The Lead-only
+ * "Re-open" (unlock) action lives on the pill and is audit-logged in the provider.
  */
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { Button } from "@/components/ui/primitives";
-import { Icon, Mark } from "@/components/ui/icons";
+import { Icon } from "@/components/ui/icons";
 
-export function LockBanner({ cycleId }: { cycleId: string }) {
+export function LockStatus({ cycleId }: { cycleId: string }) {
   const provider = useProvider();
   const cycle = useProviderData((p) => p.getCycle(cycleId), [cycleId]);
   if (!cycle?.locked) return null;
   const isLead = provider.getCurrentUser().role === "lead_admin";
 
   return (
-    <div
+    <span
       role="status"
+      title="This cycle is locked & signed off — edits are frozen until it is re-opened."
       style={{
-        display: "flex",
+        display: "inline-flex",
         alignItems: "center",
-        gap: 12,
-        padding: "11px 18px",
+        gap: 6,
+        flex: "0 0 auto",
+        padding: "3px 9px",
+        borderRadius: 999,
         background: H.goodSoft,
-        borderBottom: `1px solid ${H.good}`,
-        flexWrap: "wrap",
+        border: `1px solid ${H.good}33`,
+        color: H.good,
+        fontSize: 11,
+        fontWeight: 600,
+        whiteSpace: "nowrap",
       }}
     >
-      <Mark kind="pass" size={16} />
-      <span style={{ fontSize: 12.5, fontWeight: 600, color: H.ink }}>
-        This cycle is locked &amp; signed off — viewing in read-only mode.
-      </span>
-      <span className="hf-sub" style={{ fontSize: 11.5 }}>
-        Edits are frozen until the cycle is re-opened.
-      </span>
-      <div style={{ flex: 1 }} />
+      <Icon name="lock" size={12} color={H.good} />
+      Locked · read-only
       {isLead && (
-        <Button variant="ghost" onClick={() => provider.unlockCycle(cycleId)} title="Re-open the cycle for editing (audit-logged)">
-          <Icon name="lock" size={14} />
-          Re-open cycle
-        </Button>
+        <button
+          onClick={() => provider.unlockCycle(cycleId)}
+          title="Re-open the cycle for editing (audit-logged)"
+          style={{ border: "none", background: "transparent", color: H.ink2, fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0, marginLeft: 2, textDecoration: "underline" }}
+        >
+          Re-open
+        </button>
       )}
-    </div>
+    </span>
   );
 }

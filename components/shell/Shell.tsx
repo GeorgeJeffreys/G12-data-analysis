@@ -26,6 +26,7 @@ export interface SubnavItem {
 export function Shell({
   crumb,
   actions,
+  status,
   active,
   subnav,
   stageIndex,
@@ -37,6 +38,8 @@ export function Shell({
 }: {
   crumb: Crumb[];
   actions?: ReactNode;
+  /** Quiet status indicator shown next to the breadcrumb (e.g. locked/read-only). */
+  status?: ReactNode;
   /** Which nav-rail area is active (Cycles | Analytics | Settings). */
   active?: "Cycles" | "Analytics" | "Settings";
   /** Secondary tab bar under the header. */
@@ -84,6 +87,7 @@ export function Shell({
               </span>
             ))}
           </nav>
+          {status}
           {actions}
         </div>
 

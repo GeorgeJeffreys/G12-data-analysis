@@ -21,6 +21,7 @@
 import type { ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "./Shell";
+import { LockStatus } from "./LockBanner";
 import { cyclesSubnav } from "@/lib/ui/subnav";
 import { Mark, type MarkKind } from "@/components/ui/icons";
 
@@ -67,6 +68,7 @@ export function CycleShell({
     <Shell
       active="Cycles"
       crumb={crumb}
+      status={<LockStatus cycleId={cycleId} />}
       subnav={cyclesSubnav(cycleId, area)}
       stageIndex={isPipeline ? (stageIndex ?? 0) : undefined}
       done={done}

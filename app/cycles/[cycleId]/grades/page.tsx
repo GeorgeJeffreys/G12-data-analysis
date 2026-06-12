@@ -13,7 +13,6 @@ import type { DataProvider } from "@/lib/data/provider";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell, Alert } from "@/components/shell/CycleShell";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
-import { LockBanner } from "@/components/shell/LockBanner";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
@@ -86,7 +85,6 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       alerts={
         <>
           <ProvisionalBanner cycleId={cycleId} />
-          <LockBanner cycleId={cycleId} />
           {!model.locked && (
             <Alert
               tone="info"
