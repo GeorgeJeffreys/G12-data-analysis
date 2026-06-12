@@ -14,6 +14,7 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
@@ -34,6 +35,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const provider = useProvider();
   const [scope, setScope] = useState<string>("overall");
   const model = useProviderData((p) => p.getBoundaries(cycleId, scope), [cycleId, scope]);
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   if (!model) {
     return (
@@ -73,15 +75,12 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   );
 
   return (
-    <Shell
-      crumb={[
-        { label: "Cycles", href: "/" },
-        { label: "May 2026", href: `/cycles/${cycleId}` },
-        { label: "Scoring & grade boundaries" },
-      ]}
-      stageIndex={4}
+    <CycleShell
       cycleId={cycleId}
-      stageAction={
+      cycleName={cycleName}
+      page="Scoring & grade boundaries"
+      stageIndex={4}
+      primary={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri">
             Confirm boundaries
@@ -89,15 +88,20 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </Button>
         </Link>
       }
+      alerts={
+        <>
+          <LockBanner cycleId={cycleId} />
+          <ProvisionalBanner cycleId={cycleId} />
+        </>
+      }
+      subjectTabs={
+        <AssessmentTabs
+          activeId={scope}
+          tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
+          onSelect={setScope}
+        />
+      }
     >
-      <LockBanner cycleId={cycleId} />
-      <ProvisionalBanner cycleId={cycleId} />
-      {/* assessment / scope selector — shared canonical chip-tab row under the breadcrumb */}
-      <AssessmentTabs
-        activeId={scope}
-        tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
-        onSelect={setScope}
-      />
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -141,20 +145,13 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
               draggable={model.mode === "cuts"}
               onDrag={setCut}
             />
-            {/* compact summary stats — a slim inline row so the chart can be taller */}
-            <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
+            {/* summary stats — its own non-shrinking strip below the plot, so it is
+                always fully visible and never overlaps the chart */}
+            <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 16, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
               <MiniStat n={`${model.stats.mean}%`} label="cohort mean" />
               <MiniStat n={String(model.stats.median)} label="median" />
               <MiniStat n={String(model.stats.sd)} label="σ" />
               <MiniStat n={String(model.stats.itemsScored)} label="items scored" sub={`${model.stats.excluded} excluded`} />
-            </div>
-            <div style={{ display: "flex", gap: 9, marginTop: "auto", paddingTop: 12, color: H.ink3, alignItems: "center" }}>
-              <Icon name="arrow" size={14} color={H.ink3} />
-              <span className="hf-sub" style={{ fontSize: 11.5 }}>
-                {model.mode === "cuts"
-                  ? "Drag a dashed handle or edit a score on the right — everything recomputes instantly."
-                  : "Cut-points are placed automatically. Switch to “Fix boundaries” to nudge them by hand."}
-              </span>
             </div>
           </div>
 
@@ -251,7 +248,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </div>
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 
