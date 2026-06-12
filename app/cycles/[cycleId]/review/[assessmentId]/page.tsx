@@ -14,16 +14,18 @@
  *  - true whole-table zoom: − / + (and trackpad pinch) scale the entire table —
  *    columns, text and rows together — so zooming out genuinely fits more rows.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
 import { H, ratingColor } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { LockBanner } from "@/components/shell/LockBanner";
+import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { Histogram, BreakdownBars } from "@/components/ui/charts";
+import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 const REASONS = [
   "Negative discrimination",
@@ -35,11 +37,6 @@ const REASONS = [
 
 type QualityFilter = "all" | "review" | "poor";
 type SortKey = "q" | "pValue" | "itemTotal" | "pointBiserial" | "discrimination" | "quality";
-
-/** Whole-table zoom (scale transform) — buttons step by 0.1, pinch is continuous. */
-const ZOOM_MIN = 0.6;
-const ZOOM_MAX = 1.5;
-const clampZoom = (z: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
 
 function fmtStat(v: number | null): string {
   if (v === null || Number.isNaN(v)) return "—";
@@ -71,24 +68,9 @@ export default function ReviewPage({
 
   // Selection drives the dual-mode right panel; zoom scales the whole table.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<number>(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [panelWidth, setPanelWidth] = useState(322);
-  const tableScrollRef = useRef<HTMLDivElement>(null);
-
-  // Pinch-to-zoom (trackpad pinch fires a ctrl+wheel). Native non-passive
-  // listener so we can preventDefault the browser page-zoom.
-  useEffect(() => {
-    const el = tableScrollRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      if (!e.ctrlKey) return;
-      e.preventDefault();
-      setZoom((z) => clampZoom(z - e.deltaY * 0.01));
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+  const { zoom, setZoom, scrollRef: tableScrollRef, zoomWrapStyle } = useTableZoom();
 
   const detail = useProviderData(
     (p) => (selectedId ? p.getItemDetail(cycleId, assessmentId, selectedId) : null),
@@ -179,22 +161,16 @@ export default function ReviewPage({
       }
     >
       <LockBanner cycleId={cycleId} />
-      {/* assessment tabs */}
-      <div style={{ display: "flex", flex: "0 0 auto", borderBottom: `1px solid ${H.line}`, padding: "0 24px", gap: 4, background: H.paper, overflowX: "auto" }}>
-        {model.assessments.map((a) => {
-          const on = a.id === assessmentId;
-          return (
-            <Link
-              key={a.id}
-              href={`/cycles/${cycleId}/review/${encodeURIComponent(a.id)}`}
-              style={{ padding: "13px 15px", fontSize: 13, fontWeight: on ? 700 : 500, color: on ? H.pink : H.ink2, borderBottom: `3px solid ${on ? H.pink : "transparent"}`, textDecoration: "none", whiteSpace: "nowrap" }}
-            >
-              {a.shortName}
-              {a.rtl && <span className="hf-mono" style={{ fontSize: 9, color: H.ink3, marginLeft: 6 }}>RTL</span>}
-            </Link>
-          );
-        })}
-      </div>
+      {/* assessment selector — shared canonical chip-tab row under the breadcrumb */}
+      <AssessmentTabs
+        activeId={assessmentId}
+        tabs={model.assessments.map((a) => ({
+          id: a.id,
+          label: a.shortName,
+          rtl: a.rtl,
+          href: `/cycles/${cycleId}/review/${encodeURIComponent(a.id)}`,
+        }))}
+      />
 
       {/* slim single control band: compact stats + filters + search + zoom */}
       <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 24px", borderBottom: `1px solid ${H.line}`, background: H.paper, flexWrap: "wrap" }}>
@@ -222,7 +198,7 @@ export default function ReviewPage({
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
         <div ref={tableScrollRef} style={{ flex: 1, overflow: "auto", background: H.paper, minWidth: 0 }}>
           {/* whole-table zoom: scale the table (columns + text + rows) together */}
-          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: `${100 / zoom}%` }}>
+          <div style={zoomWrapStyle}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -364,33 +340,6 @@ function Chevron({ open }: { open: boolean }) {
     <svg width="11" height="11" viewBox="0 0 12 12" style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s", flex: "0 0 auto" }} aria-hidden="true">
       <path d="M4 2.5L8 6l-4 3.5" fill="none" stroke={H.ink3} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
-  );
-}
-
-/** Whole-table zoom: − / + scale the entire table (also driven by trackpad pinch). */
-function ZoomControl({ zoom, onZoom }: { zoom: number; onZoom: (z: number) => void }) {
-  const step = (d: -1 | 1) => onZoom(clampZoom(Math.round((zoom + d * 0.1) * 10) / 10));
-  const btn = (label: string, d: -1 | 1, disabled: boolean) => (
-    <button
-      onClick={() => step(d)}
-      disabled={disabled}
-      aria-label={d < 0 ? "Zoom out" : "Zoom in"}
-      title={d < 0 ? "Zoom out (fit more rows)" : "Zoom in"}
-      style={{ width: 26, height: 24, fontSize: 14, fontWeight: 700, background: H.paper, color: disabled ? H.ink3 : H.ink2, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span style={{ display: "flex", alignItems: "center", border: `1px solid ${H.line2}`, borderRadius: 7, overflow: "hidden" }}>
-        {btn("−", -1, zoom <= ZOOM_MIN + 1e-9)}
-        <button onClick={() => onZoom(1)} title="Reset zoom" className="hf-mono" style={{ minWidth: 38, height: 24, fontSize: 10.5, fontWeight: 600, color: H.ink2, background: H.paper, border: "none", borderLeft: `1px solid ${H.line2}`, borderRight: `1px solid ${H.line2}`, cursor: "pointer" }}>
-          {Math.round(zoom * 100)}%
-        </button>
-        {btn("+", 1, zoom >= ZOOM_MAX - 1e-9)}
-      </span>
-    </span>
   );
 }
 

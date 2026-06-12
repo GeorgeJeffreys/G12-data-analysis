@@ -10,9 +10,11 @@ import { Fragment, useState, type CSSProperties } from "react";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Badge } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
 import { cyclesSubnav } from "@/lib/ui/subnav";
+import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import type { DiagnosticsModel, DiagnosticsAssessment } from "@/lib/data/types";
 import type { DiagStatus } from "@/lib/diagnostics";
 
@@ -23,6 +25,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
   const cycleId = params.cycleId;
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
   const [active, setActive] = useState(0);
+  const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!model || model.assessments.length === 0) {
     return (
@@ -51,20 +54,17 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
           </div>
         </div>
 
-        {/* assessment selector (existing sub-nav style) */}
-        <div className="hf-pad" style={{ display: "flex", gap: 4, padding: "14px 28px 0", borderBottom: `1px solid ${H.line}`, overflowX: "auto" }}>
-          {model.assessments.map((as, i) => (
-            <button
-              key={as.assessmentId}
-              onClick={() => setActive(i)}
-              style={{ padding: "9px 14px", fontSize: 13, fontWeight: i === active ? 700 : 500, color: i === active ? H.pink : H.ink2, borderBottom: `3px solid ${i === active ? H.pink : "transparent"}`, background: "transparent", border: "none", cursor: "pointer", whiteSpace: "nowrap" }}
-            >
-              {as.shortName}
-            </button>
-          ))}
-        </div>
+        {/* assessment selector — shared canonical chip-tab row; zoom on the right */}
+        <AssessmentTabs
+          activeId={String(active)}
+          tabs={model.assessments.map((as, i) => ({ id: String(i), label: as.shortName }))}
+          onSelect={(id) => setActive(Number(id))}
+          right={<ZoomControl zoom={zoom} onZoom={setZoom} />}
+        />
 
-        <div style={{ flex: 1, overflow: "auto", padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
+        <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "20px 28px 40px" }}>
+          <div style={zoomWrapStyle}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
           {/* Family A — speededness / omission / completion */}
           <div className="hf-card" style={{ overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
@@ -156,6 +156,8 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                 was demanding, not a data fault. Informational only; nothing here changes a grade.
               </span>
             </div>
+          </div>
+          </div>
           </div>
         </div>
       </div>
