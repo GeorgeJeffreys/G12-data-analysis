@@ -75,22 +75,34 @@ export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Setting
             href={it.href}
             aria-label={it.k}
             aria-current={on ? "page" : undefined}
-            className="nav-item"
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 10,
               display: "flex",
+              flexDirection: "column",
               alignItems: "center",
-              justifyContent: "center",
-              background: on ? H.pinkSoft : "transparent",
-              color: on ? H.pink : H.ink3,
+              gap: 3,
+              textDecoration: "none",
             }}
           >
-            <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round">
-              <path d={it.d} />
-            </svg>
-            <span className="nav-label">{it.k}</span>
+            <span
+              style={{
+                width: 40,
+                height: 36,
+                borderRadius: 10,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                background: on ? H.pinkSoft : "transparent",
+                color: on ? H.pink : H.ink3,
+              }}
+            >
+              <svg width="19" height="19" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d={it.d} />
+              </svg>
+            </span>
+            {/* permanent label under each icon (always visible) */}
+            <span style={{ fontSize: 8.5, fontWeight: on ? 700 : 500, letterSpacing: "0.2px", color: on ? H.pink : H.ink3, lineHeight: 1 }}>
+              {it.k}
+            </span>
           </Link>
         );
       })}
