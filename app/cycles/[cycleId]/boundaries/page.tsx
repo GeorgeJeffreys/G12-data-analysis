@@ -16,7 +16,7 @@ import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
-import { Button, StatBlock } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 
 // MOCK: there is no prior cycle. Cross-cycle comparison is driven by these
@@ -157,13 +157,14 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
               draggable={model.mode === "cuts"}
               onDrag={setCut}
             />
-            <div style={{ display: "flex", gap: 30, marginTop: 22, paddingTop: 18, borderTop: `1px solid ${H.line}` }}>
-              <StatBlock n={`${model.stats.mean}%`} label="Cohort mean" />
-              <StatBlock n={String(model.stats.median)} label="Median" />
-              <StatBlock n={String(model.stats.sd)} label="Std. dev (σ)" />
-              <StatBlock n={String(model.stats.itemsScored)} label="Items scored" sub={`${model.stats.excluded} excluded`} />
+            {/* compact summary stats — a slim inline row so the chart can be taller */}
+            <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 12, paddingTop: 10, borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
+              <MiniStat n={`${model.stats.mean}%`} label="cohort mean" />
+              <MiniStat n={String(model.stats.median)} label="median" />
+              <MiniStat n={String(model.stats.sd)} label="σ" />
+              <MiniStat n={String(model.stats.itemsScored)} label="items scored" sub={`${model.stats.excluded} excluded`} />
             </div>
-            <div style={{ display: "flex", gap: 9, marginTop: "auto", paddingTop: 16, color: H.ink3, alignItems: "center" }}>
+            <div style={{ display: "flex", gap: 9, marginTop: "auto", paddingTop: 12, color: H.ink3, alignItems: "center" }}>
               <Icon name="arrow" size={14} color={H.ink3} />
               <span className="hf-sub" style={{ fontSize: 11.5 }}>
                 {model.mode === "cuts"
@@ -320,6 +321,17 @@ function MixComparison({
   );
 }
 
+/** Compact inline summary figure (bold number + small label) for the slim stats row. */
+function MiniStat({ n, label, sub }: { n: string; label: string; sub?: string }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 5, whiteSpace: "nowrap" }}>
+      <span className="hf-mono" style={{ fontSize: 15, fontWeight: 700, color: H.ink, lineHeight: 1 }}>{n}</span>
+      <span className="hf-lbl" style={{ fontSize: 9 }}>{label}</span>
+      {sub && <span className="hf-sub" style={{ fontSize: 10, color: H.ink3 }}>· {sub}</span>}
+    </span>
+  );
+}
+
 function CutInput({ value, width = 74, onCommit }: { value: number; width?: number; onCommit: (v: number) => void }) {
   const [draft, setDraft] = useState<string | null>(null);
   return (
@@ -385,36 +397,37 @@ function BoundaryChart({
   };
 
   return (
-    <div ref={ref} style={{ position: "relative", height: 196, userSelect: "none" }}>
-      {regions.map((r) => (
-        <div key={r.level} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: r.opacity }} />
-      ))}
-      {/* band labels sit BELOW the plot, clear of the draggable handle pills
-          (which live at the top), so the two never collide */}
-      {regions.map((r) => (
-        <div
-          key={r.level + "l"}
-          title={r.level}
-          style={{
-            position: "absolute",
-            bottom: 26,
-            left: `${r.from}%`,
-            width: `${r.to - r.from}%`,
-            padding: "0 2px",
-            textAlign: "center",
-            fontFamily: "var(--font-mono)",
-            fontWeight: 700,
-            fontSize: isAward ? 9.5 : 12,
-            color: H.ink2,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            pointerEvents: "none",
-          }}
-        >
-          {r.label}
-        </div>
-      ))}
+    <div style={{ userSelect: "none" }}>
+      {/* band-label row ABOVE the plot — a clean strip, clear of the bars/handles */}
+      <div style={{ position: "relative", height: 18, marginBottom: 8 }}>
+        {regions.map((r) => (
+          <div
+            key={r.level + "l"}
+            title={r.level}
+            style={{
+              position: "absolute",
+              top: 0,
+              left: `${r.from}%`,
+              width: `${r.to - r.from}%`,
+              padding: "0 2px",
+              textAlign: "center",
+              fontFamily: "var(--font-mono)",
+              fontWeight: 700,
+              fontSize: isAward ? 9.5 : 11.5,
+              color: H.ink2,
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {r.label}
+          </div>
+        ))}
+      </div>
+      <div ref={ref} style={{ position: "relative", height: 230, userSelect: "none" }}>
+        {regions.map((r) => (
+          <div key={r.level} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: r.opacity }} />
+        ))}
       <div style={{ position: "absolute", left: 0, right: 0, bottom: 22, top: 0, display: "flex", alignItems: "flex-end", gap: 1 }}>
         {histogram.map((v, i) => (
           <div key={i} style={{ flex: 1, height: `${(v / max) * 92}%`, background: "#dde4ea", borderRadius: "2px 2px 0 0" }} />
@@ -451,10 +464,11 @@ function BoundaryChart({
           </div>
         </div>
       ))}
-      <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "space-between" }}>
-        {["0%", "25%", "50%", "75%", "100%"].map((t) => (
-          <span key={t} className="hf-mono" style={{ fontSize: 10, color: H.ink3 }}>{t}</span>
-        ))}
+        <div style={{ position: "absolute", left: 0, right: 0, bottom: 0, display: "flex", justifyContent: "space-between" }}>
+          {["0%", "25%", "50%", "75%", "100%"].map((t) => (
+            <span key={t} className="hf-mono" style={{ fontSize: 10, color: H.ink3 }}>{t}</span>
+          ))}
+        </div>
       </div>
     </div>
   );
