@@ -47,6 +47,12 @@ npm run seed:supabase
 # SEED_OWNER_EMAIL=you@example.com npm run seed:supabase   # pick a specific owner
 ```
 
+**No-Node alternative (browser only):** paste `supabase/seed.sql` into the SQL
+editor and Run. It's a static, fixed-UUID dump of the same demo cycle (genuine
+engine-computed `item_stats`/`participant_scores`); the **first** auth user
+becomes the owner. Regenerate it with `npm run seed:sql` if the sample data or
+engine changes.
+
 Expected output (counts vary with the sample file):
 
 ```

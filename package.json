@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "seed": "tsx scripts/build-seed.mts",
-    "seed:supabase": "tsx scripts/seed-supabase.mts"
+    "seed:supabase": "tsx scripts/seed-supabase.mts",
+    "seed:sql": "tsx scripts/build-seed-sql.mts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
