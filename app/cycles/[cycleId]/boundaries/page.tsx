@@ -15,7 +15,6 @@ import { H } from "@/lib/ui/tokens";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
-import { LockBanner } from "@/components/shell/LockBanner";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
@@ -88,12 +87,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </Button>
         </Link>
       }
-      alerts={
-        <>
-          <LockBanner cycleId={cycleId} />
-          <ProvisionalBanner cycleId={cycleId} />
-        </>
-      }
+      alerts={<ProvisionalBanner cycleId={cycleId} />}
       subjectTabs={
         <AssessmentTabs
           activeId={scope}
@@ -155,9 +149,13 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             </div>
           </div>
 
-          {/* table card — the compact companion (~one-third) */}
-          <div className="hf-card" style={{ flex: "1 1 320px", minWidth: 300, maxWidth: 440, overflow: "auto", display: "flex", flexDirection: "column" }}>
-            <table className="hf-rows-compact" style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
+          {/* table card — the compact companion (~one-third). Bounded to the
+              viewport height: the award table + comparison scroll within their own
+              region so every award level (Distinction → No Award) and the
+              comparison strip are reachable without scrolling the whole page. */}
+          <div className="hf-card" style={{ flex: "1 1 320px", minWidth: 300, maxWidth: 440, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+            <table className="hf-rows-compact" style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th className="hf-th">{model.isAward ? "Award level" : "Performance level"}</th>
@@ -222,8 +220,10 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             {SHOW_CROSS_CYCLE && (
               <MixComparison isAward={model.isAward} bands={model.bands} mockMix={mockMix} priorName={MOCK_PRIOR_NAME} />
             )}
+            </div>
 
-            <div style={{ display: "flex", alignItems: "center", padding: "11px 14px", gap: 9, borderTop: `1px solid ${H.line}`, background: H.tint, marginTop: "auto" }}>
+            {/* pinned footer note — always visible at the bottom of the bounded column */}
+            <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "11px 14px", gap: 9, borderTop: `1px solid ${H.line}`, background: H.tint }}>
               {model.mode === "pct" ? (
                 remainder < 0 ? (
                   <>
@@ -378,7 +378,9 @@ function BoundaryChart({
   };
 
   return (
-    <div style={{ userSelect: "none", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+    // overflow:hidden guarantees the plot (bars + handles) can never paint
+    // outside its own region — so it can never overlap the stats row beneath it.
+    <div style={{ userSelect: "none", display: "flex", flexDirection: "column", flex: 1, minHeight: 0, overflow: "hidden" }}>
       {/* band-label row ABOVE the plot — a clean strip, clear of the bars/handles */}
       <div style={{ position: "relative", height: 18, marginBottom: 8, flex: "0 0 auto" }}>
         {regions.map((r) => (
@@ -405,7 +407,9 @@ function BoundaryChart({
           </div>
         ))}
       </div>
-      <div ref={ref} style={{ position: "relative", flex: 1, minHeight: 150, userSelect: "none" }}>
+      {/* plot area — the ONLY region bars + handles draw in; clipped so nothing
+          extends below into the stats row */}
+      <div ref={ref} style={{ position: "relative", flex: 1, minHeight: 120, overflow: "hidden", userSelect: "none" }}>
         {regions.map((r) => (
           <div key={r.level} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: r.opacity }} />
         ))}
