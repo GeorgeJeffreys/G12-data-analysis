@@ -47,7 +47,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         { label: "May 2026", href: `/cycles/${cycleId}` },
         { label: "Grades & sign-off" },
       ]}
-      stageIndex={6}
+      stageIndex={5}
       cycleId={cycleId}
       actions={
         <div style={{ display: "flex", gap: 8 }}>

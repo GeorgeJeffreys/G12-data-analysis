@@ -1,7 +1,7 @@
 /**
- * Pipeline stepper: Ingest → Validate → Review → Adjustments → Score →
- * Boundaries → Grades → Export. Ported from design/hf.jsx (HPipeline). Appears on
- * every cycle screen.
+ * Pipeline stepper: Data import → Review → Adjustments → Score → Boundaries →
+ * Grades → Export. Ported from design/hf.jsx (HPipeline). Appears on every cycle
+ * screen. (Ingest + Validate were merged into the single "Data import" step.)
  *
  * When a `cycleId` is supplied (and not `compact`), each stage is a navigable
  * link to that stage's screen, so the stepper doubles as cycle navigation.
@@ -18,19 +18,18 @@ import { H, PIPELINE_STAGES } from "@/lib/ui/tokens";
 export function stageHref(cycleId: string, index: number): string {
   const base = `/cycles/${cycleId}`;
   switch (index) {
-    case 0: // Ingest
-    case 1: // Validate
-      return `${base}/ingest`;
-    case 2: // Review
+    case 0: // Data import
+      return `${base}/import`;
+    case 1: // Review
       return `${base}/review`;
-    case 3: // Adjustments
+    case 2: // Adjustments
       return `${base}/adjustments`;
-    case 4: // Score
-    case 5: // Boundaries
+    case 3: // Score
+    case 4: // Boundaries
       return `${base}/boundaries`;
-    case 6: // Grades
+    case 5: // Grades
       return `${base}/grades`;
-    case 7: // Export
+    case 6: // Export
       return `${base}/documents`;
     default:
       return base;

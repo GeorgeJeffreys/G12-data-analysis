@@ -57,8 +57,8 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
         { label: "Grades & sign-off", href: `/cycles/${cycleId}/grades` },
         { label: "Distinction safeguard" },
       ]}
-      stageIndex={6}
-      done={6}
+      stageIndex={5}
+      done={5}
       cycleId={cycleId}
       actions={
         <Link href={`/cycles/${cycleId}/audit`}>

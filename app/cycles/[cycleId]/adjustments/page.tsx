@@ -35,8 +35,8 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
       { label: "Adjustments" },
     ],
     subnav: cyclesSubnav(cycleId, "pipeline"),
-    stageIndex: 3,
-    done: 3,
+    stageIndex: 2,
+    done: 2,
     cycleId,
   };
   const continueAction = (
@@ -119,7 +119,7 @@ function Triage({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
         </div>
         <div style={{ display: "flex", gap: 9 }}>
           <Button onClick={() => provider.loadSampleIncidentLog(cycleId)}>Load sample (labelled)</Button>
-          <Link href={`/cycles/${cycleId}/ingest`}><Button variant="ghost">Go to Ingest</Button></Link>
+          <Link href={`/cycles/${cycleId}/import`}><Button variant="ghost">Go to Data import</Button></Link>
         </div>
       </div>
     );

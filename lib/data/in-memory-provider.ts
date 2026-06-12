@@ -398,7 +398,7 @@ export class InMemoryDataProvider implements DataProvider {
       name: live.name,
       stageIndex: live.stageIndex,
       stageLabel: this.locked.has(live.id) ? "Locked & exported" : PIPELINE[live.stageIndex] ?? "Draft",
-      stepsDone: this.locked.has(live.id) ? 8 : live.stageIndex,
+      stepsDone: this.locked.has(live.id) ? PIPELINE.length : live.stageIndex,
       participants: live.participants.length,
       assessments: live.assessments.length,
       lastActivity: live.lastActivity,
@@ -433,7 +433,7 @@ export class InMemoryDataProvider implements DataProvider {
         participants: live.participants.length,
         assessmentCount: refs.length,
         startedAt: live.startedAt,
-        stageIndex: this.locked.has(live.id) ? 7 : live.stageIndex,
+        stageIndex: this.locked.has(live.id) ? PIPELINE.length - 1 : live.stageIndex,
         locked: this.locked.has(live.id),
         mock: false,
         doNext: this.locked.has(live.id)

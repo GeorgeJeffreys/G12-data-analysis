@@ -79,7 +79,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
         { label: "May 2026", href: `/cycles/${cycleId}` },
         { label: "Scoring & grade boundaries" },
       ]}
-      stageIndex={5}
+      stageIndex={4}
       cycleId={cycleId}
       actions={
         <div style={{ display: "flex", border: `1px solid ${H.line2}`, borderRadius: 8, overflow: "hidden" }}>

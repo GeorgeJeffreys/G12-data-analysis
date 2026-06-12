@@ -19,8 +19,7 @@ export interface CurrentUser {
 }
 
 export const PIPELINE = [
-  "Ingest",
-  "Validate",
+  "Data import",
   "Review",
   "Adjustments",
   "Score",

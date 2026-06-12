@@ -197,7 +197,7 @@ function main() {
       name: info.name,
       shortName: info.shortName,
       rtl: info.rtl,
-      stageIndex: 2, // all assessments are validated and ready for review
+      stageIndex: 1, // Review (Data import done)
       items,
       responses: seedResponses,
       // carry order for sorting below
@@ -245,7 +245,7 @@ function main() {
       region: "eu-west",
       startedAt: "2026-05-14",
       lastActivity: "2h ago",
-      stageIndex: 2, // Review
+      stageIndex: 1, // Review
       fileName: "exam_export_may26.xlsx",
       fileSizeMB: 1.3,
       uploadedAgo: "2h ago",
@@ -257,9 +257,9 @@ function main() {
       diagnostics,
     },
     priorCycles: [
-      { id: "jan-2026", name: "January 2026", stageIndex: 7, stepsDone: 8, participants: 4503, assessments: 5, lastActivity: "12 Feb 2026", locked: true, mock: true },
-      { id: "nov-2025", name: "November 2025", stageIndex: 7, stepsDone: 8, participants: 4390, assessments: 4, lastActivity: "03 Dec 2025", locked: true, mock: true },
-      { id: "may-2025", name: "May 2025", stageIndex: 7, stepsDone: 8, participants: 4201, assessments: 4, lastActivity: "11 Jun 2025", locked: true, mock: true },
+      { id: "jan-2026", name: "January 2026", stageIndex: 6, stepsDone: 7, participants: 4503, assessments: 5, lastActivity: "12 Feb 2026", locked: true, mock: true },
+      { id: "nov-2025", name: "November 2025", stageIndex: 6, stepsDone: 7, participants: 4390, assessments: 4, lastActivity: "03 Dec 2025", locked: true, mock: true },
+      { id: "may-2025", name: "May 2025", stageIndex: 6, stepsDone: 7, participants: 4201, assessments: 4, lastActivity: "11 Jun 2025", locked: true, mock: true },
     ],
   };
 

@@ -381,7 +381,7 @@ the shell.
 | Cycles | Cycles dashboard | `/` |
 | Cycles | New cycle | `/cycles/new` |
 | Cycles | Cycle overview (Pipeline) | `/cycles/[cycleId]` |
-| Cycles | Ingest & validate | `/cycles/[cycleId]/ingest` |
+| Cycles | Data import (export + optional essay/incident uploads) | `/cycles/[cycleId]/import` |
 | Cycles | Item review & scoring (hero) | `/cycles/[cycleId]/review/[assessmentId]` |
 | Cycles | Adjustments (incident triage → alterations) | `/cycles/[cycleId]/adjustments` |
 | Cycles | Scoring & grade boundaries | `/cycles/[cycleId]/boundaries` |
@@ -439,7 +439,7 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
 
 - **Navigation.** Nav-rail items reveal a label on hover/focus; the pipeline
   stepper is clickable — each stage links to its screen via `stageHref`
-  (Ingest/Validate → ingest, Score/Boundaries → boundaries, Export → documents),
+  (Data import → import, Score/Boundaries → boundaries, Export → documents),
   threaded from the `Shell`'s `cycleId`.
 - **Responsive.** Two-column work areas reflow via `.hf-split` / `flexWrap` with
   sensible min-widths (boundaries, documents, analytics, cycle overview); tables
@@ -487,13 +487,22 @@ computations against hand-computed values.
 
 ### Adjustments & Distinction safeguard (the workflow)
 
-The pipeline stepper is eight stages: **Ingest → Validate → Review →
-Adjustments → Score → Boundaries → Grades → Export**.
+The pipeline stepper is seven stages: **Data import → Review → Adjustments →
+Score → Boundaries → Grades → Export**. (Ingest and Validate were merged into a
+single **Data import** step — `/cycles/[id]/import` — since they were always one
+screen.)
 
-- **Optional uploads at Ingest (never gate progress).** Alongside the QM export:
-  the **essay-marks** file and the **incident log** (see the scoring-model
-  section above). Each is parsed client-side and surfaces a matched/unmatched
-  preview; a clearly-labelled `SAMPLE` can be loaded without a file.
+- **Data import (`/cycles/[id]/import`).** The full-width window is three equal,
+  expandable input cards — **01 Raw exam export (Required)**, **02 Essay marks
+  (Optional)**, **03 Incident log (Optional)**. Open a card to upload its file and
+  read its validation/match report inline; each header carries the card's status
+  (export pass/warn/must-fix; the optional cards their match counts). Only the
+  raw export is required, and its blocking issues (duplicate submissions, with
+  Keep-latest / Keep-first / Exclude actions inline) must be resolved to continue;
+  the optional files never block. Each optional file is parsed client-side and
+  surfaces a matched/unmatched preview; a clearly-labelled `SAMPLE` can be loaded
+  without a file. There is no right-hand sidebar — the mark-composition explainer
+  lives in Grades.
 - **Adjustments (`/cycles/[id]/adjustments`, `getAdjustments` / `decideIncident`).**
   Replaces the old per-student exclusion screen. Two tabs: **Incident triage**
   (each incident shown with full context; decided per-student / whole-subject
