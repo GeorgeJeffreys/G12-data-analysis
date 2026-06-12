@@ -17,14 +17,16 @@ import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { AWARD_SHORT } from "@/lib/data/grading";
-import type { GradeCell, GradesModel } from "@/lib/data/types";
+import type { GradeCell, GradesModel, StudentComposition } from "@/lib/data/types";
 
 export default function GradesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
   const model = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
+  const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
   const user = provider.getCurrentUser();
   const [confirming, setConfirming] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (!model) {
     return (
@@ -50,7 +52,12 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       stageIndex={5}
       cycleId={cycleId}
       actions={
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {model.locked && (
+            <span style={{ display: "flex", alignItems: "center", gap: 5, color: H.good, fontWeight: 600, fontSize: 11.5 }}>
+              <Mark kind="pass" size={13} /> Locked &amp; signed off
+            </span>
+          )}
           <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>
             <Icon name="doc" />
             Export CSV
@@ -63,9 +70,12 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       }
       stageAction={
         model.locked ? (
-          <span style={{ display: "flex", alignItems: "center", gap: 8, color: H.good, fontWeight: 700, fontSize: 12.5 }}>
-            <Mark kind="pass" size={16} /> Locked &amp; signed off
-          </span>
+          <Link href={`/cycles/${cycleId}/documents`}>
+            <Button variant="pri">
+              <Icon name="award" color="#fff" />
+              Generate documents
+            </Button>
+          </Link>
         ) : (
           <Button
             variant="pri"
@@ -122,53 +132,69 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         )}
 
         {model.locked && (
-          <div className="hf-card" style={{ padding: "13px 17px", background: H.goodSoft, borderColor: H.good, display: "flex", gap: 12, alignItems: "center" }}>
-            <Mark kind="pass" size={18} />
-            <span style={{ fontSize: 13, flex: 1 }}>
+          <div className="hf-card" style={{ padding: "11px 16px", background: H.goodSoft, borderColor: H.good, display: "flex", gap: 12, alignItems: "center" }}>
+            <Mark kind="pass" size={16} />
+            <span style={{ fontSize: 12.5, flex: 1 }}>
               Grades are locked and signed off by {user.name}. The cycle is read-only.
             </span>
-            <Link href={`/cycles/${cycleId}/documents`}>
-              <Button variant="pri"><Icon name="award" color="#fff" />Generate documents</Button>
-            </Link>
             {user.role === "lead_admin" && (
               <Button variant="ghost" onClick={unlock}>Re-open cycle</Button>
             )}
           </div>
         )}
 
-        <div className="hf-card" style={{ overflow: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <th className="hf-th">Participant</th>
-                {model.assessments.map((a) => (
-                  <th key={a.id} className="hf-th" style={{ textAlign: "center" }}>{a.shortName.split(" ")[0]}</th>
-                ))}
-                <th className="hf-th" style={{ textAlign: "center" }}>Overall</th>
-              </tr>
-            </thead>
-            <tbody>
-              {model.rows.map((r) => (
-                <tr key={r.id} className="hf-hover">
-                  <td className="hf-td">
-                    <span className="hf-mono" style={{ fontSize: 11, color: H.ink3, marginRight: 10 }}>{r.id}</span>
-                    <span style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</span>
-                  </td>
-                  {model.assessments.map((a) => {
-                    const cell = r.grades[a.id];
-                    return (
-                      <td key={a.id} className="hf-td" style={{ textAlign: "center" }}>
-                        <StarBadge cell={cell} />
-                      </td>
-                    );
-                  })}
-                  <td className="hf-td" style={{ textAlign: "center" }}>
-                    <AwardBadge award={r.award} />
-                  </td>
+        {/* grades table + click-row → composition right-panel (same pattern as Review) */}
+        <div style={{ display: "flex", gap: 0, alignItems: "stretch", flex: 1, minHeight: 0 }}>
+          <div className="hf-card" style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th className="hf-th">Participant</th>
+                  {model.assessments.map((a) => (
+                    <th key={a.id} className="hf-th" style={{ textAlign: "center" }}>{subjectHeader(a.shortName)}</th>
+                  ))}
+                  <th className="hf-th" style={{ textAlign: "center" }}>Overall</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {model.rows.map((r) => {
+                  const on = selectedId === r.id;
+                  return (
+                    <tr
+                      key={r.id}
+                      className="hf-hover"
+                      onClick={() => setSelectedId((cur) => (cur === r.id ? null : r.id))}
+                      style={{ cursor: "pointer", background: on ? H.pinkSoft2 : "transparent", boxShadow: on ? `inset 3px 0 0 ${H.pink}` : "none" }}
+                    >
+                      <td className="hf-td">
+                        <span className="hf-mono" style={{ fontSize: 11, color: H.ink3, marginRight: 10 }}>{r.id}</span>
+                        <span style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</span>
+                      </td>
+                      {model.assessments.map((a) => {
+                        const cell = r.grades[a.id];
+                        return (
+                          <td key={a.id} className="hf-td" style={{ textAlign: "center" }}>
+                            <StarBadge cell={cell} />
+                          </td>
+                        );
+                      })}
+                      <td className="hf-td" style={{ textAlign: "center" }}>
+                        <AwardBadge award={r.award} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {selectedId && (
+            <CompositionPanel
+              student={comp?.students.find((s) => s.participantId === selectedId) ?? null}
+              award={model.rows.find((r) => r.id === selectedId)?.award ?? ""}
+              onBack={() => setSelectedId(null)}
+            />
+          )}
         </div>
 
         {!model.locked && (
@@ -216,6 +242,58 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         </div>
       )}
     </Shell>
+  );
+}
+
+/** Plain subject-name column header (no "+E" essay suffix). */
+function subjectHeader(shortName: string): string {
+  if (/applicable/i.test(shortName)) return "Applicable Math";
+  if (/english/i.test(shortName)) return "English";
+  if (/scientific/i.test(shortName)) return "Scientific";
+  if (/arabic/i.test(shortName)) return "Arabic";
+  if (/life/i.test(shortName)) return "Life";
+  return shortName.split(" ")[0] ?? shortName;
+}
+
+/**
+ * Right-hand composition panel — the selected student's mark breakdown:
+ * MCQ + Essay + Alterations = subject total (out of its max), per subject. Same
+ * click-row → right-panel pattern as Review.
+ */
+function CompositionPanel({ student, award, onBack }: { student: StudentComposition | null; award: string; onBack: () => void }) {
+  return (
+    <aside style={{ width: 340, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", overflow: "auto", padding: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+        <button onClick={onBack} className="hf-btn ghost" style={{ fontSize: 12, padding: "3px 8px" }}>← Back</button>
+        <div style={{ flex: 1 }} />
+      </div>
+      {!student ? (
+        <div className="hf-sub" style={{ padding: 12 }}>No composition for this student.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{student.name}</div>
+            <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>
+              <span className="hf-mono">{student.participantId}</span> · Overall <b style={{ color: H.ink }}>{AWARD_SHORT[award] ?? award ?? "—"}</b> · {student.overall.pct}%
+            </div>
+          </div>
+          <div className="hf-sub" style={{ fontSize: 11.5 }}>
+            Each subject total is <b style={{ color: H.ink }}>MCQ + Essay + Alterations</b>, out of its max (English/Arabic include the 20 essay marks).
+          </div>
+          {student.subjects.map((c) => (
+            <div key={c.assessmentId} className="hf-card" style={{ padding: "11px 13px" }}>
+              <div style={{ fontWeight: 600, fontSize: 12.5 }}>{c.name}</div>
+              <div className="hf-mono" style={{ fontSize: 12, marginTop: 6, color: H.ink2, lineHeight: 1.8 }}>
+                <div>MCQ <span style={{ float: "right", color: H.ink }}>{c.mcq}</span></div>
+                <div>Essay <span style={{ float: "right", color: c.hasEssay ? H.ink : H.ink3 }}>{c.hasEssay ? c.essay : "—"}</span></div>
+                <div>Alterations <span style={{ float: "right", color: c.alterations ? H.pink : H.ink3 }}>{c.alterations >= 0 ? "+" : ""}{c.alterations}</span></div>
+                <div style={{ borderTop: `1px solid ${H.line2}`, marginTop: 4, paddingTop: 4, fontWeight: 700 }}>Total <span style={{ float: "right", color: H.ink }}>{c.total}/{c.max}</span></div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </aside>
   );
 }
 

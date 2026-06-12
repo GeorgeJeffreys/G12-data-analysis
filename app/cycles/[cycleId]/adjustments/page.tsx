@@ -1,13 +1,12 @@
 "use client";
 
 /**
- * Screen — Adjustments (replaces the old per-student exclusion step). Two jobs:
- *  1. Triage each incident-log / complaint row into an alteration — applied to a
- *     specific student, a whole subject (bulk), or no action. Nothing is
- *     auto-applied; every alteration is a recorded human decision (audit-logged).
- *  2. Show the transparent per-student composition: MCQ + Essay + Alterations =
- *     subject total (out of its max).
- * The step is optional/skippable when no incident log was added.
+ * Screen — Adjustments (replaces the old per-student exclusion step). Triage each
+ * incident-log / complaint row into an alteration — applied to a specific student,
+ * a whole subject (bulk), or no action. Nothing is auto-applied; every alteration
+ * is a recorded human decision (audit-logged). The step is optional/skippable when
+ * no incident log was added. (The per-student mark composition now lives on the
+ * Grades screen — click a student there.)
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -18,14 +17,12 @@ import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { cyclesSubnav } from "@/lib/ui/subnav";
-import type { AdjustmentIncident, AdjustmentsModel, CompositionModel } from "@/lib/data/types";
+import type { AdjustmentIncident, AdjustmentsModel } from "@/lib/data/types";
 
 export default function AdjustmentsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
-  const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]) as CompositionModel | null;
-  const [tab, setTab] = useState<"triage" | "composition">("triage");
 
   const shellProps = {
     active: "Cycles" as const,
@@ -62,8 +59,8 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
           <div style={{ flex: 1, minWidth: 280 }}>
             <div className="hf-h1">Adjustments</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 640 }}>
-              Triage each incident into a raw-mark alteration, and check how every subject total is built
-              from <b style={{ color: H.ink }}>MCQ + Essay + Alterations</b>. Nothing is applied automatically.
+              Triage each incident into a raw-mark alteration — per student, a whole subject, or no action.
+              Nothing is applied automatically. (See each student’s mark composition on the Grades screen.)
             </div>
           </div>
           <div style={{ display: "flex", gap: 22 }}>
@@ -73,21 +70,8 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
           </div>
         </div>
 
-        {/* tabs */}
-        <div className="hf-pad" style={{ display: "flex", gap: 4, padding: "14px 28px 0", borderBottom: `1px solid ${H.line}` }}>
-          {([["triage", "Incident triage"], ["composition", "Mark composition"]] as const).map(([k, label]) => (
-            <button
-              key={k}
-              onClick={() => setTab(k)}
-              style={{ padding: "9px 14px", fontSize: 13, fontWeight: tab === k ? 700 : 500, color: tab === k ? H.pink : H.ink2, borderBottom: `3px solid ${tab === k ? H.pink : "transparent"}`, background: "transparent", border: "none", cursor: "pointer" }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-
-        <div style={{ flex: 1, overflow: "auto" }}>
-          {tab === "triage" ? <Triage cycleId={cycleId} adj={adj} /> : <Composition comp={comp} />}
+        <div style={{ flex: 1, overflow: "auto", borderTop: `1px solid ${H.line}` }}>
+          <Triage cycleId={cycleId} adj={adj} />
         </div>
       </div>
     </Shell>
@@ -246,81 +230,5 @@ function Field({ label, children, grow }: { label: string; children: React.React
       <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
       {children}
     </label>
-  );
-}
-
-// ── composition ─────────────────────────────────────────────────────────────
-function Composition({ comp }: { comp: CompositionModel | null }) {
-  const [open, setOpen] = useState<string | null>(null);
-  if (!comp) return <div style={{ padding: 28 }} className="hf-sub">No composition data.</div>;
-  return (
-    <div style={{ padding: "18px 28px" }}>
-      <div className="hf-sub" style={{ fontSize: 12, marginBottom: 12 }}>
-        Each subject total is <b style={{ color: H.ink }}>MCQ + Essay + Alterations</b>, out of its max
-        (English/Arabic include the 20 essay marks). Click a student for the line-by-line breakdown.
-      </div>
-      <div className="hf-card" style={{ overflow: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-          <thead>
-            <tr>
-              <th className="hf-th">Student</th>
-              {comp.subjects.map((s) => (
-                <th key={s.id} className="hf-th" style={{ textAlign: "right" }}>
-                  {s.name.split(" ")[0]}{s.hasEssay && <span style={{ color: H.pink }}> +E</span>}
-                </th>
-              ))}
-              <th className="hf-th" style={{ textAlign: "right" }}>Overall</th>
-            </tr>
-          </thead>
-          <tbody>
-            {comp.students.map((st) => (
-              <FragmentRow key={st.participantId} st={st} open={open === st.participantId} onToggle={() => setOpen(open === st.participantId ? null : st.participantId)} subjects={comp.subjects} />
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function FragmentRow({ st, open, onToggle, subjects }: { st: CompositionModel["students"][number]; open: boolean; onToggle: () => void; subjects: CompositionModel["subjects"] }) {
-  const bySubject = new Map(st.subjects.map((s) => [s.assessmentId, s]));
-  return (
-    <>
-      <tr className="hf-hover" style={{ cursor: "pointer" }} onClick={onToggle}>
-        <td className="hf-td">
-          <span className="hf-mono" style={{ fontSize: 11, color: H.ink3, marginRight: 8 }}>{st.participantId}</span>
-          <span style={{ fontWeight: 600, fontSize: 12.5 }}>{st.name}</span>
-        </td>
-        {subjects.map((sub) => {
-          const c = bySubject.get(sub.id);
-          return (
-            <td key={sub.id} className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 12 }}>
-              {c ? `${c.total}/${c.max}` : "—"}
-            </td>
-          );
-        })}
-        <td className="hf-td hf-mono" style={{ textAlign: "right", fontWeight: 700, fontSize: 12.5 }}>{st.overall.pct}%</td>
-      </tr>
-      {open && (
-        <tr>
-          <td colSpan={subjects.length + 2} style={{ padding: 0, background: H.canvas }}>
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", padding: "12px 16px" }}>
-              {st.subjects.map((c) => (
-                <div key={c.assessmentId} className="hf-card" style={{ padding: "10px 13px", minWidth: 190 }}>
-                  <div style={{ fontWeight: 600, fontSize: 12 }}>{c.name}</div>
-                  <div className="hf-mono" style={{ fontSize: 12, marginTop: 6, color: H.ink2, lineHeight: 1.7 }}>
-                    <div>MCQ <span style={{ float: "right", color: H.ink }}>{c.mcq}</span></div>
-                    <div>Essay <span style={{ float: "right", color: c.hasEssay ? H.ink : H.ink3 }}>{c.hasEssay ? c.essay : "—"}</span></div>
-                    <div>Alterations <span style={{ float: "right", color: c.alterations ? H.pink : H.ink3 }}>{c.alterations >= 0 ? "+" : ""}{c.alterations}</span></div>
-                    <div style={{ borderTop: `1px solid ${H.line2}`, marginTop: 4, paddingTop: 4, fontWeight: 700 }}>Total <span style={{ float: "right", color: H.ink }}>{c.total}/{c.max}</span></div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
   );
 }
