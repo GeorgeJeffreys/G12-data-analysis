@@ -42,9 +42,9 @@ export default function RolesPage() {
           </div>
         </div>
 
-        <Card style={{ overflow: "hidden", maxWidth: 880 }}>
-          {/* table header toolbar — Add role lives here, beside the roles header */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: `1px solid ${H.line}`, background: H.tint }}>
+        <Card style={{ overflow: "hidden", width: "fit-content", maxWidth: "100%" }}>
+          {/* table header toolbar — Add role sits neatly on the right of the header bar */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${H.line}`, background: H.tint }}>
             <span className="hf-lbl">Roles &amp; capabilities</span>
             <div style={{ flex: 1 }} />
             {adding ? (
@@ -61,9 +61,9 @@ export default function RolesPage() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th className="hf-th" style={{ width: "46%" }}>Capability</th>
+                <th className="hf-th" style={{ minWidth: 240 }}>Capability</th>
                 {model.roles.map((r) => (
-                  <th key={r.id} className="hf-th" style={{ textAlign: "center", minWidth: 130 }}>
+                  <th key={r.id} className="hf-th" style={{ textAlign: "center", width: 150 }}>
                     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
                       {editingRole === r.id ? (
                         <input
