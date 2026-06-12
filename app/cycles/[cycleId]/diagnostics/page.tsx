@@ -64,7 +64,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
           ))}
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "20px 28px 40px", display: "flex", flexDirection: "column", gap: 18 }}>
           {/* Family A — speededness / omission / completion */}
           <div className="hf-card" style={{ overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
@@ -75,7 +75,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
               <span style={{ display: "flex", gap: 10 }}>{(["Good", "Review", "Flag"] as DiagStatus[]).map((s) => <DiagStatusBadge key={s} s={s} />)}</span>
             </div>
             <div style={{ overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
                 <thead>
                   <tr>
                     <th className="hf-th">Element</th>
@@ -95,7 +95,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                       <Fragment key={g.key}>
                         {i === 1 && <SectionHead cols={5}>Major curriculum elements</SectionHead>}
                         <tr style={{ background: whole ? H.canvas : "transparent" }} className={whole ? "" : "hf-hover"}>
-                          <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26 }}>{whole ? "Whole assessment" : g.key}</td>
+                          <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26, maxWidth: 230, whiteSpace: "normal", lineHeight: 1.25 }}>{whole ? "Whole assessment" : g.key}</td>
                           <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{s.speedednessIndex.toFixed(2)}</td>
                           <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13, color: omTone === "bad" ? H.bad : omTone === "warn" ? H.warn : H.ink }}>{(s.omissionRate * 100).toFixed(1)}%</td>
                           <td className="hf-td" style={{ textAlign: "right" }}><RateBar v={s.completion * 100} tone={compTone} /></td>
@@ -119,7 +119,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
               <span className="hf-sub" style={{ fontSize: 11 }}>correlation of median item time ↔ score %</span>
             </div>
             <div style={{ overflow: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
                 <thead>
                   <tr>
                     <th className="hf-th">Element</th>
@@ -137,7 +137,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                       <Fragment key={g.key}>
                         {i === 1 && <SectionHead cols={5}>Major curriculum elements</SectionHead>}
                         <tr style={{ background: whole ? H.canvas : "transparent" }} className={whole ? "" : "hf-hover"}>
-                          <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26 }}>{whole ? "Whole assessment" : g.key}</td>
+                          <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26, maxWidth: 230, whiteSpace: "normal", lineHeight: 1.25 }}>{whole ? "Whole assessment" : g.key}</td>
                           <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{t.nStudents}</td>
                           <td className="hf-td" style={{ textAlign: "right" }}>{t.pearson === null ? <span className="hf-sub hf-mono">—</span> : <CorrMeter r={t.pearson} />}</td>
                           <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{t.spearman === null ? "—" : t.spearman.toFixed(2)}</td>
