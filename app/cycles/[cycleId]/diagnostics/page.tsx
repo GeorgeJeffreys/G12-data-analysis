@@ -6,17 +6,18 @@
  * from the raw QM export (response-time + answer columns) and never affect
  * grading. They reproduce the team's Speededness and Timing workbook definitions.
  */
-import { useState } from "react";
+import { Fragment, useState, type CSSProperties } from "react";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { Badge } from "@/components/ui/primitives";
+import { Mark } from "@/components/ui/icons";
 import { cyclesSubnav } from "@/lib/ui/subnav";
-import type { DiagnosticsModel, DiagnosticsAssessment, DiagnosticsGroup } from "@/lib/data/types";
+import type { DiagnosticsModel, DiagnosticsAssessment } from "@/lib/data/types";
 import type { DiagStatus } from "@/lib/diagnostics";
 
 const statusColor = (s: DiagStatus) => (s === "Good" ? H.good : s === "Review" ? H.warn : H.bad);
 const statusBg = (s: DiagStatus) => (s === "Good" ? H.goodSoft : s === "Review" ? H.warnSoft : H.badSoft);
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
 export default function DiagnosticsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -40,15 +41,17 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
-          <div className="hf-h1">Timing &amp; speededness diagnostics</div>
-          <div className="hf-sub" style={{ marginTop: 7, maxWidth: 680 }}>
-            Computed from the raw export’s response-time and answer columns — <b style={{ color: H.ink }}>informational
-            only</b>, never part of grading. Speededness flags whether students were running out of time; timing–performance
-            relates time-on-task to score.
+          <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="hf-h1">Diagnostics</div>
+            <Badge tone="neutral"><Mark kind="warn" size={11} />Review only · not a grading step</Badge>
+          </div>
+          <div className="hf-sub" style={{ marginTop: 7, maxWidth: 700 }}>
+            Exam-quality measures the app computes from raw response-time data. Use them to spot speededness or
+            weak elements for the next sitting — they never change a student’s mark or grade.
           </div>
         </div>
 
-        {/* assessment tabs */}
+        {/* assessment selector (existing sub-nav style) */}
         <div className="hf-pad" style={{ display: "flex", gap: 4, padding: "14px 28px 0", borderBottom: `1px solid ${H.line}`, overflowX: "auto" }}>
           {model.assessments.map((as, i) => (
             <button
@@ -61,103 +64,161 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
           ))}
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 22 }}>
-          <Section title="Speededness · omission · completion" sub="By assessment, then by major element. Late items = the final 25% of questions by presented order.">
-            <SpeededTable a={a} />
-          </Section>
-          <Section title="Timing–performance" sub="Correlation between each student's median item time and their score %, at assessment and element level.">
-            <TimingTable a={a} />
-          </Section>
+        <div style={{ flex: 1, overflow: "auto", padding: "20px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+          {/* Family A — speededness / omission / completion */}
+          <div className="hf-card" style={{ overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span className="hf-h2">Speededness, omission &amp; completion</span>
+                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>Whether students had enough time to attempt the questions.</div>
+              </div>
+              <span style={{ display: "flex", gap: 10 }}>{(["Good", "Review", "Flag"] as DiagStatus[]).map((s) => <DiagStatusBadge key={s} s={s} />)}</span>
+            </div>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    <th className="hf-th">Element</th>
+                    <Hc t="Speededness index" sub="0–1, lower is better" />
+                    <Hc t="Omission rate" sub="% left blank" />
+                    <Hc t="Completion rate" sub="% reaching the end" />
+                    <th className="hf-th" style={{ textAlign: "right" }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.groups.map((g, i) => {
+                    const s = g.speeded;
+                    const whole = i === 0;
+                    const omTone: Tone = s.omissionStatus === "Flag" ? "bad" : s.omissionStatus === "Review" ? "warn" : "good";
+                    const compTone: Tone = s.completionStatus === "Flag" ? "bad" : s.completionStatus === "Review" ? "warn" : "good";
+                    return (
+                      <Fragment key={g.key}>
+                        {i === 1 && <SectionHead cols={5}>Major curriculum elements</SectionHead>}
+                        <tr style={{ background: whole ? H.canvas : "transparent" }} className={whole ? "" : "hf-hover"}>
+                          <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26 }}>{whole ? "Whole assessment" : g.key}</td>
+                          <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{s.speedednessIndex.toFixed(2)}</td>
+                          <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13, color: omTone === "bad" ? H.bad : omTone === "warn" ? H.warn : H.ink }}>{(s.omissionRate * 100).toFixed(1)}%</td>
+                          <td className="hf-td" style={{ textAlign: "right" }}><RateBar v={s.completion * 100} tone={compTone} /></td>
+                          <td className="hf-td" style={{ textAlign: "right" }}><DiagStatusBadge s={s.speededStatus} /></td>
+                        </tr>
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Family B — timing / performance */}
+          <div className="hf-card" style={{ overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span className="hf-h2">Timing &amp; performance</span>
+                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>Whether time spent relates to how well students scored.</div>
+              </div>
+              <span className="hf-sub" style={{ fontSize: 11 }}>correlation of median item time ↔ score %</span>
+            </div>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
+                <thead>
+                  <tr>
+                    <th className="hf-th">Element</th>
+                    <Hc t="Students" sub="with timing" />
+                    <Hc t="Time ↔ score" sub="Pearson r" />
+                    <Hc t="Spearman" sub="rank ρ" />
+                    <th className="hf-th">Strength</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.groups.map((g, i) => {
+                    const t = g.timing;
+                    const whole = i === 0;
+                    return (
+                      <Fragment key={g.key}>
+                        {i === 1 && <SectionHead cols={5}>Major curriculum elements</SectionHead>}
+                        <tr style={{ background: whole ? H.canvas : "transparent" }} className={whole ? "" : "hf-hover"}>
+                          <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26 }}>{whole ? "Whole assessment" : g.key}</td>
+                          <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{t.nStudents}</td>
+                          <td className="hf-td" style={{ textAlign: "right" }}>{t.pearson === null ? <span className="hf-sub hf-mono">—</span> : <CorrMeter r={t.pearson} />}</td>
+                          <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{t.spearman === null ? "—" : t.spearman.toFixed(2)}</td>
+                          <td className="hf-td" style={{ fontSize: 11.5, color: H.ink2, fontWeight: 600 }}>{t.pearsonStrength}</td>
+                        </tr>
+                      </Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ display: "flex", padding: "12px 18px", gap: 9, alignItems: "center", background: H.canvas, borderTop: `1px solid ${H.line}` }}>
+              <Mark kind="warn" size={13} />
+              <span className="hf-sub" style={{ fontSize: 11.5 }}>
+                A stronger negative correlation means slower responses tended to score lower — usually a sign the element
+                was demanding, not a data fault. Informational only; nothing here changes a grade.
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </Shell>
   );
 }
 
-function Section({ title, sub, children }: { title: string; sub: string; children: React.ReactNode }) {
+type Tone = "good" | "warn" | "bad";
+
+function Hc({ t, sub }: { t: string; sub?: string }) {
   return (
-    <div>
-      <div className="hf-h2">{title}</div>
-      <div className="hf-sub" style={{ fontSize: 12, marginTop: 3, marginBottom: 12 }}>{sub}</div>
-      <div className="hf-card" style={{ overflow: "auto" }}>{children}</div>
-    </div>
+    <th className="hf-th" style={{ textAlign: "right" }}>
+      {t}
+      {sub && <div style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: H.ink3, fontSize: 9 }}>{sub}</div>}
+    </th>
   );
 }
 
-function Pill({ s, children }: { s: DiagStatus; children: React.ReactNode }) {
+function SectionHead({ cols, children }: { cols: number; children: React.ReactNode }) {
   return (
-    <span className="hf-mono" style={{ fontSize: 11.5, fontWeight: 700, color: statusColor(s), background: statusBg(s), padding: "2px 8px", borderRadius: 999 }}>
-      {children}
+    <tr>
+      <td colSpan={cols} style={{ padding: "8px 12px", background: H.tint, borderTop: `1px solid ${H.line2}`, borderBottom: `1px solid ${H.line2}` }}>
+        <span className="hf-lbl">{children}</span>
+      </td>
+    </tr>
+  );
+}
+
+function DiagStatusBadge({ s }: { s: DiagStatus }) {
+  const kind = s === "Good" ? "pass" : s === "Review" ? "warn" : "fail";
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: statusColor(s), background: statusBg(s), padding: "2px 8px", borderRadius: 999 }}>
+      <Mark kind={kind} size={11} />
+      {s}
     </span>
   );
 }
 
-function rowLabel(g: DiagnosticsGroup): string {
-  return g.key === "Overall" ? "Overall" : g.key;
-}
-
-function SpeededTable({ a }: { a: DiagnosticsAssessment }) {
+/** Horizontal completion meter (0–100). */
+function RateBar({ v, tone }: { v: number; tone: Tone }) {
+  const c = tone === "bad" ? H.bad : tone === "warn" ? H.warn : H.good;
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
-      <thead>
-        <tr>
-          <th className="hf-th">Group</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Items</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Omission</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Completion</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Speededness</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Late−early omission</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Early−late accuracy</th>
-        </tr>
-      </thead>
-      <tbody>
-        {a.groups.map((g) => {
-          const s = g.speeded;
-          const first = g.key === "Overall";
-          return (
-            <tr key={g.key} style={{ background: first ? H.tint : "transparent" }}>
-              <td className="hf-td" style={{ fontWeight: first ? 700 : 500, fontSize: 12.5 }}>{rowLabel(g)}</td>
-              <td className="hf-td hf-mono" style={{ textAlign: "right" }}>{s.nItems}</td>
-              <td className="hf-td" style={{ textAlign: "right" }}><Pill s={s.omissionStatus}>{pct(s.omissionRate)}</Pill></td>
-              <td className="hf-td" style={{ textAlign: "right" }}><Pill s={s.completionStatus}>{pct(s.completion)}</Pill></td>
-              <td className="hf-td" style={{ textAlign: "right" }}><Pill s={s.speededStatus}>{s.speedednessIndex.toFixed(3)}</Pill></td>
-              <td className="hf-td hf-mono" style={{ textAlign: "right", color: H.ink2 }}>{pct(Math.max(0, s.lateOmission - s.earlyOmission))}</td>
-              <td className="hf-td hf-mono" style={{ textAlign: "right", color: H.ink2 }}>{pct(Math.max(0, s.earlyAccuracy - s.lateAccuracy))}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <span style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "flex-end" }}>
+      <span style={{ width: 64, height: 6, background: H.tint2, borderRadius: 5, flex: "0 0 auto" }}>
+        <span style={{ display: "block", width: `${Math.max(0, Math.min(100, v))}%`, height: "100%", background: c, borderRadius: 5 }} />
+      </span>
+      <span className="hf-mono" style={{ fontSize: 12.5, width: 46, textAlign: "right" }}>{v.toFixed(1)}%</span>
+    </span>
   );
 }
 
-function TimingTable({ a }: { a: DiagnosticsAssessment }) {
+/** Diverging correlation meter: a centre tick, the bar extends left (−) or right (+). */
+function CorrMeter({ r }: { r: number }) {
+  const a = Math.abs(r);
+  const tone: Tone | "neutral" = a >= 0.4 ? "bad" : a >= 0.2 ? "warn" : "neutral";
+  const c = tone === "bad" ? H.bad : tone === "warn" ? H.warn : H.bar;
   return (
-    <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
-      <thead>
-        <tr>
-          <th className="hf-th">Group</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Students</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Pearson r</th>
-          <th className="hf-th" style={{ textAlign: "right" }}>Spearman ρ</th>
-          <th className="hf-th">Strength</th>
-        </tr>
-      </thead>
-      <tbody>
-        {a.groups.map((g) => {
-          const t = g.timing;
-          const first = g.key === "Overall";
-          return (
-            <tr key={g.key} style={{ background: first ? H.tint : "transparent" }}>
-              <td className="hf-td" style={{ fontWeight: first ? 700 : 500, fontSize: 12.5 }}>{rowLabel(g)}</td>
-              <td className="hf-td hf-mono" style={{ textAlign: "right" }}>{t.nStudents}</td>
-              <td className="hf-td hf-mono" style={{ textAlign: "right" }}>{t.pearson === null ? "—" : t.pearson.toFixed(3)}</td>
-              <td className="hf-td hf-mono" style={{ textAlign: "right" }}>{t.spearman === null ? "—" : t.spearman.toFixed(3)}</td>
-              <td className="hf-td" style={{ fontSize: 12, color: H.ink2 }}>{t.pearsonStrength}</td>
-            </tr>
-          );
-        })}
-      </tbody>
-    </table>
+    <span style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "flex-end" }}>
+      <span style={{ width: 50, height: 6, background: H.tint2, borderRadius: 5, position: "relative", flex: "0 0 auto" }}>
+        <span style={{ position: "absolute", left: "50%", top: -2, width: 1, height: 10, background: H.line2 }} />
+        <span style={{ position: "absolute", [r < 0 ? "right" : "left"]: "50%", width: `${Math.min(50, a * 100)}%`, height: "100%", background: c, borderRadius: 5 } as CSSProperties} />
+      </span>
+      <span className="hf-mono" style={{ fontSize: 12.5, width: 40, textAlign: "right", color: tone === "bad" ? H.bad : tone === "warn" ? H.warn : H.ink }}>{r.toFixed(2)}</span>
+    </span>
   );
 }
