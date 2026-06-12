@@ -9,9 +9,19 @@ import { H } from "@/lib/ui/tokens";
 import { EntryFrame } from "@/components/entry/EntryFrame";
 import { Button, Avatar, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
+import { createClient } from "@/lib/supabase/client";
+
+const SUPABASE = process.env.NEXT_PUBLIC_DATA_PROVIDER === "supabase";
 
 export default function AccessDeniedPage() {
   const router = useRouter();
+  const switchAccount = async () => {
+    if (SUPABASE) {
+      try { await createClient().auth.signOut(); } catch { /* ignore */ }
+    }
+    router.push("/signin");
+    router.refresh();
+  };
   return (
     <EntryFrame>
       <div style={{ width: 400 }}>
@@ -39,7 +49,7 @@ export default function AccessDeniedPage() {
               Email a G12 lead to request access
             </Button>
           </a>
-          <Button style={{ width: "100%", justifyContent: "center", padding: 12 }} onClick={() => router.push("/signin")}>
+          <Button style={{ width: "100%", justifyContent: "center", padding: 12 }} onClick={switchAccount}>
             Sign in with a different account
           </Button>
         </div>

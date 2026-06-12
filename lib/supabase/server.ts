@@ -5,22 +5,22 @@ import type { Database } from "@/lib/types/database";
 /**
  * Server-side Supabase client bound to the request cookies. Use this in Server
  * Components, Route Handlers and Server Actions. Still operates as the signed-in
- * user (RLS applies); it does not use the service-role key.
+ * user with the **publishable** key (RLS applies); it does NOT use the secret key.
  */
 export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
-  if (!url || !anonKey) {
+  if (!url || !key) {
     throw new Error(
-      "Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY. " +
+      "Missing NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY. " +
         "Copy .env.example to .env.local and fill in your Supabase project keys.",
     );
   }
 
   const cookieStore = cookies();
 
-  return createServerClient<Database>(url, anonKey, {
+  return createServerClient<Database>(url, key, {
     cookies: {
       getAll() {
         return cookieStore.getAll();

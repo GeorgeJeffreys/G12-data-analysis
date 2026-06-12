@@ -22,6 +22,9 @@ export type MemberRole = "lead_admin" | "reviewer" | "viewer";
 export type QualityRating = "Good" | "Review" | "Flag";
 export type DemandLevel = "D1" | "D2" | "D3";
 export type SchemeMethod = "judgemental" | "fixed_pct";
+// 0003
+export type IncidentSource = "incident_log" | "complaint";
+export type AlterationApply = "student" | "subject" | "none";
 
 // --- Reusable JSON shapes ----------------------------------------------------
 export interface GradeBand {
@@ -186,6 +189,77 @@ export interface AuditLogRow {
   ts: string;
 }
 
+// --- 0003: adjustments / essays / config tables -----------------------------
+export interface EssayMarkRow {
+  id: string;
+  cycle_id: string;
+  participant_id: string;
+  assessment_id: string;
+  mark: number;
+  essays_counted: number;
+  file_ref: string | null;
+  decided_by: string | null;
+  decided_at: string;
+}
+
+export interface IncidentRow {
+  id: string;
+  cycle_id: string;
+  source: IncidentSource;
+  student_name: string | null;
+  exam: string | null;
+  issue_type: string | null;
+  action_taken: string | null;
+  questions_affected: string | null;
+  staff: string | null;
+  email: string | null;
+  school: string | null;
+  description: string | null;
+  created_at: string;
+}
+
+export interface AlterationRow {
+  id: string;
+  cycle_id: string;
+  incident_id: string | null;
+  apply_to: AlterationApply;
+  participant_id: string | null;
+  assessment_id: string | null;
+  marks: number;
+  reason: string | null;
+  decided_by: string | null;
+  decided_at: string;
+}
+
+export interface DistinctionStateRow {
+  cycle_id: string;
+  confirmed: boolean;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+}
+
+export interface DistinctionOverrideRow {
+  id: string;
+  cycle_id: string;
+  participant_id: string;
+  scope: string;
+  reason: string;
+  decided_by: string | null;
+  decided_at: string;
+}
+
+export interface DocumentSettingsRow {
+  cycle_id: string;
+  settings: Record<string, unknown>;
+  updated_at: string;
+}
+
+export interface WorkspaceSettingRow {
+  key: string;
+  value: unknown;
+  updated_at: string;
+}
+
 // --- Helper to describe a table to the Supabase client -----------------------
 type TableDef<Row, Insert, Update> = {
   Row: Row;
@@ -276,9 +350,42 @@ export interface Database {
         never
       >;
       audit_log: TableDef<AuditLogRow, never, never>;
+      // 0003 — all writes flow through SECURITY DEFINER RPCs, so no client Insert/Update.
+      essay_marks: TableDef<EssayMarkRow, never, never>;
+      incidents: TableDef<IncidentRow, never, never>;
+      alterations: TableDef<AlterationRow, never, never>;
+      distinction_state: TableDef<DistinctionStateRow, never, never>;
+      distinction_overrides: TableDef<DistinctionOverrideRow, never, never>;
+      document_settings: TableDef<DocumentSettingsRow, never, never>;
+      workspace_settings: TableDef<WorkspaceSettingRow, never, never>;
     };
     Views: Record<string, never>;
-    Functions: Record<string, never>;
+    Functions: {
+      // 0001
+      create_cycle: { Args: { p_name: string; p_region?: string }; Returns: ExamCycleRow };
+      set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
+      set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };
+      decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };
+      write_item_stats: { Args: { p_cycle: string; p_engine_version: string; p_stats: unknown }; Returns: undefined };
+      lock_grades: { Args: { p_cycle: string }; Returns: undefined };
+      unlock_grades: { Args: { p_cycle: string; p_reason: string }; Returns: undefined };
+      set_import_validation: { Args: { p_batch: string; p_passed: boolean; p_report: unknown }; Returns: undefined };
+      record_export: { Args: { p_cycle: string; p_kind: string }; Returns: undefined };
+      save_grade_scheme: { Args: { p_cycle: string; p_scope: string; p_method: SchemeMethod; p_bands: unknown }; Returns: GradeSchemeRow };
+      // 0003
+      write_scores: { Args: { p_cycle: string; p_engine_version: string; p_runs: unknown }; Returns: undefined };
+      upsert_essay_marks: { Args: { p_cycle: string; p_file_ref: string | null; p_marks: unknown }; Returns: undefined };
+      clear_essay_marks: { Args: { p_cycle: string }; Returns: undefined };
+      insert_incidents: { Args: { p_cycle: string; p_rows: unknown }; Returns: undefined };
+      clear_incidents: { Args: { p_cycle: string }; Returns: undefined };
+      decide_incident: { Args: { p_cycle: string; p_incident: string; p_apply_to: AlterationApply; p_participant: string | null; p_assessment: string | null; p_marks: number; p_reason: string | null }; Returns: undefined };
+      confirm_distinction_caps: { Args: { p_cycle: string }; Returns: undefined };
+      override_distinction_cap: { Args: { p_cycle: string; p_participant: string; p_scope: string; p_reason: string }; Returns: undefined };
+      undo_distinction_override: { Args: { p_cycle: string; p_participant: string; p_scope: string }; Returns: undefined };
+      set_document_settings: { Args: { p_cycle: string; p_settings: unknown }; Returns: undefined };
+      record_documents: { Args: { p_cycle: string; p_detail: string }; Returns: undefined };
+      set_workspace_setting: { Args: { p_key: string; p_value: unknown }; Returns: undefined };
+    };
     Enums: {
       cycle_status: CycleStatus;
       assessment_status: AssessmentStatus;
@@ -287,6 +394,8 @@ export interface Database {
       quality_rating: QualityRating;
       demand_level: DemandLevel;
       scheme_method: SchemeMethod;
+      incident_source: IncidentSource;
+      alteration_apply: AlterationApply;
     };
     CompositeTypes: Record<string, never>;
   };
