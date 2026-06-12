@@ -105,7 +105,10 @@ import {
   seedAuditEntries,
 } from "./mock-admin";
 
-const seed = seedJson as unknown as Seed;
+/** Default seed (the bundled demo cycle). A different seed can be injected via
+ *  the constructor — e.g. the SupabaseDataProvider hydrates one from the database
+ *  and the seed:supabase script reuses this provider over freshly-ingested data. */
+const DEFAULT_SEED = seedJson as unknown as Seed;
 const engine = getEngine();
 
 interface BoundaryState {
@@ -163,6 +166,10 @@ function qualityThresholdRows(q: QualityThresholds): QualityThresholdRow[] {
 export class InMemoryDataProvider implements DataProvider {
   private version = 0;
   private listeners = new Set<() => void>();
+  /** The cycle data this provider serves. Defaults to the bundled demo seed;
+   *  the SupabaseDataProvider injects one hydrated from the database, and the
+   *  seed:supabase script runs it over freshly-ingested data. */
+  private readonly seed: Seed = DEFAULT_SEED;
 
   // mutable decision state
   private exclusions = new Map<string, Set<string>>(); // cycle:assessment -> itemIds
@@ -231,13 +238,22 @@ export class InMemoryDataProvider implements DataProvider {
 
   private readonly user: CurrentUser = {
     id: "m-rana",
-    // MOCK: no real auth yet. The signed-in user is a Lead (G12 Lead role) so
-    // role-gated controls (Lock, admin) are exercised; swap for the real
-    // Microsoft-authenticated user when Supabase auth lands.
+    // Default MOCK user (a Lead) for the in-memory demo so role-gated controls
+    // (Lock, admin) are exercised. The SupabaseDataProvider injects the real
+    // session-derived user via the constructor.
     name: "Rana Mansour",
     initials: "RM",
     role: "lead_admin",
   };
+
+  /**
+   * @param seed Optional cycle data to serve (defaults to the bundled demo seed).
+   * @param user Optional signed-in user (defaults to the MOCK Lead).
+   */
+  constructor(seed?: Seed, user?: CurrentUser) {
+    if (seed) this.seed = seed;
+    if (user) this.user = user;
+  }
 
   // ── subscription ──────────────────────────────────────────────────────────
   subscribe(listener: () => void): () => void {
@@ -276,7 +292,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   // ── helpers ───────────────────────────────────────────────────────────────
   private assessment(assessmentId: string): SeedAssessment | undefined {
-    return seed.liveCycle.assessments.find((a) => a.id === assessmentId);
+    return this.seed.liveCycle.assessments.find((a) => a.id === assessmentId);
   }
   private excludedSet(cycleId: string, assessmentId: string): Set<string> {
     return this.exclusions.get(`${cycleId}:${assessmentId}`) ?? new Set();
@@ -308,7 +324,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   /** Assessment ids that carry an essay component (English + Arabic). */
   private essaySubjectIds(): string[] {
-    return seed.liveCycle.assessments.filter((a) => /arabic|english/i.test(a.name)).map((a) => a.id);
+    return this.seed.liveCycle.assessments.filter((a) => /arabic|english/i.test(a.name)).map((a) => a.id);
   }
   private itemMetasFor(a: SeedAssessment): ItemMeta[] {
     return a.items.map((it) => ({
@@ -326,8 +342,8 @@ export class InMemoryDataProvider implements DataProvider {
   }
   /** The Arabic/English assessment for an essay subject code (AFL/ESL). */
   private essayAssessmentForCode(code: string): SeedAssessment | undefined {
-    if (/afl|arabic/i.test(code)) return seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name));
-    if (/esl|english/i.test(code)) return seed.liveCycle.assessments.find((a) => /english/i.test(a.name));
+    if (/afl|arabic/i.test(code)) return this.seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name));
+    if (/esl|english/i.test(code)) return this.seed.liveCycle.assessments.find((a) => /english/i.test(a.name));
     return undefined;
   }
   private alterationsFor(cycleId: string, assessmentId?: string): Alteration[] {
@@ -379,7 +395,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   private assessmentRefs(cycleId: string): AssessmentRef[] {
-    return seed.liveCycle.assessments.map((a) => ({
+    return this.seed.liveCycle.assessments.map((a) => ({
       id: a.id,
       name: a.name,
       shortName: a.shortName,
@@ -392,7 +408,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   // ── cycles ────────────────────────────────────────────────────────────────
   listCycles(): CycleSummary[] {
-    const live = seed.liveCycle;
+    const live = this.seed.liveCycle;
     const liveSummary: CycleSummary = {
       id: live.id,
       name: live.name,
@@ -406,7 +422,7 @@ export class InMemoryDataProvider implements DataProvider {
       live: true,
       mock: false,
     };
-    const priors: CycleSummary[] = seed.priorCycles.map((p) => ({
+    const priors: CycleSummary[] = this.seed.priorCycles.map((p) => ({
       id: p.id,
       name: p.name,
       stageIndex: p.stageIndex,
@@ -423,7 +439,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getCycle(cycleId: string): CycleDetail | null {
-    const live = seed.liveCycle;
+    const live = this.seed.liveCycle;
     if (cycleId === live.id) {
       const refs = this.assessmentRefs(cycleId);
       const first = refs[0];
@@ -447,7 +463,7 @@ export class InMemoryDataProvider implements DataProvider {
         assessments: refs,
       };
     }
-    const prior = seed.priorCycles.find((p) => p.id === cycleId);
+    const prior = this.seed.priorCycles.find((p) => p.id === cycleId);
     if (prior) {
       return {
         id: prior.id,
@@ -467,7 +483,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   // ── ingest & validate ─────────────────────────────────────────────────────
   getIngest(cycleId: string): IngestModel | null {
-    const live = seed.liveCycle;
+    const live = this.seed.liveCycle;
     if (cycleId !== live.id) return null;
     return {
       cycleId,
@@ -485,7 +501,7 @@ export class InMemoryDataProvider implements DataProvider {
   // ── item review & scoring ───────────────────────────────────────────────--
   getReview(cycleId: string, assessmentId: string): ReviewModel | null {
     const a = this.assessment(assessmentId);
-    if (cycleId !== seed.liveCycle.id || !a) return null;
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
     const excluded = this.excludedSet(cycleId, assessmentId);
     const refs = this.assessmentRefs(cycleId);
     const ref = refs.find((r) => r.id === assessmentId)!;
@@ -563,7 +579,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null {
     const a = this.assessment(assessmentId);
-    if (cycleId !== seed.liveCycle.id || !a) return null;
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
     const index = a.items.findIndex((it) => it.id === itemId);
     if (index < 0) return null;
     const item = a.items[index]!;
@@ -667,7 +683,7 @@ export class InMemoryDataProvider implements DataProvider {
   private scopePcts(cycleId: string, scope: string): number[] {
     if (scope === "overall") {
       const totals = new Map<string, { raw: number; max: number }>();
-      for (const a of seed.liveCycle.assessments) {
+      for (const a of this.seed.liveCycle.assessments) {
         for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
           const t = totals.get(pid) ?? { raw: 0, max: 0 };
           t.raw += v.raw;
@@ -683,9 +699,9 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const scopes = [
-      ...seed.liveCycle.assessments.map((a) => ({ id: a.id, label: a.shortName })),
+      ...this.seed.liveCycle.assessments.map((a) => ({ id: a.id, label: a.shortName })),
       { id: "overall", label: "Overall award" },
     ];
     const scopeLabel = scopes.find((s) => s.id === scope)?.label ?? "Overall award";
@@ -754,7 +770,7 @@ export class InMemoryDataProvider implements DataProvider {
     let itemsScored = 0;
     let excludedCount = 0;
     if (scope === "overall") {
-      for (const a of seed.liveCycle.assessments) {
+      for (const a of this.seed.liveCycle.assessments) {
         const ex = this.excludedSet(cycleId, a.id);
         itemsScored += a.items.length - ex.size;
         excludedCount += ex.size;
@@ -794,7 +810,7 @@ export class InMemoryDataProvider implements DataProvider {
   /** Per-participant overall percentage = total raw / total max across assessments. */
   private overallPctByParticipant(cycleId: string): Map<string, number> {
     const totals = new Map<string, { raw: number; max: number }>();
-    for (const a of seed.liveCycle.assessments) {
+    for (const a of this.seed.liveCycle.assessments) {
       for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
         const t = totals.get(pid) ?? { raw: 0, max: 0 };
         t.raw += v.raw;
@@ -808,7 +824,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getGrades(cycleId: string): GradesModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const refs = this.assessmentRefs(cycleId);
     const perfLevels = this.grading.performanceLevels;
     const awardLevels = this.grading.awardLevels;
@@ -816,7 +832,7 @@ export class InMemoryDataProvider implements DataProvider {
     // per-assessment pct maps + effective cut-points
     const pctMaps = new Map<string, Map<string, number>>();
     const cutsByScope = new Map<string, number[]>();
-    for (const a of seed.liveCycle.assessments) {
+    for (const a of this.seed.liveCycle.assessments) {
       const m = new Map<string, number>();
       for (const [pid, v] of this.pctByParticipant(cycleId, a)) m.set(pid, v.pct);
       pctMaps.set(a.id, m);
@@ -826,9 +842,9 @@ export class InMemoryDataProvider implements DataProvider {
     const overallPcts = this.overallPctByParticipant(cycleId);
     const safeguard = this.distinctionDecisions(cycleId); // studentId -> capped?
 
-    const rows = seed.liveCycle.participants.map((p) => {
+    const rows = this.seed.liveCycle.participants.map((p) => {
       const grades: Record<string, { level: string; stars: string }> = {};
-      for (const a of seed.liveCycle.assessments) {
+      for (const a of this.seed.liveCycle.assessments) {
         const pct = pctMaps.get(a.id)?.get(p.id);
         const level = pct === undefined ? "" : classify(pct, perfLevels, cutsByScope.get(a.id)!);
         grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
@@ -875,7 +891,7 @@ export class InMemoryDataProvider implements DataProvider {
     // subjects with ordered major elements + per-(participant,element) levels
     const subjects: PerfReportSubject[] = [];
     const elementLevelByP = new Map<string, Map<string, Map<string, string>>>(); // assessmentId -> pid -> element -> level
-    for (const a of seed.liveCycle.assessments) {
+    for (const a of this.seed.liveCycle.assessments) {
       const cuts = this.boundaryState(cycleId, a.id).cuts;
       const itemMajor = new Map<string, string | null>();
       const majorOrder: string[] = [];
@@ -913,7 +929,7 @@ export class InMemoryDataProvider implements DataProvider {
 
     const students: PerfReportStudent[] = grades.rows.map((row) => {
       const sub: Record<string, PerfElementResult> = {};
-      for (const a of seed.liveCycle.assessments) {
+      for (const a of this.seed.liveCycle.assessments) {
         const level = row.grades[a.id]?.level ?? "";
         const elements: Record<string, string> = {};
         const lvls = elementLevelByP.get(a.id)?.get(row.id);
@@ -942,7 +958,7 @@ export class InMemoryDataProvider implements DataProvider {
     }));
 
     return {
-      cycleName: seed.liveCycle.name,
+      cycleName: this.seed.liveCycle.name,
       performanceLevels: perfLevels,
       awardLevels: this.grading.awardLevels,
       subjects,
@@ -994,7 +1010,7 @@ export class InMemoryDataProvider implements DataProvider {
   /** All demand levels present across the cycle, ascending (e.g. D1 < D2 < D3). */
   private allDemandLevels(): string[] {
     const set = new Set<string>();
-    for (const a of seed.liveCycle.assessments) for (const it of a.items) if (it.demand) set.add(it.demand);
+    for (const a of this.seed.liveCycle.assessments) for (const it of a.items) if (it.demand) set.add(it.demand);
     return [...set].sort();
   }
   /** The "top-difficulty" demand: configured value, else the highest present. */
@@ -1002,15 +1018,15 @@ export class InMemoryDataProvider implements DataProvider {
     if (this.safeguard.topDifficultyDemand) return this.safeguard.topDifficultyDemand;
     const set = new Set<string>();
     const asms = assessmentId
-      ? seed.liveCycle.assessments.filter((a) => a.id === assessmentId)
-      : seed.liveCycle.assessments;
+      ? this.seed.liveCycle.assessments.filter((a) => a.id === assessmentId)
+      : this.seed.liveCycle.assessments;
     for (const a of asms) for (const it of a.items) if (it.demand) set.add(it.demand);
     const sorted = [...set].sort();
     return sorted[sorted.length - 1] ?? "";
   }
   /** Locate an item across assessments, with a display label (Q-index in order). */
   private itemLocate(itemId: string): { a: SeedAssessment; item: SeedItem; label: string } | null {
-    for (const a of seed.liveCycle.assessments) {
+    for (const a of this.seed.liveCycle.assessments) {
       const idx = a.items.findIndex((it) => it.id === itemId);
       if (idx >= 0) return { a, item: a.items[idx]!, label: `Q${idx + 1}` };
     }
@@ -1048,9 +1064,9 @@ export class InMemoryDataProvider implements DataProvider {
   /** Match an uploaded student cell to a participant (by id or friendly label). */
   private matchStudent(raw: string): { id: string; name: string } {
     const clean = raw.trim();
-    const byId = seed.liveCycle.participants.find((p) => p.id.toLowerCase() === clean.toLowerCase());
+    const byId = this.seed.liveCycle.participants.find((p) => p.id.toLowerCase() === clean.toLowerCase());
     if (byId) return { id: byId.id, name: byId.label };
-    const byLabel = seed.liveCycle.participants.find((p) => p.label.toLowerCase() === clean.toLowerCase());
+    const byLabel = this.seed.liveCycle.participants.find((p) => p.label.toLowerCase() === clean.toLowerCase());
     if (byLabel) return { id: byLabel.id, name: byLabel.label };
     return { id: clean, name: clean };
   }
@@ -1075,7 +1091,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getStudentReview(cycleId: string): StudentReviewModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const te = this.technicalErrors.get(cycleId);
     const incidents = te?.incidents ?? [];
     const excluded = incidents.filter((i) => i.decision === "excluded").length;
@@ -1114,8 +1130,8 @@ export class InMemoryDataProvider implements DataProvider {
    * into scoring); it is flagged `sample: true` everywhere it surfaces.
    */
   loadSampleTechnicalErrors(cycleId: string): void {
-    if (cycleId !== seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const label = (id: string) => seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const label = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
     const spec: { sid: string; item: string; error: string; decision: IncidentDecision; reason: string | null }[] = [
       { sid: "P0010", item: "100002785246", error: "Calculator tool froze mid-question; ~4 min lost", decision: "excluded", reason: "Confirmed technical fault" },
       { sid: "P0010", item: "100002785119", error: "Graph image failed to load on first attempt", decision: null, reason: null },
@@ -1166,7 +1182,7 @@ export class InMemoryDataProvider implements DataProvider {
       const a = this.essayAssessmentForCode(e.subjectCode);
       if (!a) continue; // only Arabic/English carry essays
       const stud = this.matchStudent(e.participantId);
-      const isMatched = seed.liveCycle.participants.some((p) => p.id === stud.id);
+      const isMatched = this.seed.liveCycle.participants.some((p) => p.id === stud.id);
       if (!isMatched) {
         unmatched.add(e.participantId);
         continue;
@@ -1198,8 +1214,8 @@ export class InMemoryDataProvider implements DataProvider {
    * per student per subject exercise the averaging rule.
    */
   loadSampleEssayMarks(cycleId: string): void {
-    if (cycleId !== seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const ids = seed.liveCycle.participants.slice(0, 10).map((p) => p.id);
+    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const ids = this.seed.liveCycle.participants.slice(0, 10).map((p) => p.id);
     const rows: EssayUploadRow[] = [];
     ids.forEach((sid, i) => {
       // deterministic, plausible marks out of 20 (two essays each)
@@ -1222,10 +1238,10 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getEssayMarks(cycleId: string): EssayMarksModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const st = this.essayMarksByCycle.get(cycleId);
     const essayIds = new Set(this.essaySubjectIds());
-    const subjects: EssaySubjectRef[] = seed.liveCycle.assessments
+    const subjects: EssaySubjectRef[] = this.seed.liveCycle.assessments
       .filter((a) => essayIds.has(a.id))
       .map((a) => ({
         assessmentId: a.id,
@@ -1238,7 +1254,7 @@ export class InMemoryDataProvider implements DataProvider {
       return { cycleId, uploaded: false, sample: false, fileName: null, subjects, students: [], matchedCount: 0, unmatchedIds: [], preview: { headers: [], rows: [] } };
     }
 
-    const labelOf = (id: string) => seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    const labelOf = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
     const byStudent = new Map<string, EssayStudentMark>();
     for (const m of st.marks) {
       let s = byStudent.get(m.participantId);
@@ -1272,7 +1288,7 @@ export class InMemoryDataProvider implements DataProvider {
   private subjectForExamCode(code: string | null | undefined): SeedAssessment | undefined {
     const c = (code ?? "").trim();
     if (!c) return undefined;
-    const A = seed.liveCycle.assessments;
+    const A = this.seed.liveCycle.assessments;
     const map: [RegExp, RegExp][] = [
       [/\bAM\b|applicable|math/i, /applicable math/i],
       [/\bST\b|scientific|science/i, /scientific/i],
@@ -1290,7 +1306,7 @@ export class InMemoryDataProvider implements DataProvider {
     const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter(Boolean);
     const target = new Set(norm(n));
     let best: { id: string; score: number } | null = null;
-    for (const p of seed.liveCycle.participants) {
+    for (const p of this.seed.liveCycle.participants) {
       const toks = norm(p.label);
       if (toks.length === 0) continue;
       if (p.label.toLowerCase() === n || p.id.toLowerCase() === n) return p.id;
@@ -1311,7 +1327,7 @@ export class InMemoryDataProvider implements DataProvider {
           out.push({ participantId: inc.studentId, assessmentId: inc.subjectId, marks: inc.marks });
         } else if (inc.applyTo === "subject") {
           // bulk: every roster student in that subject
-          for (const p of seed.liveCycle.participants) {
+          for (const p of this.seed.liveCycle.participants) {
             out.push({ participantId: p.id, assessmentId: inc.subjectId, marks: inc.marks });
           }
         }
@@ -1363,8 +1379,8 @@ export class InMemoryDataProvider implements DataProvider {
    * auto-applied — every row still needs a human decision.
    */
   loadSampleIncidentLog(cycleId: string): void {
-    if (cycleId !== seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const label = (i: number) => seed.liveCycle.participants[i]?.label ?? `Student ${i}`;
+    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const label = (i: number) => this.seed.liveCycle.participants[i]?.label ?? `Student ${i}`;
     const rows: IncidentInput[] = [
       { source: "incident_log", studentName: label(0), exam: "AM", issueType: "Calculator tool froze", actionTaken: "Allowed 4 extra minutes", questionsAffected: "Q12", staff: "R. Mansour" },
       { source: "incident_log", studentName: label(3), exam: "ESL", issueType: "Audio clip would not play", actionTaken: "Replayed on staff device", questionsAffected: "n/a", staff: "T. Haddad" },
@@ -1407,21 +1423,21 @@ export class InMemoryDataProvider implements DataProvider {
     if (decision.applyTo === "none") {
       this.audit("student", "Incident — no action", `${inc.studentName || "incident"} (${inc.source}) marked informational`, cycleId);
     } else if (decision.applyTo === "subject") {
-      const n = seed.liveCycle.participants.length;
+      const n = this.seed.liveCycle.participants.length;
       this.audit("student", "Alteration (whole subject)", `${subjName}: ${inc.marks >= 0 ? "+" : ""}${inc.marks} for all ${n} students — ${inc.reason ?? "no reason"} (source: ${inc.studentName || inc.source})`, cycleId);
     } else {
-      const who = inc.studentId ? seed.liveCycle.participants.find((p) => p.id === inc.studentId)?.label ?? inc.studentId : inc.studentName;
+      const who = inc.studentId ? this.seed.liveCycle.participants.find((p) => p.id === inc.studentId)?.label ?? inc.studentId : inc.studentName;
       this.audit("student", "Alteration (one student)", `${who} · ${subjName}: ${inc.marks >= 0 ? "+" : ""}${inc.marks} — ${inc.reason ?? "no reason"} (source: ${inc.source})`, cycleId);
     }
     this.bump();
   }
 
   getAdjustments(cycleId: string): AdjustmentsModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const st = this.incidentLogByCycle.get(cycleId);
     const incidents = st?.incidents ?? [];
-    const roster = seed.liveCycle.participants.map((p) => ({ id: p.id, name: p.label }));
-    const subjects = seed.liveCycle.assessments.map((a) => ({
+    const roster = this.seed.liveCycle.participants.map((p) => ({ id: p.id, name: p.label }));
+    const subjects = this.seed.liveCycle.assessments.map((a) => ({
       id: a.id,
       name: a.name,
       code: /applicable math/i.test(a.name) ? "AM" : /scientific/i.test(a.name) ? "ST" : /arabic/i.test(a.name) ? "AFL" : /english/i.test(a.name) ? "ESL" : /life/i.test(a.name) ? "LSS" : null,
@@ -1444,11 +1460,11 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getDiagnostics(cycleId: string): DiagnosticsModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
-    const shortOf = new Map(seed.liveCycle.assessments.map((a) => [a.id, a.shortName]));
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const shortOf = new Map(this.seed.liveCycle.assessments.map((a) => [a.id, a.shortName]));
     return {
       cycleId,
-      assessments: (seed.liveCycle.diagnostics ?? []).map((d) => ({
+      assessments: (this.seed.liveCycle.diagnostics ?? []).map((d) => ({
         assessmentId: d.assessmentId,
         assessmentName: d.assessmentName,
         shortName: shortOf.get(d.assessmentId) ?? d.assessmentName,
@@ -1458,14 +1474,14 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getComposition(cycleId: string): CompositionModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const essayIds = new Set(this.essaySubjectIds());
-    const subjects = seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name, hasEssay: essayIds.has(a.id) }));
-    const labelOf = (id: string) => seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    const subjects = this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name, hasEssay: essayIds.has(a.id) }));
+    const labelOf = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
 
     // participant -> assessment -> ParticipantScore
     const byP = new Map<string, SubjectComposition[]>();
-    for (const a of seed.liveCycle.assessments) {
+    for (const a of this.seed.liveCycle.assessments) {
       for (const [pid, s] of this.pctByParticipant(cycleId, a)) {
         const list = byP.get(pid) ?? [];
         list.push({
@@ -1533,7 +1549,7 @@ export class InMemoryDataProvider implements DataProvider {
     const awardCuts = this.boundaryState(cycleId, "overall").cuts;
     const overall = this.overallPctByParticipant(cycleId);
     const ids: string[] = [];
-    for (const p of seed.liveCycle.participants) {
+    for (const p of this.seed.liveCycle.participants) {
       const op = overall.get(p.id);
       if (op === undefined) continue;
       if (classify(op, awardLevels, awardCuts) === topAward) ids.push(p.id);
@@ -1552,7 +1568,7 @@ export class InMemoryDataProvider implements DataProvider {
         continue;
       }
       let capped = false;
-      for (const a of seed.liveCycle.assessments) {
+      for (const a of this.seed.liveCycle.assessments) {
         const pool = a.items.filter((it) => it.demand === demand).length;
         if (pool < threshold) continue; // can't require more top-difficulty items than exist
         if (this.topDiffAnswered(cycleId, a, sid, demand) < threshold) {
@@ -1566,8 +1582,8 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getDistinctionSafeguard(cycleId: string, scope?: string): DistinctionSafeguardModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
-    const assessments = seed.liveCycle.assessments;
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const assessments = this.seed.liveCycle.assessments;
     const scopes = assessments.map((a) => ({ id: a.id, label: a.shortName }));
     const scopeId = scope && assessments.some((a) => a.id === scope) ? scope : assessments[0]?.id ?? "";
     const a = this.assessment(scopeId);
@@ -1581,7 +1597,7 @@ export class InMemoryDataProvider implements DataProvider {
     const decisions = this.distinctionDecisions(cycleId);
     const overrides = this.distinctionOverrides.get(cycleId);
     const inLineIds = this.provisionalDistinctionIds(cycleId);
-    const labelOf = new Map(seed.liveCycle.participants.map((p) => [p.id, p.label] as const));
+    const labelOf = new Map(this.seed.liveCycle.participants.map((p) => [p.id, p.label] as const));
     const effThreshold = pool > 0 ? Math.min(threshold, pool) : threshold;
 
     const candidates: DistinctionCandidate[] = inLineIds.map((sid) => {
@@ -1645,7 +1661,7 @@ export class InMemoryDataProvider implements DataProvider {
     const m = this.distinctionOverrides.get(cycleId) ?? new Map<string, { reason: string; by: string }>();
     m.set(studentId, { reason: clean, by: this.user.name });
     this.distinctionOverrides.set(cycleId, m);
-    const label = seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
+    const label = this.seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
     this.audit("safeguard", "Overrode Distinction cap", `${label} kept at ${this.grading.awardLevels[0] ?? "Distinction"} — ${clean}`, cycleId);
     this.bump();
   }
@@ -1654,7 +1670,7 @@ export class InMemoryDataProvider implements DataProvider {
     if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
     const m = this.distinctionOverrides.get(cycleId);
     if (m?.delete(studentId)) {
-      const label = seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
+      const label = this.seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
       this.audit("safeguard", "Removed Distinction override", `${label} returned to its safeguard result`, cycleId);
       this.bump();
     }
@@ -1674,7 +1690,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   // ── document generation (Student Summary) ────────────────────────────────
   getDocuments(cycleId: string): DocumentsModel | null {
-    if (cycleId !== seed.liveCycle.id) return null;
+    if (cycleId !== this.seed.liveCycle.id) return null;
     const locked = this.locked.has(cycleId);
 
     // Canonical template slots S1..S5 mapped to suite assessments by alias
@@ -1734,7 +1750,7 @@ export class InMemoryDataProvider implements DataProvider {
     // Defaults: cycle name + the template's sample test centre; dates from the
     // cycle. These are per-cycle settings, editable in the UI.
     return {
-      cycleName: seed.liveCycle.name,
+      cycleName: this.seed.liveCycle.name,
       testCentre: "Alsama Shatila 1",
       examDate: "11 May 2026",
       issueDate: "10 June 2026",
@@ -1863,8 +1879,8 @@ export class InMemoryDataProvider implements DataProvider {
   lockCycle(cycleId: string): void {
     if (this.user.role !== "lead_admin") return;
     this.locked.add(cycleId);
-    const n = seed.liveCycle.participants.length;
-    this.audit("lock", "Locked grades", `${n} students signed off across ${seed.liveCycle.assessments.length} assessments`, cycleId);
+    const n = this.seed.liveCycle.participants.length;
+    this.audit("lock", "Locked grades", `${n} students signed off across ${this.seed.liveCycle.assessments.length} assessments`, cycleId);
     this.bump();
   }
   unlockCycle(cycleId: string): void {
@@ -2034,7 +2050,7 @@ export class InMemoryDataProvider implements DataProvider {
 
   // ── analytics (real live cycle, mock priors) ──────────────────────────────
   private liveAggregates() {
-    const cycleId = seed.liveCycle.id;
+    const cycleId = this.seed.liveCycle.id;
     const overallPcts = [...this.overallPctByParticipant(cycleId).values()];
     const grades = this.getGrades(cycleId);
     const awardLevels = this.grading.awardLevels;
@@ -2049,7 +2065,7 @@ export class InMemoryDataProvider implements DataProvider {
     let totalExcluded = 0;
     let qualitySum = 0;
     let qualityCount = 0;
-    for (const a of seed.liveCycle.assessments) {
+    for (const a of this.seed.liveCycle.assessments) {
       const pcts = [...this.pctByParticipant(cycleId, a).values()].map((v) => v.pct);
       byAssessment[a.id] = round(mean(pcts), 1);
       totalExcluded += this.excludedSet(cycleId, a.id).size;
@@ -2059,11 +2075,11 @@ export class InMemoryDataProvider implements DataProvider {
       }
     }
     return {
-      participants: seed.liveCycle.participants.length,
+      participants: this.seed.liveCycle.participants.length,
       cohortMean: round(mean(overallPcts), 1),
       median: round(median(overallPcts), 0),
       sd: round(stddev(overallPcts), 1),
-      itemsScored: seed.liveCycle.assessments.reduce((s, a) => s + a.items.length, 0) - totalExcluded,
+      itemsScored: this.seed.liveCycle.assessments.reduce((s, a) => s + a.items.length, 0) - totalExcluded,
       itemsExcluded: totalExcluded,
       meanQuality: qualityCount ? Math.round(qualitySum / qualityCount) : 0,
       awardDist,
@@ -2074,7 +2090,7 @@ export class InMemoryDataProvider implements DataProvider {
   getAnalyticsTrends(): AnalyticsTrends {
     const live = this.liveAggregates();
     const awardLevels = this.grading.awardLevels;
-    const assessmentIds = seed.liveCycle.assessments.map((a) => a.id);
+    const assessmentIds = this.seed.liveCycle.assessments.map((a) => a.id);
     const priors = mockPriors(awardLevels, assessmentIds);
 
     const series = (pick: (p: { participants: number; cohortMean: number; itemsExcluded: number; meanQuality: number }) => number, liveVal: number) =>
@@ -2097,7 +2113,7 @@ export class InMemoryDataProvider implements DataProvider {
       { label: "Mean item quality", value: String(live.meanQuality), delta: delta(ptsQuality), points: ptsQuality },
     ];
 
-    const byAssessment = seed.liveCycle.assessments.map((a) => {
+    const byAssessment = this.seed.liveCycle.assessments.map((a) => {
       const pts = [...priors.map((p) => p.byAssessment[a.id] ?? 0), live.byAssessment[a.id] ?? 0];
       const d = round((pts[pts.length - 1] ?? 0) - (pts[pts.length - 2] ?? 0), 1);
       return { name: a.shortName, points: pts, now: `${live.byAssessment[a.id] ?? 0}%`, delta: `${d >= 0 ? "+" : "−"}${Math.abs(d)}` };
@@ -2121,7 +2137,7 @@ export class InMemoryDataProvider implements DataProvider {
   getAnalyticsCompare(): AnalyticsCompare {
     const live = this.liveAggregates();
     const awardLevels = this.grading.awardLevels;
-    const prior = mockPriors(awardLevels, seed.liveCycle.assessments.map((a) => a.id))[2]!; // Jan 26
+    const prior = mockPriors(awardLevels, this.seed.liveCycle.assessments.map((a) => a.id))[2]!; // Jan 26
 
     const topAward = awardLevels[0] ?? "";
     const lowAward = awardLevels[awardLevels.length - 1] ?? "";
@@ -2137,7 +2153,7 @@ export class InMemoryDataProvider implements DataProvider {
     ];
 
     const liveCol: CompareColumn = {
-      cycle: seed.liveCycle.name,
+      cycle: this.seed.liveCycle.name,
       mock: false,
       metrics: {
         participants: live.participants.toLocaleString(),
@@ -2175,7 +2191,7 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       defaultName: "May 2026",
       sittingDate: "14 May 2026",
-      assessments: seed.liveCycle.assessments.map((a) => ({
+      assessments: this.seed.liveCycle.assessments.map((a) => ({
         id: a.id,
         name: a.name,
         rtl: a.rtl,
@@ -2188,8 +2204,8 @@ export class InMemoryDataProvider implements DataProvider {
   createCycle(input: CreateCycleInput): string {
     // MOCK: cycles need the database. Records the intent in the audit log and
     // returns the live cycle id (the only one with real data) so navigation works.
-    this.audit("cycle", "Created cycle", `${input.name} — ${input.assessmentIds.length} assessments`, seed.liveCycle.id);
+    this.audit("cycle", "Created cycle", `${input.name} — ${input.assessmentIds.length} assessments`, this.seed.liveCycle.id);
     this.bump();
-    return seed.liveCycle.id;
+    return this.seed.liveCycle.id;
   }
 }
