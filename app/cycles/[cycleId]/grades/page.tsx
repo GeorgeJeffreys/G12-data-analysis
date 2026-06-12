@@ -16,6 +16,7 @@ import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
+import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import type { GradeCell, GradesModel, StudentComposition } from "@/lib/data/types";
 
@@ -27,6 +28,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const user = provider.getCurrentUser();
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!model) {
     return (
@@ -91,7 +93,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       }
     >
       <ProvisionalBanner cycleId={cycleId} />
-      <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 20, flex: 1 }}>
+      <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 20, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
           <div>
             <div className="hf-h1">Grades &amp; sign-off</div>
@@ -116,6 +118,8 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
               {lvl}
             </span>
           ))}
+          <div style={{ flex: 1, minWidth: 12 }} />
+          <ZoomControl zoom={zoom} onZoom={setZoom} />
         </div>
 
         {!model.locked && (
@@ -146,7 +150,8 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 
         {/* grades table + click-row → composition right-panel (same pattern as Review) */}
         <div style={{ display: "flex", gap: 0, alignItems: "stretch", flex: 1, minHeight: 0 }}>
-          <div className="hf-card" style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
+          <div ref={scrollRef} className="hf-card" style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
+            <div style={zoomWrapStyle}>
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
@@ -193,6 +198,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                 })}
               </tbody>
             </table>
+            </div>
           </div>
 
           {selectedId && (
