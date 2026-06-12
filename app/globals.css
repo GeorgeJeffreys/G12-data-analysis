@@ -241,6 +241,13 @@ tr.hf-hover:hover {
   background: var(--pink-soft2);
 }
 
+/* Compact rows for short, fixed-length tables (e.g. the Boundaries award levels)
+   so the table plus anything beneath it fits on screen without scrolling. */
+.hf-rows-compact td.hf-td {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+
 /* ── Responsive helpers ────────────────────────────────────────────────────
    The app is a dense, multi-column tool. These rules keep it usable as the
    viewport narrows: tables scroll inside their own container rather than

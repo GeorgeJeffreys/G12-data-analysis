@@ -16,6 +16,7 @@ import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
+import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 
@@ -80,29 +81,6 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       ]}
       stageIndex={4}
       cycleId={cycleId}
-      actions={
-        <div style={{ display: "flex", border: `1px solid ${H.line2}`, borderRadius: 8, overflow: "hidden" }}>
-          {model.scopes.map((s, i) => (
-            <button
-              key={s.id}
-              onClick={() => setScope(s.id)}
-              style={{
-                padding: "7px 13px",
-                fontSize: 12.5,
-                fontWeight: scope === s.id ? 700 : 500,
-                background: scope === s.id ? H.pinkSoft : H.paper,
-                color: scope === s.id ? H.pink : H.ink2,
-                border: "none",
-                borderLeft: i > 0 ? `1px solid ${H.line2}` : "none",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {s.label}
-            </button>
-          ))}
-        </div>
-      }
       stageAction={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri">
@@ -114,6 +92,12 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
     >
       <LockBanner cycleId={cycleId} />
       <ProvisionalBanner cycleId={cycleId} />
+      {/* assessment / scope selector — shared canonical chip-tab row under the breadcrumb */}
+      <AssessmentTabs
+        activeId={scope}
+        tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
+        onSelect={setScope}
+      />
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div>
@@ -135,7 +119,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
         <div className="hf-split" style={{ flex: 1, minHeight: 0 }}>
           {/* chart card — the dominant instrument (~two-thirds) */}
-          <div className="hf-card" style={{ flex: "2 1 0%", padding: "20px 24px 14px", minWidth: 320, display: "flex", flexDirection: "column" }}>
+          <div className="hf-card" style={{ flex: "2 1 0%", padding: "20px 24px 14px", minWidth: 320, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span className="hf-lbl">Score distribution · {model.n} students</span>
               <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: model.mode === "cuts" ? H.pink : H.ink3, fontWeight: 600 }}>
@@ -176,7 +160,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
           {/* table card — the compact companion (~one-third) */}
           <div className="hf-card" style={{ flex: "1 1 320px", minWidth: 300, maxWidth: 440, overflow: "auto", display: "flex", flexDirection: "column" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
+            <table className="hf-rows-compact" style={{ width: "100%", borderCollapse: "collapse", flex: "0 0 auto" }}>
               <thead>
                 <tr>
                   <th className="hf-th">{model.isAward ? "Award level" : "Performance level"}</th>
@@ -397,9 +381,9 @@ function BoundaryChart({
   };
 
   return (
-    <div style={{ userSelect: "none" }}>
+    <div style={{ userSelect: "none", display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
       {/* band-label row ABOVE the plot — a clean strip, clear of the bars/handles */}
-      <div style={{ position: "relative", height: 18, marginBottom: 8 }}>
+      <div style={{ position: "relative", height: 18, marginBottom: 8, flex: "0 0 auto" }}>
         {regions.map((r) => (
           <div
             key={r.level + "l"}
@@ -424,7 +408,7 @@ function BoundaryChart({
           </div>
         ))}
       </div>
-      <div ref={ref} style={{ position: "relative", height: 230, userSelect: "none" }}>
+      <div ref={ref} style={{ position: "relative", flex: 1, minHeight: 150, userSelect: "none" }}>
         {regions.map((r) => (
           <div key={r.level} style={{ position: "absolute", top: 0, bottom: 22, left: `${r.from}%`, width: `${r.to - r.from}%`, background: H.slate, opacity: r.opacity }} />
         ))}
