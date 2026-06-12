@@ -42,11 +42,18 @@ export function useTableZoom(initial = 1) {
   }, []);
 
   // Scale the wrapped content; widen it inversely so it still fills the scroller.
-  const zoomWrapStyle: CSSProperties = {
-    transform: `scale(${zoom})`,
-    transformOrigin: "top left",
-    width: `${100 / zoom}%`,
-  };
+  // At 1× we emit NO transform: a `transform` (even scale(1)) becomes the
+  // containing block for the sticky <thead>, which would break sticky headers.
+  // So in the default state every table keeps working sticky headers, and the
+  // transform only appears while the user is actively zoomed in/out.
+  const zoomWrapStyle: CSSProperties =
+    zoom === 1
+      ? {}
+      : {
+          transform: `scale(${zoom})`,
+          transformOrigin: "top left",
+          width: `${100 / zoom}%`,
+        };
 
   return { zoom, setZoom, scrollRef, zoomWrapStyle };
 }

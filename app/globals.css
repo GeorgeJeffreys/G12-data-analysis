@@ -231,6 +231,15 @@ body {
   border-bottom: 1px solid var(--line2);
   white-space: nowrap;
   background: var(--tint);
+  /* Sticky column headers: the header row stays fixed at the top of the table's
+     scroll area while rows scroll underneath (core spreadsheet behaviour). Works
+     wherever the table sits in a scroll container; the solid background covers the
+     rows and the inset shadow keeps the divider visible (border-collapse drops the
+     border when stuck). */
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  box-shadow: inset 0 -1px 0 var(--line2);
 }
 .hf-td {
   padding: 11px 12px;
