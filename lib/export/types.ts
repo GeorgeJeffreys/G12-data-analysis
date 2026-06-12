@@ -27,23 +27,6 @@ export interface ItemReviewDecision {
 }
 
 /**
- * One confirmed per-student technical exclusion — a fault on one question for
- * one student that the team chose to exclude. Shared by the Item-analysis and
- * Grades workbooks (both emit the identical sheet from this record).
- */
-export interface PerStudentExclusionRecord {
-  participantId: string;
-  participantName: string;
-  assessmentName: string;
-  questionId: string;
-  questionWording: string | null;
-  demandLevel: string | null;
-  reason: string;
-  decidedBy: string;
-  decidedAt: string;
-}
-
-/**
  * One applied raw-mark alteration (from the Adjustments incident triage). A
  * whole-subject bulk decision yields one record per student.
  */
@@ -100,8 +83,6 @@ export interface ItemAnalysisBlock {
 export interface ItemAnalysisInput {
   cycleName: string;
   blocks: ItemAnalysisBlock[];
-  /** Confirmed per-student exclusions — rendered as an extra trailing sheet. */
-  perStudentExclusions?: PerStudentExclusionRecord[];
 }
 
 /** Convenience inputs for the assembler that builds `ItemAnalysisInput`. */
@@ -111,7 +92,6 @@ export interface AssembleItemAnalysisArgs {
   stats: ItemStat[];
   facts: ItemResponseFact[];
   reviews?: Record<string, ItemReviewDecision>;
-  perStudentExclusions?: PerStudentExclusionRecord[];
 }
 
 // --- Overall score analysis (canonical layout) ------------------------------

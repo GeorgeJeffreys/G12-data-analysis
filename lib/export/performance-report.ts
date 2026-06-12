@@ -1,8 +1,7 @@
 /**
  * Students' Performance Report workbook — reworked to match the original
  * `Students_Performance_Report` file. Three matched sheets, then the
- * clearly-additional Per-student Exclusions and Audit Trail sheets appended
- * after them:
+ * clearly-additional Alterations and Audit Trail sheets appended after them:
  *
  *  1. `Class Performance` — per assessment × major-element, the proportion of
  *     students at each performance level, then the overall award-level

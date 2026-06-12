@@ -16,7 +16,6 @@ import {
   workbookToBuffer,
   ITEM_ANALYSIS_HEADERS,
   ITEM_ANALYSIS_SUMMARY_HEADERS,
-  PER_STUDENT_EXCLUSION_HEADERS,
   ALTERATION_HEADERS,
   SCORE_ANALYSIS_SHEETS,
   GRADES_STUDENT_HEADERS,
@@ -30,7 +29,6 @@ import {
 } from "@/lib/export";
 import type {
   ItemResponseFact,
-  PerStudentExclusionRecord,
   GradesInput,
 } from "@/lib/export";
 import { getEngine, responsesFromClean } from "@/lib/engine";
@@ -38,25 +36,6 @@ import type { ItemMeta, ItemStat, ResponseRecord } from "@/lib/engine";
 import { parseExport, ingestAndClean } from "@/lib/ingest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import { loadParityFixtures, sampleExportPath } from "./fixtures";
-
-/** Map a provider's confirmed technical incidents to the export record shape. */
-function exclusionRecordsFromProvider(p: InMemoryDataProvider, cycleId: string): PerStudentExclusionRecord[] {
-  const sr = p.getStudentReview(cycleId);
-  if (!sr) return [];
-  return sr.incidents
-    .filter((i) => i.decision === "excluded" && i.itemId)
-    .map((i) => ({
-      participantId: i.studentId,
-      participantName: i.studentName,
-      assessmentName: i.assessmentName,
-      questionId: i.itemId!,
-      questionWording: i.wording,
-      demandLevel: i.demand,
-      reason: i.reason ?? "Confirmed technical fault",
-      decidedBy: i.by ?? "",
-      decidedAt: i.at ?? "",
-    }));
-}
 
 const engine = getEngine();
 const fixtures = loadParityFixtures();
@@ -115,8 +94,8 @@ describe("item analysis workbook — exact layout", () => {
   });
   const wb = buildItemAnalysisWorkbook(input);
 
-  it("has a README & Summary sheet first, then one sheet per assessment, then exclusions", () => {
-    expect(wb.SheetNames).toEqual(["README & Summary", "Applicable Math", "Per-student exclusions"]);
+  it("has a README & Summary sheet first, then one sheet per assessment", () => {
+    expect(wb.SheetNames).toEqual(["README & Summary", "Applicable Math"]);
   });
 
   it("lays out the assessment sheet exactly (title / meta / guide / header)", () => {
@@ -187,7 +166,7 @@ describe("item analysis workbook — exact layout", () => {
     const buf = workbookToBuffer(wb);
     expect(buf.length).toBeGreaterThan(0);
     const reread = XLSXR.read(buf, { type: "buffer" });
-    expect(reread.SheetNames).toEqual(["README & Summary", "Applicable Math", "Per-student exclusions"]);
+    expect(reread.SheetNames).toEqual(["README & Summary", "Applicable Math"]);
   });
 });
 
@@ -247,55 +226,6 @@ describe("item analysis — average response time from real responses", () => {
         expect(r.participantsAnswered).toBeLessThanOrEqual(r.participantsPresented);
       }
     }
-  });
-});
-
-describe("item analysis — per-student exclusions sheet", () => {
-  const CYCLE = "may-2026";
-
-  it("emits the sheet with the canonical columns, one row per confirmed exclusion", () => {
-    const provider = new InMemoryDataProvider();
-    provider.loadSampleTechnicalErrors(CYCLE);
-    const records = exclusionRecordsFromProvider(provider, CYCLE);
-    expect(records.length).toBeGreaterThan(0); // the sample fixture confirms ≥1 exclusion
-
-    const { stats, facts } = buildFromFixture();
-    const wb = buildItemAnalysisWorkbook(
-      assembleItemAnalysis({
-        cycleName: "May 2026",
-        assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
-        stats,
-        facts,
-        perStudentExclusions: records,
-      }),
-    );
-
-    expect(wb.SheetNames[wb.SheetNames.length - 1]).toBe("Per-student exclusions");
-    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student exclusions");
-    expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
-    const dataRows = aoa.slice(1).filter((r) => r.length > 0);
-    expect(dataRows).toHaveLength(records.length);
-    // first record renders in column order
-    expect(String(dataRows[0]![0])).toBe(records[0]!.participantId);
-    expect(String(dataRows[0]![3])).toBe(records[0]!.questionId);
-    expect(String(dataRows[0]![6])).toBe(records[0]!.reason);
-  });
-
-  it("emits a header-only sheet with a note when there are no exclusions", () => {
-    const { stats, facts } = buildFromFixture();
-    const wb = buildItemAnalysisWorkbook(
-      assembleItemAnalysis({
-        cycleName: "May 2026",
-        assessments: [{ id: ASSESSMENT, name: ASSESSMENT }],
-        stats,
-        facts,
-        // no perStudentExclusions
-      }),
-    );
-    const aoa = aoaOf(wb as unknown as XLSXR.WorkBook, "Per-student exclusions");
-    expect(aoa[0]).toEqual([...PER_STUDENT_EXCLUSION_HEADERS]);
-    expect(String(aoa[1]![0])).toContain("No per-student exclusions");
-    expect(aoa.slice(1).filter((r) => r.length > 0)).toHaveLength(1); // just the note
   });
 });
 

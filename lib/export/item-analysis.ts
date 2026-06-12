@@ -28,10 +28,6 @@ import type {
   ItemAnalysisInput,
   ItemAnalysisRow,
 } from "./types";
-import {
-  buildPerStudentExclusionsSheet,
-  PER_STUDENT_EXCLUSION_SHEET_NAME,
-} from "./per-student-exclusions";
 
 /** Canonical per-assessment header (exact column order from the template). */
 export const ITEM_ANALYSIS_HEADERS = [
@@ -270,13 +266,6 @@ export function buildItemAnalysisWorkbook(input: ItemAnalysisInput): XLSX.WorkBo
       sanitizeSheetName(block.name, used),
     );
   }
-
-  // Per-student exclusions sheet, appended after the per-assessment sheets.
-  XLSX.utils.book_append_sheet(
-    wb,
-    buildPerStudentExclusionsSheet(input.perStudentExclusions ?? []),
-    sanitizeSheetName(PER_STUDENT_EXCLUSION_SHEET_NAME, used),
-  );
 
   return wb;
 }

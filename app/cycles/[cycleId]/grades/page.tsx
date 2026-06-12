@@ -359,10 +359,10 @@ function exportCsv(model: GradesModel) {
 
 async function exportExcel(provider: DataProvider, cycleId: string, model: GradesModel) {
   // Students_Performance_Report workbook (Class Performance / Student Summary /
-  // Student Profiles), then the clearly-additional Per-student Exclusions and
-  // Audit Trail sheets. All cells come from the REAL provider read-models —
-  // per-student per-element levels via getPerformanceReport, exclusions via the
-  // Student-review incidents, and the audit log.
+  // Student Profiles), then the clearly-additional Alterations and Audit Trail
+  // sheets. All cells come from the REAL provider read-models — per-student
+  // per-element levels via getPerformanceReport, alterations from the Adjustments
+  // incident triage, and the audit log.
   void model;
   const exp = await import("@/lib/export");
   const report = provider.getPerformanceReport(cycleId);
