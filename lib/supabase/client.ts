@@ -20,3 +20,7 @@ export function createClient() {
 
   return createBrowserClient<Database>(url, key);
 }
+
+/** The exact browser-client type, so providers/hydration stay in lock-step with
+ *  whatever generic shape the installed @supabase/ssr version produces. */
+export type SupabaseBrowserClient = ReturnType<typeof createClient>;
