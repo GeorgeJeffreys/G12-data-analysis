@@ -11,8 +11,9 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { DataProvider } from "@/lib/data/provider";
 import { H } from "@/lib/ui/tokens";
-import { Shell } from "@/components/shell/Shell";
+import { CycleShell, Alert } from "@/components/shell/CycleShell";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
+import { LockBanner } from "@/components/shell/LockBanner";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
@@ -25,16 +26,16 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const provider = useProvider();
   const model = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
   const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
-  const user = provider.getCurrentUser();
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Grades" }]}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={5}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this cycle.</div>
-      </Shell>
+      </CycleShell>
     );
   }
 
@@ -42,25 +43,16 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
     provider.lockCycle(cycleId);
     setConfirming(false);
   };
-  const unlock = () => provider.unlockCycle(cycleId);
   const compById = new Map((comp?.students ?? []).map((s) => [s.participantId, s]));
 
   return (
-    <Shell
-      crumb={[
-        { label: "Cycles", href: "/" },
-        { label: "May 2026", href: `/cycles/${cycleId}` },
-        { label: "Grades & sign-off" },
-      ]}
-      stageIndex={5}
+    <CycleShell
       cycleId={cycleId}
+      cycleName={cycleName}
+      page="Grades & sign-off"
+      stageIndex={5}
       actions={
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {model.locked && (
-            <span style={{ display: "flex", alignItems: "center", gap: 5, color: H.good, fontWeight: 600, fontSize: 11.5 }}>
-              <Mark kind="pass" size={13} /> Locked &amp; signed off
-            </span>
-          )}
           <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>
             <Icon name="doc" />
             Export CSV
@@ -71,7 +63,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           </Button>
         </div>
       }
-      stageAction={
+      primary={
         model.locked ? (
           <Link href={`/cycles/${cycleId}/documents`}>
             <Button variant="pri">
@@ -91,28 +83,39 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           </Button>
         )
       }
+      alerts={
+        <>
+          <ProvisionalBanner cycleId={cycleId} />
+          <LockBanner cycleId={cycleId} />
+          {!model.locked && (
+            <Alert
+              tone="info"
+              action={<Link href={`/cycles/${cycleId}/grades/distinction`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>Review safeguard →</Link>}
+            >
+              <b>Distinction safeguard</b> — confirm every provisional top award attempted enough top-difficulty questions before sign-off.
+            </Alert>
+          )}
+          {!model.locked && (
+            <Alert tone="warn">
+              Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments — boundaries can’t change afterward without re-opening.
+            </Alert>
+          )}
+        </>
+      }
     >
-      <ProvisionalBanner cycleId={cycleId} />
-      <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 20, flex: 1, minHeight: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
-          <div>
-            <div className="hf-h1">Grades &amp; sign-off</div>
-            <div className="hf-sub" style={{ marginTop: 7 }}>
-              Every student’s section and overall grade. Review, then lock to publish.
-            </div>
-          </div>
-          <div className="hf-card" style={{ padding: "13px 18px", display: "flex", gap: 18, alignItems: "center" }}>
-            <span className="hf-lbl">Award distribution</span>
+      <div style={{ display: "flex", flexDirection: "column", padding: "16px 32px 18px", gap: 12, flex: 1, minHeight: 0 }}>
+        {/* slim header strip — title + compact award distribution + level legend + zoom,
+            kept small so the table (the point of the screen) gets the vertical space */}
+        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+          <span className="hf-h2" style={{ fontSize: 16 }}>Grades &amp; sign-off</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span className="hf-lbl">Awards</span>
             <MiniGradeBars data={model.distribution.map((d) => ({ label: AWARD_SHORT[d.level] ?? d.level, count: d.count }))} />
-          </div>
-        </div>
-
-        {/* stars legend */}
-        <div style={{ display: "flex", gap: 18, flexWrap: "wrap", alignItems: "center" }}>
-          <span className="hf-lbl">Performance levels</span>
+          </span>
+          <span style={{ width: 1, height: 18, background: H.line2 }} />
           {model.performanceLevels.map((lvl) => (
-            <span key={lvl} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: H.ink2 }}>
-              <span className="hf-mono" style={{ color: H.pink, fontWeight: 700, letterSpacing: 1, minWidth: 18 }}>
+            <span key={lvl} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 11, color: H.ink2 }}>
+              <span className="hf-mono" style={{ color: H.pink, fontWeight: 700, letterSpacing: 1, minWidth: 16 }}>
                 {model.starMap[lvl] || "·"}
               </span>
               {lvl}
@@ -121,32 +124,6 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           <div style={{ flex: 1, minWidth: 12 }} />
           <ZoomControl zoom={zoom} onZoom={setZoom} />
         </div>
-
-        {!model.locked && (
-          <Link href={`/cycles/${cycleId}/grades/distinction`} style={{ textDecoration: "none", color: "inherit" }}>
-            <div className="hf-card hf-hover" style={{ padding: "13px 17px", display: "flex", gap: 12, alignItems: "center" }}>
-              <Icon name="award" color={H.pink} />
-              <span style={{ fontSize: 13, flex: 1 }}>
-                <b>Distinction safeguard</b> — check that every provisional top award attempted enough top-difficulty questions before sign-off.
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.pink, fontWeight: 700, fontSize: 12.5 }}>
-                Review safeguard<Icon name="arrow" size={13} color={H.pink} />
-              </span>
-            </div>
-          </Link>
-        )}
-
-        {model.locked && (
-          <div className="hf-card" style={{ padding: "11px 16px", background: H.goodSoft, borderColor: H.good, display: "flex", gap: 12, alignItems: "center" }}>
-            <Mark kind="pass" size={16} />
-            <span style={{ fontSize: 12.5, flex: 1 }}>
-              Grades are locked and signed off by {user.name}. The cycle is read-only.
-            </span>
-            {user.role === "lead_admin" && (
-              <Button variant="ghost" onClick={unlock}>Re-open cycle</Button>
-            )}
-          </div>
-        )}
 
         {/* grades table + click-row → composition right-panel (same pattern as Review) */}
         <div style={{ display: "flex", gap: 0, alignItems: "stretch", flex: 1, minHeight: 0 }}>
@@ -209,27 +186,6 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             />
           )}
         </div>
-
-        {!model.locked && (
-          <div style={{ display: "flex", gap: 16, marginTop: "auto", alignItems: "stretch" }}>
-            <div className="hf-card" style={{ padding: "15px 19px", flex: 1, display: "flex", gap: 13, alignItems: "center", background: H.tint }}>
-              <Mark kind="warn" size={18} />
-              <span style={{ fontSize: 13 }}>
-                Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments. Boundaries can’t change afterward without re-opening the cycle.
-              </span>
-            </div>
-            <Button
-              variant="pri"
-              style={{ padding: "13px 24px", fontSize: 13.5 }}
-              disabled={!model.canLock}
-              onClick={() => setConfirming(true)}
-              title={model.canLock ? undefined : "Only a Lead can lock grades"}
-            >
-              <Icon name="lock" color="#fff" />
-              Lock grades &amp; sign off
-            </Button>
-          </div>
-        )}
       </div>
 
       {/* lock confirmation modal — the single entry point, no header reflow */}
@@ -254,7 +210,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           </div>
         </div>
       )}
-    </Shell>
+    </CycleShell>
   );
 }
 
