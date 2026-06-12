@@ -6,14 +6,15 @@
  * recompute live (through the provider → engine) on every exclusion.
  *
  * Layout (realigned to the original design proportions):
- *  - the table is the full-height dominant element (slim stats row + one filter
- *    row above it, nothing else stacked);
+ *  - the table is the full-height dominant element under a single slim control
+ *    band (compact stats + filters + search + zoom);
  *  - the compact right panel is DUAL-MODE — the cohort summary (distribution /
- *    by-element / by-demand) by default, switching to the selected item's
- *    deep-dive (with "← Back to cohort") when a row is clicked;
- *  - the table is zoomable with explicit − / + density controls.
+ *    by-element / by-demand) by default, switching to the selected item's compact
+ *    statistics deep-dive (with "← Back to cohort") when a row is clicked;
+ *  - true whole-table zoom: − / + (and trackpad pinch) scale the entire table —
+ *    columns, text and rows together — so zooming out genuinely fits more rows.
  */
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
@@ -35,15 +36,10 @@ const REASONS = [
 type QualityFilter = "all" | "review" | "poor";
 type SortKey = "q" | "pValue" | "itemTotal" | "pointBiserial" | "discrimination" | "quality";
 
-/** Row-density / text-size steps, controlled by the + / − zoom buttons. */
-const ZOOM_STEPS: { pad: string; font: number }[] = [
-  { pad: "3px 12px", font: 11 },
-  { pad: "5px 12px", font: 11.5 },
-  { pad: "9px 12px", font: 12.5 },
-  { pad: "13px 12px", font: 13.5 },
-  { pad: "17px 12px", font: 14.5 },
-];
-const ZOOM_DEFAULT = 2;
+/** Whole-table zoom (scale transform) — buttons step by 0.1, pinch is continuous. */
+const ZOOM_MIN = 0.6;
+const ZOOM_MAX = 1.5;
+const clampZoom = (z: number) => Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
 
 function fmtStat(v: number | null): string {
   if (v === null || Number.isNaN(v)) return "—";
@@ -73,11 +69,26 @@ export default function ReviewPage({
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "discrimination", dir: 1 });
   const [reasonFor, setReasonFor] = useState<string | null>(null);
 
-  // Selection drives the dual-mode right panel; zoom controls table density.
+  // Selection drives the dual-mode right panel; zoom scales the whole table.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [zoom, setZoom] = useState<number>(ZOOM_DEFAULT);
+  const [zoom, setZoom] = useState<number>(1);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [panelWidth, setPanelWidth] = useState(322);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+
+  // Pinch-to-zoom (trackpad pinch fires a ctrl+wheel). Native non-passive
+  // listener so we can preventDefault the browser page-zoom.
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      setZoom((z) => clampZoom(z - e.deltaY * 0.01));
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
 
   const detail = useProviderData(
     (p) => (selectedId ? p.getItemDetail(cycleId, assessmentId, selectedId) : null),
@@ -149,8 +160,6 @@ export default function ReviewPage({
     </th>
   );
 
-  const z = ZOOM_STEPS[zoom] ?? ZOOM_STEPS[ZOOM_DEFAULT]!;
-
   return (
     <Shell
       crumb={[
@@ -187,72 +196,70 @@ export default function ReviewPage({
         })}
       </div>
 
-      {/* KPI strip */}
-      <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 30, padding: "11px 26px", borderBottom: `1px solid ${H.line}`, background: H.paper, flexWrap: "wrap" }}>
-        <Kpi n={String(model.kpis.items)} label="Items" />
-        <Kpi n={String(model.kpis.excluded)} label="Excluded" sub="recompute on" />
-        <Kpi n={fmtStat(model.kpis.medianDifficulty)} label="Median difficulty" />
-        <Kpi n={`${model.kpis.cohortMean}%`} label="Cohort mean" />
-        <div style={{ flex: 1, minWidth: 12 }} />
-        <label className="hf-field" style={{ width: 240, maxWidth: "100%" }}>
-          <Icon name="search" color={H.ink3} />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search question text" style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 12.5, color: H.ink }} aria-label="Search question text" />
-        </label>
-      </div>
-
-      {/* single filter + zoom row (cohort summary now lives in the right panel) */}
-      <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 9, padding: "12px 26px", borderBottom: `1px solid ${H.line}`, flexWrap: "wrap", background: H.paper }}>
-        <span className="hf-lbl" style={{ marginRight: 2 }}>Filter</span>
-        <Chip on={quality === "all"} onClick={() => setQuality("all")}>All quality</Chip>
+      {/* slim single control band: compact stats + filters + search + zoom */}
+      <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 24px", borderBottom: `1px solid ${H.line}`, background: H.paper, flexWrap: "wrap" }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <MiniStat n={String(model.kpis.items)} label="items" />
+          <MiniStat n={String(model.kpis.excluded)} label="excluded" />
+          <MiniStat n={fmtStat(model.kpis.medianDifficulty)} label="median" />
+          <MiniStat n={`${model.kpis.cohortMean}%`} label="cohort" />
+        </span>
+        <span style={{ width: 1, height: 18, background: H.line2 }} />
+        <Chip on={quality === "all"} onClick={() => setQuality("all")}>All</Chip>
         <Chip on={quality === "review"} onClick={() => setQuality("review")}>Review</Chip>
         <Chip on={quality === "poor"} onClick={() => setQuality("poor")}>Poor</Chip>
-        <span style={{ width: 1, height: 18, background: H.line2, margin: "0 4px" }} />
         <Dropdown label="Element" value={element} onChange={setElement} options={elements} />
         <Dropdown label="Demand" value={demand} onChange={setDemand} options={["D1", "D2", "D3"]} />
         <div style={{ flex: 1, minWidth: 8 }} />
-        <ZoomControl zoom={zoom} onZoom={setZoom} max={ZOOM_STEPS.length - 1} />
+        <label className="hf-field" style={{ width: 190, maxWidth: "100%", padding: "5px 9px" }}>
+          <Icon name="search" color={H.ink3} />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="search question" style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 12, color: H.ink }} aria-label="Search question text" />
+        </label>
+        <ZoomControl zoom={zoom} onZoom={setZoom} />
       </div>
 
       {/* table + deep-dive */}
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
-        <div style={{ flex: 1, overflow: "auto", background: H.paper, minWidth: 0 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr>
-                <SortableTh label="Item" k="q" align="left" />
-                <th className="hf-th">Curriculum</th>
-                <th className="hf-th">Demand</th>
-                <SortableTh label="Quality" k="quality" align="left" />
-                <SortableTh label="p-val" k="pValue" />
-                <SortableTh label="it-r" k="itemTotal" />
-                <SortableTh label="pt-bis" k="pointBiserial" />
-                <SortableTh label="disc" k="discrimination" />
-                <th className="hf-th" />
-              </tr>
-            </thead>
-            <tbody>
-              {view.map((it) => (
-                <ItemRowView
-                  key={it.id}
-                  it={it}
-                  qLabel={qIndex.get(it.id) ?? ""}
-                  selected={selectedId === it.id}
-                  expanded={expanded.has(it.id)}
-                  zoom={z}
-                  onSelect={() => select(it.id)}
-                  onToggleExpand={() => toggleExpand(it.id)}
-                  reasonOpen={reasonFor === it.id}
-                  onAskReason={() => setReasonFor(it.id)}
-                  onCancelReason={() => setReasonFor(null)}
-                  onExclude={(reason) => exclude(it.id, reason)}
-                  onRestore={() => restore(it.id)}
-                  Num={Num}
-                />
-              ))}
-            </tbody>
-          </table>
-          <div className="hf-sub" style={{ padding: "13px 26px" }}>
-            Showing {view.length} of {model.items.length} items · click a row for its deep-dive
+        <div ref={tableScrollRef} style={{ flex: 1, overflow: "auto", background: H.paper, minWidth: 0 }}>
+          {/* whole-table zoom: scale the table (columns + text + rows) together */}
+          <div style={{ transform: `scale(${zoom})`, transformOrigin: "top left", width: `${100 / zoom}%` }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <SortableTh label="Item" k="q" align="left" />
+                  <th className="hf-th">Curriculum</th>
+                  <th className="hf-th">Demand</th>
+                  <SortableTh label="Quality" k="quality" align="left" />
+                  <SortableTh label="p-val" k="pValue" />
+                  <SortableTh label="it-r" k="itemTotal" />
+                  <SortableTh label="pt-bis" k="pointBiserial" />
+                  <SortableTh label="disc" k="discrimination" />
+                  <th className="hf-th" />
+                </tr>
+              </thead>
+              <tbody>
+                {view.map((it) => (
+                  <ItemRowView
+                    key={it.id}
+                    it={it}
+                    qLabel={qIndex.get(it.id) ?? ""}
+                    selected={selectedId === it.id}
+                    expanded={expanded.has(it.id)}
+                    onSelect={() => select(it.id)}
+                    onToggleExpand={() => toggleExpand(it.id)}
+                    reasonOpen={reasonFor === it.id}
+                    onAskReason={() => setReasonFor(it.id)}
+                    onCancelReason={() => setReasonFor(null)}
+                    onExclude={(reason) => exclude(it.id, reason)}
+                    onRestore={() => restore(it.id)}
+                    Num={Num}
+                  />
+                ))}
+              </tbody>
+            </table>
+            <div className="hf-sub" style={{ padding: "13px 26px" }}>
+              Showing {view.length} of {model.items.length} items · click a row for its deep-dive
+            </div>
           </div>
         </div>
 
@@ -360,15 +367,15 @@ function Chevron({ open }: { open: boolean }) {
   );
 }
 
-/** Row-density / text-size zoom: explicit − / + controls so more rows fit on demand. */
-function ZoomControl({ zoom, onZoom, max }: { zoom: number; onZoom: (z: number) => void; max: number }) {
-  const step = (d: -1 | 1) => onZoom(Math.max(0, Math.min(max, zoom + d)));
+/** Whole-table zoom: − / + scale the entire table (also driven by trackpad pinch). */
+function ZoomControl({ zoom, onZoom }: { zoom: number; onZoom: (z: number) => void }) {
+  const step = (d: -1 | 1) => onZoom(clampZoom(Math.round((zoom + d * 0.1) * 10) / 10));
   const btn = (label: string, d: -1 | 1, disabled: boolean) => (
     <button
       onClick={() => step(d)}
       disabled={disabled}
-      aria-label={d < 0 ? "Smaller rows" : "Larger rows"}
-      title={d < 0 ? "Denser rows" : "Roomier rows"}
+      aria-label={d < 0 ? "Zoom out" : "Zoom in"}
+      title={d < 0 ? "Zoom out (fit more rows)" : "Zoom in"}
       style={{ width: 26, height: 24, fontSize: 14, fontWeight: 700, background: H.paper, color: disabled ? H.ink3 : H.ink2, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1 }}
     >
       {label}
@@ -376,23 +383,24 @@ function ZoomControl({ zoom, onZoom, max }: { zoom: number; onZoom: (z: number) 
   );
   return (
     <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <span className="hf-lbl" style={{ fontSize: 9.5 }}>Density</span>
       <span style={{ display: "flex", alignItems: "center", border: `1px solid ${H.line2}`, borderRadius: 7, overflow: "hidden" }}>
-        {btn("−", -1, zoom <= 0)}
-        <span style={{ width: 1, height: 16, background: H.line2 }} />
-        {btn("+", 1, zoom >= max)}
+        {btn("−", -1, zoom <= ZOOM_MIN + 1e-9)}
+        <button onClick={() => onZoom(1)} title="Reset zoom" className="hf-mono" style={{ minWidth: 38, height: 24, fontSize: 10.5, fontWeight: 600, color: H.ink2, background: H.paper, border: "none", borderLeft: `1px solid ${H.line2}`, borderRight: `1px solid ${H.line2}`, cursor: "pointer" }}>
+          {Math.round(zoom * 100)}%
+        </button>
+        {btn("+", 1, zoom >= ZOOM_MAX - 1e-9)}
       </span>
     </span>
   );
 }
 
-function Kpi({ n, label, sub }: { n: string; label: string; sub?: string }) {
+/** Compact inline stat for the slim control band: bold number + small label. */
+function MiniStat({ n, label }: { n: string; label: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-      <span className="hf-mono" style={{ fontSize: 20, fontWeight: 600, lineHeight: 1 }}>{n}</span>
-      <span className="hf-lbl" style={{ marginTop: 3 }}>{label}</span>
-      {sub && <span className="hf-sub" style={{ fontSize: 10.5 }}>{sub}</span>}
-    </div>
+    <span style={{ display: "inline-flex", alignItems: "baseline", gap: 4, whiteSpace: "nowrap" }}>
+      <span className="hf-mono" style={{ fontSize: 15, fontWeight: 700, lineHeight: 1, color: H.ink }}>{n}</span>
+      <span className="hf-lbl" style={{ fontSize: 9 }}>{label}</span>
+    </span>
   );
 }
 
@@ -414,7 +422,6 @@ function ItemRowView({
   qLabel,
   selected,
   expanded,
-  zoom,
   onSelect,
   onToggleExpand,
   reasonOpen,
@@ -428,7 +435,6 @@ function ItemRowView({
   qLabel: string;
   selected: boolean;
   expanded: boolean;
-  zoom: { pad: string; font: number };
   onSelect: () => void;
   onToggleExpand: () => void;
   reasonOpen: boolean;
@@ -438,7 +444,9 @@ function ItemRowView({
   onRestore: () => void;
   Num: (p: { v: number | null }) => JSX.Element;
 }) {
-  const td = { padding: zoom.pad, borderBottom: `1px solid ${H.line}`, verticalAlign: "middle" as const };
+  // Fixed normal density — whole-table zoom (scale transform) handles sizing.
+  const td = { padding: "9px 12px", borderBottom: `1px solid ${H.line}`, verticalAlign: "middle" as const };
+  const FONT = 12.5;
   const stop = (e: React.MouseEvent) => e.stopPropagation();
   return (
     <tr
@@ -448,8 +456,8 @@ function ItemRowView({
     >
       <td style={{ ...td, verticalAlign: "top", maxWidth: 360 }}>
         <div style={{ display: "flex", gap: 8, alignItems: expanded ? "flex-start" : "center" }}>
-          <span className="hf-mono" style={{ fontWeight: 700, fontSize: zoom.font, flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>{qLabel}</span>
-          <span style={{ flex: 1, minWidth: 0, fontSize: zoom.font, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
+          <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>{qLabel}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: FONT, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
             {expanded ? (it.wording ?? "—") : firstLine(it.wording)}
           </span>
           {(it.wording ?? "").length > 40 ? (
@@ -468,7 +476,7 @@ function ItemRowView({
         </div>
       </td>
       <td style={{ ...td, maxWidth: 150, width: 150 }}>
-        <div title={it.major ?? undefined} style={{ fontSize: zoom.font - 0.5, fontWeight: 600, maxWidth: 138, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.major ?? "—"}</div>
+        <div title={it.major ?? undefined} style={{ fontSize: FONT - 0.5, fontWeight: 600, maxWidth: 138, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.major ?? "—"}</div>
         <div title={it.sub ?? undefined} className="hf-sub" style={{ fontSize: 11, maxWidth: 138, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{it.sub ?? ""}</div>
       </td>
       <td style={td}>{it.demand ? <Pill>{it.demand}</Pill> : null}</td>
@@ -506,15 +514,13 @@ function RatingChip({ rating }: { rating: "Good" | "Review" | "Flag" }) {
   return <span style={{ fontSize: 10.5, fontWeight: 700, color: c, background: bg, padding: "2px 8px", borderRadius: 999 }}>{rating}</span>;
 }
 
-function StatBox({ label, value, rating, reason }: { label: string; value: string; rating: "Good" | "Review" | "Flag"; reason: string }) {
+/** Compact statistic row: name · value · rating chip (reason on hover). */
+function StatRow({ label, value, rating, reason }: { label: string; value: string; rating: "Good" | "Review" | "Flag"; reason: string }) {
   return (
-    <div style={{ border: `1px solid ${H.line}`, borderRadius: 10, padding: "11px 13px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span className="hf-lbl" style={{ flex: 1 }}>{label}</span>
-        <RatingChip rating={rating} />
-      </div>
-      <div className="hf-mono" style={{ fontSize: 22, fontWeight: 600, marginTop: 4 }}>{value}</div>
-      <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 5, lineHeight: 1.4 }}>{reason}</div>
+    <div title={reason} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${H.line}` }}>
+      <span style={{ flex: 1, fontSize: 12, color: H.ink2 }}>{label}</span>
+      <span className="hf-mono" style={{ fontSize: 13.5, fontWeight: 600, minWidth: 38, textAlign: "right" }}>{value}</span>
+      <RatingChip rating={rating} />
     </div>
   );
 }
@@ -531,72 +537,61 @@ function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel;
   const gmax = Math.max(detail.groups.upperMean, detail.groups.lowerMean, 0.001);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* header */}
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {/* header — statistics only, no question wording */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <span className="hf-mono" style={{ fontWeight: 700, fontSize: 15 }}>{detail.qLabel}</span>
+        {detail.demand && <Pill>{detail.demand}</Pill>}
+        {detail.major && <span className="hf-sub" style={{ fontSize: 11 }}>{detail.major}</span>}
+        <div style={{ flex: 1 }} />
+        <RatingChip rating={detail.overallReview} />
+        {detail.excluded && <span className="hf-mono" style={{ fontSize: 10, color: H.bad, fontWeight: 700 }}>EXCLUDED</span>}
+      </div>
+
+      {/* the four statistics — compact rows (reason on hover) */}
       <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-          <span className="hf-mono" style={{ fontWeight: 700, fontSize: 15 }}>{detail.qLabel}</span>
-          {detail.demand && <Pill>{detail.demand}</Pill>}
-          <RatingChip rating={detail.overallReview} />
-          {detail.excluded && <span className="hf-mono" style={{ fontSize: 10, color: H.bad, fontWeight: 700 }}>EXCLUDED</span>}
-        </div>
-        <div style={{ fontSize: 13, marginTop: 8, lineHeight: 1.45 }}>{detail.wording ?? "—"}</div>
-        <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 6 }}>
-          {detail.major ?? "—"}{detail.sub ? ` · ${detail.sub}` : ""}
-        </div>
+        <StatRow label="p-value (difficulty)" value={fmtStat(detail.pValue)} rating={detail.pRating} reason={detail.reasons.p} />
+        <StatRow label="Item-total correlation" value={fmtStat(detail.itemTotal)} rating={detail.itRating} reason={detail.reasons.it} />
+        <StatRow label="Point-biserial" value={fmtStat(detail.pointBiserial)} rating={detail.pbRating} reason={detail.reasons.pb} />
+        <StatRow label="Discrimination" value={fmtStat(detail.discrimination)} rating={detail.discRating} reason={detail.reasons.disc} />
       </div>
 
-      {/* outcome distribution (honest: correct/incorrect/not-answered) */}
+      {/* discrimination groups — compact */}
       <div>
-        <div className="hf-lbl" style={{ marginBottom: 8 }}>Response outcome · {detail.answered} of {detail.presented} answered</div>
-        <div style={{ display: "flex", height: 14, borderRadius: 5, overflow: "hidden", border: `1px solid ${H.line2}` }}>
-          {seg.map((s) => (s.n > 0 ? <div key={s.k} title={`${s.k}: ${s.n}`} style={{ width: `${pct(s.n)}%`, background: s.c }} /> : null))}
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 9 }}>
-          {seg.map((s) => (
-            <div key={s.k} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5 }}>
-              <span style={{ width: 9, height: 9, borderRadius: 2, background: s.c }} />
-              <span style={{ flex: 1, color: H.ink2 }}>{s.k}</span>
-              <span className="hf-mono">{s.n}</span>
-              <span className="hf-mono" style={{ color: H.ink3, width: 34, textAlign: "right" }}>{pct(s.n)}%</span>
-            </div>
-          ))}
-        </div>
-        <div className="hf-sub" style={{ fontSize: 10.5, marginTop: 7, color: H.ink3 }}>
-          The score export records correct/incorrect, not the chosen option — so this is the response outcome, not a per-option split.
-        </div>
-      </div>
-
-      {/* the four statistics with reasoning */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <StatBox label="p-value (difficulty)" value={fmtStat(detail.pValue)} rating={detail.pRating} reason={detail.reasons.p} />
-        <StatBox label="Item-total correlation" value={fmtStat(detail.itemTotal)} rating={detail.itRating} reason={detail.reasons.it} />
-        <StatBox label="Point-biserial" value={fmtStat(detail.pointBiserial)} rating={detail.pbRating} reason={detail.reasons.pb} />
-        <StatBox label="Discrimination" value={fmtStat(detail.discrimination)} rating={detail.discRating} reason={detail.reasons.disc} />
-      </div>
-
-      {/* discrimination groups */}
-      <div style={{ border: `1px solid ${H.line}`, borderRadius: 10, padding: "12px 13px" }}>
-        <div className="hf-lbl" style={{ marginBottom: 9 }}>Discrimination groups · top/bottom {detail.groups.size}</div>
+        <div className="hf-lbl" style={{ marginBottom: 6 }}>Discrimination groups · top/bottom {detail.groups.size}</div>
         {[
-          { k: "Upper group", v: detail.groups.upperMean, c: H.good },
-          { k: "Lower group", v: detail.groups.lowerMean, c: H.bad },
+          { k: "Upper", v: detail.groups.upperMean, c: H.good },
+          { k: "Lower", v: detail.groups.lowerMean, c: H.bad },
         ].map((g) => (
-          <div key={g.k} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 7 }}>
-            <span style={{ width: 80, fontSize: 11.5, color: H.ink2 }}>{g.k}</span>
-            <div style={{ flex: 1, height: 10, background: H.tint2, borderRadius: 5 }}>
-              <div style={{ width: `${(g.v / gmax) * 100}%`, height: "100%", background: g.c, borderRadius: 5 }} />
+          <div key={g.k} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}>
+            <span style={{ width: 44, fontSize: 11.5, color: H.ink2 }}>{g.k}</span>
+            <div style={{ flex: 1, height: 8, background: H.tint2, borderRadius: 4 }}>
+              <div style={{ width: `${(g.v / gmax) * 100}%`, height: "100%", background: g.c, borderRadius: 4 }} />
             </div>
-            <span className="hf-mono" style={{ width: 38, textAlign: "right", fontSize: 11.5 }}>{(g.v * 100).toFixed(0)}%</span>
+            <span className="hf-mono" style={{ width: 34, textAlign: "right", fontSize: 11.5 }}>{(g.v * 100).toFixed(0)}%</span>
           </div>
         ))}
-        <div className="hf-sub" style={{ fontSize: 11, marginTop: 4 }}>
-          Upper − lower = <span className="hf-mono">{fmtStat(detail.discrimination)}</span>. Strong items are answered correctly more often by the upper group.
+      </div>
+
+      {/* response outcome — compact bar + inline legend */}
+      <div>
+        <div className="hf-lbl" style={{ marginBottom: 6 }}>Response outcome · {detail.answered}/{detail.presented} answered</div>
+        <div style={{ display: "flex", height: 12, borderRadius: 5, overflow: "hidden", border: `1px solid ${H.line2}` }}>
+          {seg.map((s) => (s.n > 0 ? <div key={s.k} title={`${s.k}: ${s.n}`} style={{ width: `${pct(s.n)}%`, background: s.c }} /> : null))}
+        </div>
+        <div style={{ display: "flex", gap: 12, marginTop: 6, flexWrap: "wrap" }}>
+          {seg.map((s) => (
+            <span key={s.k} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: s.c }} />
+              <span style={{ color: H.ink2 }}>{s.k}</span>
+              <span className="hf-mono" style={{ color: H.ink }}>{s.n}</span>
+            </span>
+          ))}
         </div>
       </div>
 
       {/* exclude / restore */}
-      <div style={{ borderTop: `1px solid ${H.line}`, paddingTop: 14 }}>
+      <div style={{ borderTop: `1px solid ${H.line}`, paddingTop: 12 }}>
         {detail.excluded ? (
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <span className="hf-sub" style={{ flex: 1, fontSize: 11.5 }}>Excluded — {detail.reason ?? "flagged in review"}</span>
