@@ -8,11 +8,10 @@
 import { useState } from "react";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Avatar, Badge, type BadgeTone } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import type { AuditFilter, AuditType } from "@/lib/data/types";
-import { cyclesSubnav } from "@/lib/ui/subnav";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 const FILTERS: { key: AuditFilter; label: string }[] = [
@@ -54,14 +53,16 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
   const [filter, setFilter] = useState<AuditFilter>("all");
   const [search, setSearch] = useState("");
   const model = useProviderData((p) => p.getAuditLog(cycleId, filter, search), [cycleId, filter, search]);
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   return (
-    <Shell
-      active="Cycles"
-      crumb={[{ label: "Cycles", href: "/" }, { label: "May 2026", href: `/cycles/${cycleId}` }, { label: "Audit log" }]}
-      subnav={cyclesSubnav(cycleId, "audit")}
-      actions={<Button variant="ghost"><Icon name="download" />Export log</Button>}
+    <CycleShell
+      cycleId={cycleId}
+      cycleName={cycleName}
+      page="Audit log"
+      area="audit"
+      primary={<Button variant="ghost"><Icon name="download" />Export log</Button>}
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, padding: "16px 26px", borderBottom: `1px solid ${H.line}`, flexWrap: "wrap", background: H.paper }}>
@@ -119,6 +120,6 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
           </div>
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }

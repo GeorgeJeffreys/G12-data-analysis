@@ -11,8 +11,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { Shell } from "@/components/shell/Shell";
-import { cyclesSubnav } from "@/lib/ui/subnav";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Card, Pill } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { getDocumentGenerator } from "@/lib/documents/generator";
@@ -41,6 +40,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
   const cycleId = params.cycleId;
   const provider = useProvider();
   const model = useProviderData((p) => p.getDocuments(cycleId), [cycleId]);
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   const [choice, setChoice] = useState<Choice>("both");
   const [certFile, setCertFile] = useState<File | null>(null);
@@ -57,24 +57,21 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Documents" }]}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Certificates" area="documents">
         <div style={{ padding: 32 }} className="hf-sub">No document data for this cycle.</div>
-      </Shell>
+      </CycleShell>
     );
   }
-
-  const crumb = [
-    { label: "Cycles", href: "/" },
-    { label: "May 2026", href: `/cycles/${cycleId}` },
-    { label: "Documents" },
-  ];
 
   // Gate: locked grades required.
   if (!model.locked) {
     return (
-      <Shell
-        crumb={crumb}
-        actions={
+      <CycleShell
+        cycleId={cycleId}
+        cycleName={cycleName}
+        page="Certificates"
+        area="documents"
+        primary={
           <Link href={`/cycles/${cycleId}/grades`}>
             <Button variant="pri">Go to grades &amp; sign-off<Icon name="arrow" color="#fff" /></Button>
           </Link>
@@ -95,7 +92,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
             </div>
           </Card>
         </div>
-      </Shell>
+      </CycleShell>
     );
   }
 
@@ -128,30 +125,31 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
 
   if (step === "results" && result) {
     return (
-      <ResultsView crumb={crumb} model={model} result={result} onBack={() => setStep("config")} onRetry={doGenerate} />
+      <ResultsView cycleId={cycleId} cycleName={cycleName} model={model} result={result} onBack={() => setStep("config")} onRetry={doGenerate} />
     );
   }
 
   return (
-    <Shell
-      active="Cycles"
-      crumb={crumb}
-      subnav={cyclesSubnav(cycleId, "documents")}
+    <CycleShell
+      cycleId={cycleId}
+      cycleName={cycleName}
+      page="Certificates"
+      area="documents"
       actions={
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.good, fontWeight: 700, fontSize: 12 }}>
-            <Mark kind="pass" size={14} /> Grades locked
-          </span>
-          <Button
-            variant="pri"
-            disabled={!requiredReady || step === "generating"}
-            onClick={doGenerate}
-            title={requiredReady ? undefined : "Upload the required template(s) first"}
-          >
-            <Icon name="award" color="#fff" />
-            {step === "generating" ? "Generating…" : "Generate documents"}
-          </Button>
-        </div>
+        <span style={{ display: "flex", alignItems: "center", gap: 6, color: H.good, fontWeight: 700, fontSize: 12 }}>
+          <Mark kind="pass" size={14} /> Grades locked
+        </span>
+      }
+      primary={
+        <Button
+          variant="pri"
+          disabled={!requiredReady || step === "generating"}
+          onClick={doGenerate}
+          title={requiredReady ? undefined : "Upload the required template(s) first"}
+        >
+          <Icon name="award" color="#fff" />
+          {step === "generating" ? "Generating…" : "Generate documents"}
+        </Button>
       }
     >
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0, flexWrap: "wrap" }}>
@@ -280,19 +278,21 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
           </div>
         </div>
       )}
-    </Shell>
+    </CycleShell>
   );
 }
 
 // ── results ───────────────────────────────────────────────────────────────
 function ResultsView({
-  crumb,
+  cycleId,
+  cycleName,
   model,
   result,
   onBack,
   onRetry,
 }: {
-  crumb: { label: string; href?: string }[];
+  cycleId: string;
+  cycleName: string;
   model: DocumentsModel;
   result: GenerateResult;
   onBack: () => void;
@@ -315,11 +315,12 @@ function ResultsView({
   const totalFailed = result.perStudent.length - totalComplete;
 
   return (
-    <Shell
-      active="Cycles"
-      crumb={[...crumb, { label: "Results" }]}
-      subnav={cyclesSubnav(model.cycleId, "documents")}
-      actions={
+    <CycleShell
+      cycleId={cycleId}
+      cycleName={cycleName}
+      page="Certificates"
+      area="documents"
+      primary={
         <div style={{ display: "flex", gap: 8 }}>
           {kinds.map((k) =>
             result.kinds[k]?.zipUrl ? (
@@ -412,7 +413,7 @@ function ResultsView({
           </div>
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 

@@ -9,11 +9,10 @@
 import { Fragment, useState, type CSSProperties } from "react";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Badge } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
-import { cyclesSubnav } from "@/lib/ui/subnav";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import type { DiagnosticsModel, DiagnosticsAssessment } from "@/lib/data/types";
 import type { DiagStatus } from "@/lib/diagnostics";
@@ -24,24 +23,21 @@ const statusBg = (s: DiagStatus) => (s === "Good" ? H.goodSoft : s === "Review" 
 export default function DiagnosticsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const [active, setActive] = useState(0);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!model || model.assessments.length === 0) {
     return (
-      <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: "Diagnostics" }]} subnav={cyclesSubnav(cycleId, "diagnostics")}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" area="diagnostics">
         <div style={{ padding: 32 }} className="hf-sub">No diagnostics for this cycle.</div>
-      </Shell>
+      </CycleShell>
     );
   }
   const a = model.assessments[Math.min(active, model.assessments.length - 1)]!;
 
   return (
-    <Shell
-      active="Cycles"
-      crumb={[{ label: "Cycles", href: "/" }, { label: "May 2026", href: `/cycles/${cycleId}` }, { label: "Diagnostics" }]}
-      subnav={cyclesSubnav(cycleId, "diagnostics")}
-    >
+    <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" area="diagnostics">
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
           <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
@@ -161,7 +157,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
           </div>
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 
