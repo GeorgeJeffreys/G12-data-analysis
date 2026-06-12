@@ -36,9 +36,17 @@ export function ProvisionalBanner({ cycleId }: { cycleId: string }) {
         )}
         {awaiting > 0 && <>{awaiting} incident{awaiting === 1 ? "" : "s"} still awaiting triage. </>}
       </span>
-      <Link href={`/cycles/${cycleId}/adjustments`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
-        Open Adjustments →
-      </Link>
+      {/* route to where the outstanding input is actually handled */}
+      {missingEssay.length > 0 && (
+        <Link href={`/cycles/${cycleId}/import`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
+          Load essay marks →
+        </Link>
+      )}
+      {awaiting > 0 && (
+        <Link href={`/cycles/${cycleId}/adjustments`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
+          Triage incidents →
+        </Link>
+      )}
     </div>
   );
 }
