@@ -59,7 +59,10 @@ export function useAccessStatus(): AccessStatus {
   const isSupabase = provider instanceof SupabaseDataProvider;
   const subscribe = useMemo(() => provider.subscribe.bind(provider), [provider]);
   const get = () => (isSupabase ? (provider as SupabaseDataProvider).getAccessStatus() : "ok");
-  return useSyncExternalStore(subscribe, get, () => "loading");
+  // Server render: the in-memory demo is always "ok" (no auth); only the Supabase
+  // provider is genuinely "loading" until it hydrates on the client.
+  const serverSnapshot = (): AccessStatus => (isSupabase ? "loading" : "ok");
+  return useSyncExternalStore(subscribe, get, serverSnapshot);
 }
 
 /**
