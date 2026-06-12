@@ -14,6 +14,7 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Badge, Avatar, StatBlock } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
@@ -25,6 +26,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
   const provider = useProvider();
   const [scope, setScope] = useState<string | undefined>(undefined);
   const model = useProviderData((p) => p.getDistinctionSafeguard(cycleId, scope), [cycleId, scope]);
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
@@ -50,23 +52,13 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
   };
 
   return (
-    <Shell
-      active="Cycles"
-      crumb={[
-        { label: "Cycles", href: "/" },
-        { label: "May 2026", href: `/cycles/${cycleId}` },
-        { label: "Grades & sign-off", href: `/cycles/${cycleId}/grades` },
-        { label: "Distinction safeguard" },
-      ]}
+    <CycleShell
+      cycleId={cycleId}
+      cycleName={cycleName}
+      page="Distinction safeguard"
       stageIndex={5}
       done={5}
-      cycleId={cycleId}
-      actions={
-        <Link href={`/cycles/${cycleId}/audit`}>
-          <Button variant="ghost"><Icon name="doc" />Audit log</Button>
-        </Link>
-      }
-      stageAction={
+      primary={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri" onClick={() => provider.confirmDistinctionCaps(cycleId)}>
             {nCap ? "Confirm caps & continue" : "Confirm & continue"}
@@ -74,13 +66,14 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
           </Button>
         </Link>
       }
+      subjectTabs={
+        <AssessmentTabs
+          activeId={model.scope}
+          tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
+          onSelect={setScope}
+        />
+      }
     >
-      {/* assessment selector — shared canonical chip-tab row (per-assessment rule) */}
-      <AssessmentTabs
-        activeId={model.scope}
-        tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
-        onSelect={setScope}
-      />
 
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 30px", gap: 18, flex: 1, minHeight: 0 }}>
         <div>
@@ -191,7 +184,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
           </span>
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 

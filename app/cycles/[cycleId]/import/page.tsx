@@ -15,6 +15,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseEssayMarks } from "@/lib/data/parse-essays";
@@ -29,6 +30,7 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const model = useProviderData((p) => p.getIngest(cycleId), [cycleId]);
   const essay = useProviderData((p) => p.getEssayMarks(cycleId), [cycleId]) as EssayMarksModel | null;
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   const [open, setOpen] = useState<Record<number, boolean>>({ 1: true, 2: false, 3: false });
   const [resolved, setResolved] = useState<DuplicateStrategy | null>(null);
@@ -63,21 +65,12 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const incidentStatus = adjUp ? `${adj!.counts.incidents} incidents · ${adj!.counts.decided} triaged` : "Not added";
 
   return (
-    <Shell
-      crumb={[
-        { label: "Cycles", href: "/" },
-        { label: "May 2026", href: `/cycles/${cycleId}` },
-        { label: "Data import" },
-      ]}
-      stageIndex={0}
+    <CycleShell
       cycleId={cycleId}
-      actions={
-        <Button variant="danger">
-          <Icon name="upload" />
-          Re-upload export
-        </Button>
-      }
-      stageAction={
+      cycleName={cycleName}
+      page="Data import"
+      stageIndex={0}
+      primary={
         <Link href={model.canContinue ? `/cycles/${cycleId}/review` : "#"} tabIndex={model.canContinue ? undefined : -1}>
           <Button variant="pri" disabled={!model.canContinue}>
             Continue to review
@@ -107,7 +100,7 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
           <IncidentBody cycleId={cycleId} model={adj} />
         </ImportCard>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 

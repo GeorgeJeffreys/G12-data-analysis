@@ -9,10 +9,10 @@ import Link from "next/link";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { Pipeline } from "@/components/shell/Pipeline";
-import { cyclesSubnav } from "@/lib/ui/subnav";
 
 export default function CycleOverview({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -27,24 +27,23 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
   }
 
   return (
-    <Shell
-      active="Cycles"
-      crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}
-      subnav={cycle.mock ? undefined : cyclesSubnav(cycleId, "pipeline")}
-      stageIndex={cycle.stageIndex}
+    <CycleShell
       cycleId={cycleId}
-      actions={
-        <>
-          <Link href={`/cycles/${cycleId}/audit`}>
-            <Button variant="ghost">Audit log</Button>
-          </Link>
-          <Button variant="ghost">Export status<Icon name="chev" /></Button>
-        </>
+      cycleName={cycle.name}
+      stageIndex={cycle.stageIndex}
+      primary={
+        <Link href={cycle.doNext.href}>
+          <Button variant="pri">
+            {cycle.doNext.cta}
+            <Icon name="arrow" color="#fff" />
+          </Button>
+        </Link>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 22, flex: 1 }}>
         <div>
-          <div className="hf-h1">
+          <div className="hf-lbl" style={{ color: H.ink3 }}>Pipeline overview</div>
+          <div className="hf-h1" style={{ marginTop: 4 }}>
             {cycle.name} cycle
             {cycle.mock && (
               <span style={{ fontSize: 9, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "2px 5px", letterSpacing: 0.5, marginLeft: 10, verticalAlign: "middle" }}>
@@ -58,17 +57,11 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
         </div>
 
         <div style={{ display: "flex", gap: 18, alignItems: "stretch", flexWrap: "wrap" }}>
-          {/* Do next */}
+          {/* What's next — status panel; the action is the pinned top-right button */}
           <div style={{ flex: "1 1 300px", minWidth: 280, borderRadius: 12, padding: "22px 24px", background: H.slate, color: H.cream, position: "relative", overflow: "hidden" }}>
-            <div className="hf-lbl" style={{ color: "rgba(233,237,241,.6)" }}>Do next</div>
+            <div className="hf-lbl" style={{ color: "rgba(233,237,241,.6)" }}>What’s next</div>
             <div className="hf-h2" style={{ margin: "10px 0 6px", fontSize: 17, color: "#fff" }}>{cycle.doNext.title}</div>
-            <div style={{ fontSize: 12.5, color: "rgba(233,237,241,.8)", marginBottom: 18, lineHeight: 1.5 }}>{cycle.doNext.body}</div>
-            <Link href={cycle.doNext.href}>
-              <Button variant="pri">
-                {cycle.doNext.cta}
-                <Icon name="arrow" color="#fff" />
-              </Button>
-            </Link>
+            <div style={{ fontSize: 12.5, color: "rgba(233,237,241,.8)", lineHeight: 1.5 }}>{cycle.doNext.body}</div>
           </div>
 
           {/* Assessments */}
@@ -115,6 +108,6 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
           </div>
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }

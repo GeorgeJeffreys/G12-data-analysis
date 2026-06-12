@@ -12,47 +12,42 @@ import { useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
-import { cyclesSubnav } from "@/lib/ui/subnav";
 import type { AdjustmentIncident, AdjustmentsModel } from "@/lib/data/types";
 
 export default function AdjustmentsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   const shellProps = {
-    active: "Cycles" as const,
-    crumb: [
-      { label: "Cycles", href: "/" },
-      { label: "May 2026", href: `/cycles/${cycleId}` },
-      { label: "Adjustments" },
-    ],
-    subnav: cyclesSubnav(cycleId, "pipeline"),
+    cycleId,
+    cycleName,
+    page: "Adjustments",
     stageIndex: 2,
     done: 2,
-    cycleId,
+    alerts: <LockBanner cycleId={cycleId} />,
+    primary: (
+      <Link href={`/cycles/${cycleId}/boundaries`}>
+        <Button variant="pri">Continue to scoring<Icon name="arrow" color="#fff" /></Button>
+      </Link>
+    ),
   };
-  const continueAction = (
-    <Link href={`/cycles/${cycleId}/boundaries`}>
-      <Button variant="pri">Continue to scoring<Icon name="arrow" color="#fff" /></Button>
-    </Link>
-  );
 
   if (!adj) {
     return (
-      <Shell {...shellProps} stageAction={continueAction}>
+      <CycleShell {...shellProps}>
         <div style={{ padding: 32 }} className="hf-sub">No adjustment data for this cycle.</div>
-      </Shell>
+      </CycleShell>
     );
   }
 
   return (
-    <Shell {...shellProps} stageAction={continueAction}>
-      <LockBanner cycleId={cycleId} />
+    <CycleShell {...shellProps}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         {/* header */}
         <div className="hf-pad" style={{ display: "flex", alignItems: "flex-end", gap: 20, padding: "22px 28px 0", flexWrap: "wrap" }}>
@@ -74,7 +69,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
           <Triage cycleId={cycleId} adj={adj} />
         </div>
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 

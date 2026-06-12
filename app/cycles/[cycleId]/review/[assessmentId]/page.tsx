@@ -20,6 +20,7 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
 import { H, ratingColor } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { CycleShell } from "@/components/shell/CycleShell";
 import { LockBanner } from "@/components/shell/LockBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
@@ -58,6 +59,7 @@ export default function ReviewPage({
   const assessmentId = decodeURIComponent(params.assessmentId);
   const provider = useProvider();
   const model = useProviderData((p) => p.getReview(cycleId, assessmentId), [cycleId, assessmentId]);
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   const [search, setSearch] = useState("");
   const [quality, setQuality] = useState<QualityFilter>("all");
@@ -143,15 +145,12 @@ export default function ReviewPage({
   );
 
   return (
-    <Shell
-      crumb={[
-        { label: "Cycles", href: "/" },
-        { label: "May 2026", href: `/cycles/${cycleId}` },
-        { label: "Item review & scoring" },
-      ]}
-      stageIndex={1}
+    <CycleShell
       cycleId={cycleId}
-      stageAction={
+      cycleName={cycleName}
+      page="Item review & scoring"
+      stageIndex={1}
+      primary={
         <Link href={`/cycles/${cycleId}/adjustments`}>
           <Button variant="pri">
             Continue to adjustments
@@ -159,19 +158,19 @@ export default function ReviewPage({
           </Button>
         </Link>
       }
+      alerts={<LockBanner cycleId={cycleId} />}
+      subjectTabs={
+        <AssessmentTabs
+          activeId={assessmentId}
+          tabs={model.assessments.map((a) => ({
+            id: a.id,
+            label: a.shortName,
+            rtl: a.rtl,
+            href: `/cycles/${cycleId}/review/${encodeURIComponent(a.id)}`,
+          }))}
+        />
+      }
     >
-      <LockBanner cycleId={cycleId} />
-      {/* assessment selector — shared canonical chip-tab row under the breadcrumb */}
-      <AssessmentTabs
-        activeId={assessmentId}
-        tabs={model.assessments.map((a) => ({
-          id: a.id,
-          label: a.shortName,
-          rtl: a.rtl,
-          href: `/cycles/${cycleId}/review/${encodeURIComponent(a.id)}`,
-        }))}
-      />
-
       {/* slim single control band: compact stats + filters + search + zoom */}
       <div className="hf-pad" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 24px", borderBottom: `1px solid ${H.line}`, background: H.paper, flexWrap: "wrap" }}>
         <span style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
@@ -251,7 +250,7 @@ export default function ReviewPage({
           onRestore={restore}
         />
       </div>
-    </Shell>
+    </CycleShell>
   );
 }
 
