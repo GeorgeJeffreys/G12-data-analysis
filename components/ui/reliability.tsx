@@ -19,10 +19,15 @@ function alphaColor(a: number | null): string {
   return H.bad; // includes negative
 }
 
-/** The α value (or its n/a note), coloured, with a fixed 3-dp format. */
-export function AlphaValue({ row, size = 13 }: { row: ReliabilityRow; size?: number }) {
-  if (row.alpha === null) {
-    return <span className="hf-sub" style={{ fontSize: size - 1, color: H.ink3 }}>{row.note ?? "n/a"}</span>;
+/**
+ * The α value (or its n/a note), coloured, with a fixed 3-dp format. A missing
+ * row (no reliability group for this level/subject — a normal, expected state
+ * for small or sparse cohorts) renders the same "not available" treatment as a
+ * present-but-uncomputable α, never reading `.alpha` off undefined.
+ */
+export function AlphaValue({ row, size = 13 }: { row: ReliabilityRow | null | undefined; size?: number }) {
+  if (!row || row.alpha === null) {
+    return <span className="hf-sub" style={{ fontSize: size - 1, color: H.ink3 }}>{row?.note ?? "n/a — not available"}</span>;
   }
   return (
     <span className="hf-mono" style={{ fontSize: size, fontWeight: 700, color: alphaColor(row.alpha) }}>
@@ -31,8 +36,11 @@ export function AlphaValue({ row, size = 13 }: { row: ReliabilityRow; size?: num
   );
 }
 
-/** k / n with a caution chip where the estimate is fragile. */
-function KnCell({ row }: { row: ReliabilityRow }) {
+/** k / n with a caution chip where the estimate is fragile; "—" when the group is absent. */
+function KnCell({ row }: { row: ReliabilityRow | null | undefined }) {
+  if (!row) {
+    return <span className="hf-sub" style={{ fontSize: 11.5, color: H.ink3 }}>—</span>;
+  }
   return (
     <span style={{ display: "inline-flex", gap: 7, alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap" }}>
       <span className="hf-mono" style={{ fontSize: 11.5, color: H.ink2 }} title="items in the group">
