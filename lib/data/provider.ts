@@ -20,6 +20,7 @@ import type { AssembleScoreAnalysisArgs, AssembleItemAnalysisArgs } from "@/lib/
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
+  CompareCyclesModel,
   AuditFilter,
   AuditModel,
   BoundaryMode,
@@ -193,6 +194,12 @@ export interface DataProvider {
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel;
   getAnalyticsTrends(): AnalyticsTrends;
   getAnalyticsCompare(): AnalyticsCompare;
+  /**
+   * Compare cycles › per-subject, multi-cycle comparison. `cycleIds` selects the
+   * cycles (defaults to the two most recent). Read-only: every figure is an
+   * already-computed provider output; prior cycles are clearly-labelled mock.
+   */
+  getCompareCycles(cycleIds?: string[]): CompareCyclesModel;
 
   // new cycle
   getNewCycle(): NewCycleModel;

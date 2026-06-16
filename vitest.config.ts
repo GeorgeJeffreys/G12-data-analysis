@@ -7,6 +7,9 @@ export default defineConfig({
       "@": path.resolve(__dirname, "."),
     },
   },
+  // Match Next.js's automatic JSX runtime so component (.tsx) files render in
+  // tests without an explicit `import React` (they don't carry one).
+  esbuild: { jsx: "automatic", jsxImportSource: "react" },
   test: {
     environment: "node",
     include: ["tests/**/*.test.ts"],

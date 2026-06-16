@@ -41,6 +41,7 @@ import type {
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
+  CompareCyclesModel,
   AuditFilter,
   AuditModel,
   ConfigModel,
@@ -264,6 +265,7 @@ export class SupabaseDataProvider implements DataProvider {
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
   getAnalyticsCompare(): AnalyticsCompare { return this.inner.getAnalyticsCompare(); }
+  getCompareCycles(cycleIds?: string[]): CompareCyclesModel { return this.inner.getCompareCycles(cycleIds); }
   getNewCycle(): NewCycleModel { return this.inner.getNewCycle(); }
   getEssayMarks(cycleId: string): EssayMarksModel | null { return this.inner.getEssayMarks(cycleId); }
   getAdjustments(cycleId: string): AdjustmentsModel | null { return this.inner.getAdjustments(cycleId); }

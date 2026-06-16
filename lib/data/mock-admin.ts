@@ -122,6 +122,66 @@ export interface MockPrior {
   byAssessment: Record<string, number>;
 }
 
+// --- Compare cycles: per-subject MOCK metrics for prior cycles ---------------
+// There is no real per-subject psychometric history for prior cycles in this
+// build (the seed marks them mock with no item-level data). To keep the Compare
+// cycles charts meaningful, prior columns use these deterministic, clearly
+// MOCK-labelled per-subject figures — consistent with the mock-priors
+// convention already used by Trends/Compare. Only the live cycle is real.
+
+export interface MockCompareSubject {
+  participants: number;
+  scoreMean: number;
+  scoreMedian: number;
+  scoreMax: number;
+  avgPValue: number;
+  avgPointBiserial: number;
+  alpha: number;
+  itemsUsable: number;
+  itemsRemoved: number;
+}
+
+/** Deterministic 0..1 hash from a string seed (no external deps). */
+function seededUnit(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  // map to [0,1)
+  return ((h >>> 0) % 100000) / 100000;
+}
+
+/**
+ * Deterministic mock per-subject metrics for a prior cycle, keyed by assessment
+ * id. `cycleSeed` (e.g. the cycle id) varies the figures between cycles; the
+ * `itemCount`/`maxRaw` anchor usable-item and cut-score scales to the subject.
+ */
+export function mockCompareSubjects(
+  cycleSeed: string,
+  subjects: { id: string; itemCount: number }[],
+): Record<string, MockCompareSubject> {
+  const out: Record<string, MockCompareSubject> = {};
+  for (const s of subjects) {
+    const u = (k: string) => seededUnit(`${cycleSeed}|${s.id}|${k}`);
+    const removed = Math.round(2 + u("rm") * 5); // 2..7 removed
+    const usable = Math.max(1, s.itemCount - removed);
+    const mean = Math.round(40 + u("mean") * 28); // 40..68 %
+    out[s.id] = {
+      participants: Math.round(9 + u("part") * 9), // 9..18
+      scoreMean: mean,
+      scoreMedian: Math.min(100, Math.max(0, mean + Math.round((u("med") - 0.5) * 6))),
+      scoreMax: s.itemCount,
+      avgPValue: Math.round((0.33 + u("p") * 0.35) * 100) / 100, // .33..0.68
+      avgPointBiserial: Math.round((0.18 + u("rp") * 0.16) * 100) / 100, // .18..0.34
+      alpha: Math.round((0.68 + u("a") * 0.16) * 100) / 100, // .68..0.84
+      itemsUsable: usable,
+      itemsRemoved: removed,
+    };
+  }
+  return out;
+}
+
 /** Mock priors for the three sittings before the live cycle (oldest → newest). */
 export function mockPriors(awardLevels: string[], assessmentIds: string[]): MockPrior[] {
   const award = (a: number, b: number, c: number, d: number): Record<string, number> =>
