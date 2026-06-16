@@ -662,11 +662,19 @@ export type SafeguardResult = "pass" | "capped" | "override";
 export interface DistinctionCandidate {
   id: string;
   name: string;
-  topDifficultyAnswered: number;
+  /** D3 items answered correctly on the selected exam scope. */
+  topDifficultyCorrect: number;
+  /** D3 items available on the selected exam scope (after exclusions). */
+  topDifficultyAvailable: number;
+  /** Majority threshold for the selected scope (strictly more than half of available). */
+  majority: number;
+  /** Whether the student cleared the majority on the selected scope. */
   meets: boolean;
   provisionalAward: string;
   cappedAward: string;
   result: SafeguardResult;
+  /** The visible "why" when capped (the failing exam's working); null otherwise. */
+  capReason: string | null;
   overrideReason: string | null;
   overrideBy: string | null;
 }
@@ -683,7 +691,7 @@ export interface DistinctionSafeguardModel {
   candidates: DistinctionCandidate[];
   counts: { inLine: number; meet: number; capped: number; overridden: number };
   canOverride: boolean;
-  /** // CONFIRM: "answered" is treated as attempted (a non-blank response), not "answered correctly". */
+  /** Explains the D3 metric: correct (not attempts) vs the dynamic majority of available. */
   attemptedNote: string;
 }
 

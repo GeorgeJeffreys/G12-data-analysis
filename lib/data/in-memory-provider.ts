@@ -1592,17 +1592,6 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── distinction safeguard (grading stage) ─────────────────────────────────
-  /** Top-difficulty questions a student attempted in one assessment. */
-  private topDiffAnswered(cycleId: string, a: SeedAssessment, studentId: string, demand: string): number {
-    void cycleId;
-    const pool = new Set(a.items.filter((it) => it.demand === demand).map((it) => it.id));
-    let n = 0;
-    for (const r of a.responses) {
-      if (r.p !== studentId || !pool.has(r.i)) continue;
-      n += 1;
-    }
-    return n;
-  }
   /**
    * D3 status for one student on one assessment: the count of **available** D3
    * items (top-difficulty, after cohort item exclusions) and how many the student
@@ -1709,8 +1698,10 @@ export class InMemoryDataProvider implements DataProvider {
     const scopeId = scope && assessments.some((a) => a.id === scope) ? scope : assessments[0]?.id ?? "";
     const a = this.assessment(scopeId);
     const demand = this.resolveTopDifficulty();
-    const threshold = this.safeguard.distinctionThreshold;
-    const pool = a ? a.items.filter((it) => it.demand === demand).length : 0;
+    // Pool = available D3 items on the selected exam (after item exclusions); the
+    // threshold is the DYNAMIC majority of that pool (e.g. 7 → 4), not a fixed N.
+    const pool = a ? a.items.filter((it) => it.demand === demand && !this.excludedSet(cycleId, a.id).has(it.id)).length : 0;
+    const majority = d3MajorityThreshold(pool);
     const awardLevels = this.grading.awardLevels;
     const topAward = awardLevels[0] ?? "";
     const cappedTo = awardLevels[1] ?? topAward;
@@ -1718,30 +1709,42 @@ export class InMemoryDataProvider implements DataProvider {
     const decisions = this.distinctionDecisions(cycleId);
     const overrides = this.distinctionOverrides.get(cycleId);
     const inLineIds = this.provisionalDistinctionIds(cycleId);
+    const d3Cap = this.d3CapByParticipant(cycleId);
     const labelOf = new Map(this.seed.liveCycle.participants.map((p) => [p.id, p.label] as const));
-    const effThreshold = pool > 0 ? Math.min(threshold, pool) : threshold;
 
     const candidates: DistinctionCandidate[] = inLineIds.map((sid) => {
-      const answered = a ? this.topDiffAnswered(cycleId, a, sid, demand) : 0;
+      const scopeStatus = a ? this.d3StatusFor(cycleId, a, sid, demand) : { correct: 0, available: 0, majority: 0 };
+      const result = decisions.get(sid) ?? "pass";
+      const failing = d3Cap.get(sid)?.failing ?? null;
       const ov = overrides?.get(sid);
+      const capReason =
+        result === "capped" && failing
+          ? `Capped below ${topAward} — ${failing.correct}/${failing.available} D3 items correct in ${failing.shortName}; majority is ${failing.majority}`
+          : null;
       return {
         id: sid,
         name: labelOf.get(sid) ?? sid,
-        topDifficultyAnswered: answered,
-        meets: answered >= effThreshold,
+        topDifficultyCorrect: scopeStatus.correct,
+        topDifficultyAvailable: scopeStatus.available,
+        majority: scopeStatus.majority,
+        meets: passesD3Majority(scopeStatus.correct, scopeStatus.available),
         provisionalAward: topAward,
         cappedAward: cappedTo,
-        result: decisions.get(sid) ?? "pass",
+        result,
+        capReason,
         overrideReason: ov?.reason ?? null,
         overrideBy: ov?.by ?? null,
       };
     });
-    candidates.sort((x, y) => x.topDifficultyAnswered - y.topDifficultyAnswered);
+    // Closest to the line first: lowest margin of (correct − majority) on the scope.
+    candidates.sort(
+      (x, y) => (x.topDifficultyCorrect - x.majority) - (y.topDifficultyCorrect - y.majority),
+    );
 
     const vals = [...decisions.values()];
     return {
       cycleId,
-      threshold,
+      threshold: majority,
       topDifficultyDemand: demand,
       topDifficultyPool: pool,
       scope: scopeId,
@@ -1756,9 +1759,8 @@ export class InMemoryDataProvider implements DataProvider {
         overridden: vals.filter((v) => v === "override").length,
       },
       canOverride: this.user.role === "lead_admin",
-      // CONFIRM: "answered" is treated as attempted (a non-blank response), not
-      // "answered correctly". Flip topDiffAnswered to count score>0 to change.
-      attemptedNote: '"Answered" counts an attempted (non-blank) response, not a correct one.',
+      attemptedNote:
+        "Eligibility uses D3 items answered CORRECTLY against the MAJORITY of D3 items AVAILABLE on each exam (dynamic per exam; recomputed after exclusions) — not attempts, and not a fixed count.",
     };
   }
 
