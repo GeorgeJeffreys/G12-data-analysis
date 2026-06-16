@@ -356,6 +356,12 @@ export interface GradeMatrixRow {
   grades: Record<string, GradeCell>;
   /** Overall award level. */
   award: string;
+  /** Overall raw score across all subjects (MCQ + essay + alterations). */
+  overallRaw: number;
+  /** Maximum attainable overall score. */
+  overallMax: number;
+  /** Overall percentage = overallRaw / overallMax × 100. */
+  overallPct: number;
 }
 
 export interface GradesModel {
