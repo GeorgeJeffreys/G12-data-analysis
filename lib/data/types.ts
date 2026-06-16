@@ -1027,7 +1027,14 @@ export interface DistinctionSafeguardModel {
 
 // --- Safeguard configuration (Settings → Configuration) ----------------------
 export interface SafeguardConfig {
-  distinctionThreshold: number;
+  /**
+   * Which demand level counts as "top-difficulty" (D3) for the per-student
+   * Distinction safeguard. This genuinely drives the engine — the safeguard reads
+   * the D3 pool from this demand level. The *threshold* is NOT a fixed count: it
+   * is the dynamic majority of the available D3 items on each exam (see
+   * `d3MajorityThreshold` / `passesD3Majority`), so there is no editable "minimum
+   * questions" knob.
+   */
   topDifficultyDemand: string;
   demandLevels: string[];
 }
