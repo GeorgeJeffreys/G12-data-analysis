@@ -17,18 +17,32 @@ export function awardRamp(index: number, total: number): string {
   return ramp[pos]!;
 }
 
-export function Spark({ pts, w = 116, h = 32, color = H.pink }: { pts: number[]; w?: number; h?: number; color?: string }) {
+export function Spark({
+  pts,
+  w = 116,
+  h = 32,
+  color = H.pink,
+  highlight,
+}: {
+  pts: number[];
+  w?: number;
+  h?: number;
+  color?: string;
+  /** Index of the point to mark (defaults to the last). */
+  highlight?: number;
+}) {
   if (pts.length === 0) return <svg width={w} height={h} />;
   const max = Math.max(...pts);
   const min = Math.min(...pts);
   const nx = (i: number) => (i / Math.max(1, pts.length - 1)) * (w - 4) + 2;
   const ny = (v: number) => h - ((v - min) / (max - min || 1)) * (h - 6) - 3;
   const d = pts.map((v, i) => `${i ? "L" : "M"}${nx(i).toFixed(1)} ${ny(v).toFixed(1)}`).join(" ");
-  const last = pts[pts.length - 1]!;
+  const hi = highlight ?? pts.length - 1;
+  const hv = pts[hi] ?? pts[pts.length - 1]!;
   return (
     <svg width={w} height={h} style={{ display: "block" }}>
       <path d={d} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={nx(pts.length - 1)} cy={ny(last)} r="2.6" fill={color} />
+      <circle cx={nx(hi)} cy={ny(hv)} r="3" fill="#fff" stroke={color} strokeWidth="1.5" />
     </svg>
   );
 }

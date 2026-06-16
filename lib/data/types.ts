@@ -513,11 +513,16 @@ export interface AuditModel {
 export type AuditFilter = "all" | "exclude" | "boundary" | "lock" | "export";
 
 // --- Analytics (Settings/Analytics area) ------------------------------------
+/** How to format a KPI's per-cycle `points` value when the selected cycle changes. */
+export type KpiFormat = "int" | "intComma" | "pct";
+
 export interface TrendKpi {
   label: string;
   value: string;
   delta: string;
   points: number[];
+  /** Format hint so any selected cycle's point can be rendered consistently. */
+  format: KpiFormat;
 }
 
 export interface AssessmentTrend {
@@ -528,8 +533,12 @@ export interface AssessmentTrend {
 }
 
 export interface AnalyticsTrends {
-  /** Cycle labels oldest → newest (the last is the real live cycle). */
+  /** Short cycle labels oldest → newest (the last is the real live cycle). */
   cycleLabels: string[];
+  /** Full cycle names, parallel to `cycleLabels` (for explicit labelling + the selector). */
+  cycleNames: string[];
+  /** Index of the current (live) cycle within the arrays — the default selection. */
+  currentIndex: number;
   kpis: TrendKpi[];
   byAssessment: AssessmentTrend[];
   /** Award-distribution percentages per cycle (oldest → newest). */

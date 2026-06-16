@@ -31,6 +31,7 @@ import {
   PIPELINE,
   type AnalyticsCompare,
   type AnalyticsTrends,
+  type TrendKpi,
   type AssessmentRef,
   type AuditEntry,
   type AuditFilter,
@@ -97,6 +98,7 @@ import {
 import {
   ALL_CAPABILITY_IDS,
   ANALYTICS_CYCLE_LABELS,
+  ANALYTICS_CYCLE_NAMES,
   CAPABILITY_GROUPS,
   DEFAULT_ROLES,
   defaultMatrix,
@@ -2122,11 +2124,11 @@ export class InMemoryDataProvider implements DataProvider {
     const ptsExcluded = series((p) => p.itemsExcluded, live.itemsExcluded);
     const ptsQuality = series((p) => p.meanQuality, live.meanQuality);
 
-    const kpis = [
-      { label: "Participants", value: live.participants.toLocaleString(), delta: delta(ptsParticipants), points: ptsParticipants },
-      { label: "Cohort mean", value: `${live.cohortMean}%`, delta: delta(ptsMean), points: ptsMean },
-      { label: "Items excluded", value: String(live.itemsExcluded), delta: delta(ptsExcluded), points: ptsExcluded },
-      { label: "Mean item quality", value: String(live.meanQuality), delta: delta(ptsQuality), points: ptsQuality },
+    const kpis: TrendKpi[] = [
+      { label: "Participants", value: live.participants.toLocaleString(), delta: delta(ptsParticipants), points: ptsParticipants, format: "intComma" },
+      { label: "Cohort mean", value: `${live.cohortMean}%`, delta: delta(ptsMean), points: ptsMean, format: "pct" },
+      { label: "Items excluded", value: String(live.itemsExcluded), delta: delta(ptsExcluded), points: ptsExcluded, format: "int" },
+      { label: "Mean item quality", value: String(live.meanQuality), delta: delta(ptsQuality), points: ptsQuality, format: "int" },
     ];
 
     const byAssessment = this.seed.liveCycle.assessments.map((a) => {
@@ -2140,8 +2142,18 @@ export class InMemoryDataProvider implements DataProvider {
       { label: ANALYTICS_CYCLE_LABELS[ANALYTICS_CYCLE_LABELS.length - 1] ?? "May 26", dist: live.awardDist },
     ];
 
+    // Full cycle names: mock priors' names, with the last replaced by the real
+    // live cycle name. Parallel to cycleLabels; the last entry is "current".
+    const cycleNames = ANALYTICS_CYCLE_LABELS.map((_, i) =>
+      i === ANALYTICS_CYCLE_LABELS.length - 1
+        ? this.seed.liveCycle.name
+        : ANALYTICS_CYCLE_NAMES[i] ?? ANALYTICS_CYCLE_LABELS[i] ?? "",
+    );
+
     return {
       cycleLabels: ANALYTICS_CYCLE_LABELS,
+      cycleNames,
+      currentIndex: ANALYTICS_CYCLE_LABELS.length - 1,
       kpis,
       byAssessment,
       awardOverTime,
