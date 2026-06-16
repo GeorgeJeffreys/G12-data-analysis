@@ -12,7 +12,7 @@ import { Shell } from "@/components/shell/Shell";
 import { Button, Card } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { analyticsSubnav } from "@/lib/ui/subnav";
-import { MockBanner, Spark, AwardStack, awardRamp } from "@/components/ui/analytics";
+import { MockBanner, Spark, AwardOverTimeChart } from "@/components/ui/analytics";
 import type { KpiFormat } from "@/lib/data/types";
 
 const round1 = (n: number) => Math.round(n * 10) / 10;
@@ -128,26 +128,11 @@ export default function TrendsPage() {
             })}
           </Card>
 
-          {/* award distribution over time */}
+          {/* award mix OVER TIME (every sitting) — distinct from Compare's two-cycle view */}
           <Card style={{ flex: "1 1 340px", minWidth: 280, padding: "18px 20px" }}>
-            <div className="hf-lbl" style={{ marginBottom: 4 }}>Award distribution over time</div>
-            <div className="hf-sub" style={{ fontSize: 11, marginBottom: 16 }}>% of cohort in each award level</div>
-            <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: 168 }}>
-              {model.awardOverTime.map((d) => (
-                <div key={d.label} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                  <AwardStack dist={d.dist} levels={model.awardLevels} h={150} w={34} />
-                  <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink2 }}>{d.label}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: 12, marginTop: 14 }}>
-              {model.awardLevels.map((g, i) => (
-                <span key={g} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: H.ink2 }}>
-                  <span style={{ width: 9, height: 9, borderRadius: 2, background: awardRamp(i, model.awardLevels.length) }} />
-                  {g.replace(/ (award|achievement award)$/i, "")}
-                </span>
-              ))}
-            </div>
+            <div className="hf-lbl" style={{ marginBottom: 2 }}>Award mix over time</div>
+            <div className="hf-sub" style={{ fontSize: 11, marginBottom: 14 }}>% of cohort in each award level, every sitting ({model.cycleNames[0]} → {model.cycleNames[model.cycleNames.length - 1]})</div>
+            <AwardOverTimeChart series={model.awardOverTime} levels={model.awardLevels} highlightIndex={sel} />
           </Card>
         </div>
       </div>
