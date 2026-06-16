@@ -9,16 +9,20 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { useProviderData } from "@/lib/data/context";
+import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell, Alert } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Avatar } from "@/components/ui/primitives";
+import { ExportButtons } from "@/components/ui/ExportButtons";
+import { downloadCsv, downloadScoreAnalysisXlsx, overallScoreCsv, scoreData } from "@/lib/ui/analysis-exports";
+import { fileStem } from "@/lib/ui/export";
 import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 export default function RawScoresPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
+  const provider = useProvider();
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const first = useProviderData((p) => p.getCycle(cycleId)?.assessments[0]?.id, [cycleId]);
   const [scope, setScope] = useState<string | undefined>(undefined);
@@ -42,6 +46,23 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
       cycleName={cycleName}
       page="Raw scores"
       stageIndex={3}
+      actions={
+        <ExportButtons
+          onCsv={() => {
+            const data = scoreData(provider, cycleId, true);
+            if (!data) return;
+            const { headers, rows } = overallScoreCsv(data);
+            downloadCsv(`${fileStem("naive_overall_scores", cycleName)}.csv`, headers, rows);
+            provider.recordExport(cycleId, "Naive (pre-exclusion) scores (CSV)");
+          }}
+          onXlsx={async () => {
+            const data = scoreData(provider, cycleId, true);
+            if (!data) return;
+            await downloadScoreAnalysisXlsx(data, `naive_score_analysis_${cycleName}`);
+            provider.recordExport(cycleId, "Naive (pre-exclusion) score analysis (Excel)");
+          }}
+        />
+      }
       primary={<Link href={reviewHref}><Button variant="pri">Continue to item review<Icon name="arrow" color="#fff" /></Button></Link>}
       subjectTabs={
         <AssessmentTabs
