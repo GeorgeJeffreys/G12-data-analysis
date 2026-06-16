@@ -23,6 +23,9 @@ import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
+import { ExportButtons } from "@/components/ui/ExportButtons";
+import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
+import type { DataProvider } from "@/lib/data/provider";
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
 import { Histogram, BreakdownBars } from "@/components/ui/charts";
@@ -203,6 +206,12 @@ export default function ReviewPage({
       cycleName={cycleName}
       page="Item review & scoring"
       stageIndex={4}
+      actions={
+        <ExportButtons
+          onCsv={async () => { await exportItemAnalysisCsv(provider, cycleId); provider.recordExport(cycleId, "Item analysis (CSV)"); }}
+          onXlsx={async () => { await exportItemAnalysisXlsx(provider, cycleId); provider.recordExport(cycleId, "Item analysis (Excel)"); }}
+        />
+      }
       primary={
         <Link href={`/cycles/${cycleId}/adjustments`}>
           <Button variant="pri">
@@ -621,4 +630,35 @@ function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel;
       </div>
     </div>
   );
+}
+
+// ── exports (item analysis) ────────────────────────────────────────────────
+// CSV = the per-item psychometrics (the primary table); XLSX = the canonical
+// README & Summary + one-sheet-per-subject workbook (MCQ_Item_Analysis shape).
+async function exportItemAnalysisCsv(provider: DataProvider, cycleId: string) {
+  const data = provider.getItemAnalysisData(cycleId);
+  if (!data) return;
+  const exp = await import("@/lib/export");
+  const input = exp.assembleItemAnalysis(data);
+  const headers = [
+    "Assessment", "QuestionId", "P-Value", "Item-Total", "Point-Biserial",
+    "Discrimination", "Overall Review", "Participants Presented", "Participants Answered",
+    "Avg Response Time (s)", "Remove Item?", "Reason for removing item",
+  ];
+  const rows = input.blocks.flatMap((b) =>
+    b.rows.map((r) => [
+      b.name, r.stat.itemId, r.stat.pValue, r.stat.itemTotal, r.stat.pointBiserial,
+      r.stat.discrimination, r.stat.overallReview, r.participantsPresented, r.participantsAnswered,
+      r.avgResponseTime ?? "", r.exclude ? "Yes" : "No", r.removeReason ?? "",
+    ]),
+  );
+  downloadCsv(`${fileStem("item_analysis", data.cycleName)}.csv`, headers, rows);
+}
+
+async function exportItemAnalysisXlsx(provider: DataProvider, cycleId: string) {
+  const data = provider.getItemAnalysisData(cycleId);
+  if (!data) return;
+  const exp = await import("@/lib/export");
+  const wb = exp.buildItemAnalysisWorkbook(exp.assembleItemAnalysis(data));
+  await downloadWorkbook(`${fileStem("item_analysis", data.cycleName)}.xlsx`, wb);
 }

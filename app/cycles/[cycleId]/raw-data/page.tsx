@@ -9,17 +9,21 @@
  */
 import { useState } from "react";
 import Link from "next/link";
-import { useProviderData } from "@/lib/data/context";
+import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell, Alert } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
+import { ExportButtons } from "@/components/ui/ExportButtons";
+import { downloadCsv, downloadScoreAnalysisXlsx, scoreData, scoreDatasetCsv } from "@/lib/ui/analysis-exports";
+import { fileStem } from "@/lib/ui/export";
 import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
 
 export default function RawDataPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
+  const provider = useProvider();
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const first = useProviderData((p) => p.getCycle(cycleId)?.assessments[0]?.id, [cycleId]);
   const [scope, setScope] = useState<string | undefined>(undefined);
@@ -48,7 +52,26 @@ export default function RawDataPage({ params }: { params: { cycleId: string } })
       cycleName={cycleName}
       page="Raw data"
       stageIndex={1}
-      actions={<Link href={`/cycles/${cycleId}/clean`}><Button variant="ghost"><Icon name="refresh" />Clean data</Button></Link>}
+      actions={
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <ExportButtons
+            onCsv={() => {
+              const data = scoreData(provider, cycleId, true);
+              if (!data) return;
+              const { headers, rows } = scoreDatasetCsv(data);
+              downloadCsv(`${fileStem("raw_dataset", cycleName)}.csv`, headers, rows);
+              provider.recordExport(cycleId, "Raw dataset (CSV)");
+            }}
+            onXlsx={async () => {
+              const data = scoreData(provider, cycleId, true);
+              if (!data) return;
+              await downloadScoreAnalysisXlsx(data, `raw_score_analysis_${cycleName}`);
+              provider.recordExport(cycleId, "Raw score analysis (Excel)");
+            }}
+          />
+          <Link href={`/cycles/${cycleId}/clean`}><Button variant="ghost"><Icon name="refresh" />Clean data</Button></Link>
+        </div>
+      }
       primary={<Link href={`/cycles/${cycleId}/clean`}><Button variant="pri">Looks right — continue<Icon name="arrow" color="#fff" /></Button></Link>}
       subjectTabs={
         <AssessmentTabs
