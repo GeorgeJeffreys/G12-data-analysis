@@ -7,11 +7,13 @@
  * grading. They reproduce the team's Speededness and Timing workbook definitions.
  */
 import { Fragment, useState, type CSSProperties } from "react";
-import { useProviderData } from "@/lib/data/context";
+import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Badge } from "@/components/ui/primitives";
+import { ExportButtons } from "@/components/ui/ExportButtons";
+import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import { Mark } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { ReliabilityPanel } from "@/components/ui/reliability";
@@ -23,6 +25,7 @@ const statusBg = (s: DiagStatus) => (s === "Good" ? H.goodSoft : s === "Review" 
 
 export default function DiagnosticsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
+  const provider = useProvider();
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
   const reliability = useProviderData((p) => p.getReliability(cycleId), [cycleId]) as ReliabilityModel | null;
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
@@ -38,8 +41,31 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
   }
   const a = model.assessments[Math.min(active, model.assessments.length - 1)]!;
 
+  // CSV = the reliability table (α with item k + participant n alongside);
+  // XLSX = Reliability + Speededness + Timing sheets.
+  const exportCsv = () => {
+    if (!reliability) return;
+    const headers = ["Level", "Group", "Subject", "Items (k)", "Participants (n)", "Cronbach's Alpha", "Low items?", "Small sample?", "Note"];
+    const levelLabel: Record<string, string> = { overall: "Overall exam", subject: "Subject", majorElement: "Major element", subElement: "Sub-element" };
+    const rows = reliability.rows.map((r) => [levelLabel[r.level] ?? r.level, r.label, r.assessmentName ?? "", r.k, r.n, r.alpha ?? "n/a", r.lowItems ? "Yes" : "", r.smallSample ? "Yes" : "", r.note ?? ""]);
+    downloadCsv(`${fileStem("reliability", cycleName)}.csv`, headers, rows);
+    provider.recordExport(cycleId, "Reliability (CSV)");
+  };
+  const exportXlsx = async () => {
+    const exp = await import("@/lib/export");
+    const wb = exp.buildDiagnosticsWorkbook({ cycleName, reliability, diagnostics: model });
+    await downloadWorkbook(`${fileStem("diagnostics", cycleName)}.xlsx`, wb);
+    provider.recordExport(cycleId, "Diagnostics & reliability (Excel)");
+  };
+
   return (
-    <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" area="diagnostics">
+    <CycleShell
+      cycleId={cycleId}
+      cycleName={cycleName}
+      page="Diagnostics"
+      area="diagnostics"
+      actions={<ExportButtons onCsv={exportCsv} onXlsx={exportXlsx} disabled={!reliability} title={reliability ? undefined : "No reliability data"} />}
+    >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
           <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>

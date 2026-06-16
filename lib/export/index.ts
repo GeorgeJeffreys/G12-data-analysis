@@ -43,5 +43,11 @@ export {
   ALTERATION_HEADERS,
   ALTERATIONS_SHEET_NAME,
 } from "./alterations";
+export {
+  buildDiagnosticsWorkbook,
+  DIAGNOSTICS_SHEETS,
+  RELIABILITY_HEADERS,
+} from "./diagnostics";
+export type { DiagnosticsExportInput } from "./diagnostics";
 export { workbookToBuffer, sanitizeSheetName, RATING_STYLES, PERFORMANCE_STYLES } from "./sheet-utils";
 export type * from "./types";
