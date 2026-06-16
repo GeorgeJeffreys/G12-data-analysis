@@ -826,6 +826,87 @@ export interface AnalyticsCompare {
   priorsAreMock: boolean;
 }
 
+// --- Compare cycles (Analytics › Compare cycles) ----------------------------
+// A side-by-side comparison of two-or-more NAMED cycles across the subjects,
+// grouped into Exam info · Question statistics · Usable items. Read-only: every
+// figure is an already-computed output read from the provider (no recompute).
+// The live cycle's metrics are REAL; prior cycles are clearly-labelled MOCK
+// (there is no real cross-cycle history yet), mirroring Trends/Compare.
+
+/** One selectable cycle in the picker. */
+export interface CompareCycleRef {
+  id: string;
+  /** Explicit cycle name, e.g. "May 2026" (never "this/last"). */
+  name: string;
+  mock: boolean;
+  live: boolean;
+}
+
+/** One raw-score cut between two adjacent performance levels. */
+export interface CompareCut {
+  /** e.g. "Meets expectations → Exceeds expectations". */
+  name: string;
+  /** Raw-mark threshold, or null when unavailable for this cycle. */
+  value: number | null;
+}
+
+/** Per-subject metrics for a single cycle. `null` = unavailable for this cycle. */
+export interface CompareSubjectMetrics {
+  participants: number | null;
+  /** Cohort mean score, % of available marks. */
+  scoreMean: number | null;
+  scoreMedian: number | null;
+  /** Subject total (raw marks) — lets cut-scores render against a max. */
+  scoreMax: number | null;
+  /** Average p-value (difficulty, 0..1). */
+  avgPValue: number | null;
+  /** Average point-biserial (discrimination). */
+  avgPointBiserial: number | null;
+  /** Cronbach's α (from the reliability/Wave-4 output); null if unavailable. */
+  alpha: number | null;
+  itemsUsable: number | null;
+  itemsRemoved: number | null;
+  /** Raw cut-scores, best→lowest transitions (length performanceLevels − 1). */
+  cuts: CompareCut[];
+  /** Performance-level counts, keyed by level label; null if unavailable. */
+  perfCounts: Record<string, number> | null;
+  /** Share (%) reaching at least "Meets expectations" (pass-or-above). */
+  passOrAbove: number | null;
+}
+
+/** All metrics for one selected cycle. */
+export interface CompareCycleData extends CompareCycleRef {
+  /** Sum of per-subject candidate counts (participation total). */
+  participantsTotal: number | null;
+  /** Mean of per-subject cohort means (%). */
+  avgScoreAllSubjects: number | null;
+  /** Candidates earning any award (i.e. not the lowest "No Award" band). */
+  passOrAboveCount: number | null;
+  avgPValue: number | null;
+  avgAlpha: number | null;
+  /** Overall award distribution, keyed by award level → candidate count. */
+  awardDist: Record<string, number>;
+  /** Per-subject metrics, keyed by assessment id. */
+  subjects: Record<string, CompareSubjectMetrics>;
+}
+
+export interface CompareCyclesModel {
+  /** Every selectable cycle, newest → oldest. */
+  available: CompareCycleRef[];
+  /** The chosen cycle ids, oldest → newest. */
+  selectedIds: string[];
+  /** The chosen cycles' data, parallel to `selectedIds` (oldest → newest). */
+  cycles: CompareCycleData[];
+  /** The subjects compared (live cycle's assessments). */
+  subjects: { id: string; short: string; full: string }[];
+  /** Overall award levels, best → lowest (confirmed vocabulary). */
+  awardLevels: string[];
+  /** Per-subject performance levels, best → lowest (confirmed vocabulary). */
+  performanceLevels: string[];
+  /** True when any selected cycle is mock (drives the mock banner). */
+  anyMock: boolean;
+}
+
 // --- Configuration (Settings) -----------------------------------------------
 export interface QualityThresholdRow {
   metric: string;

@@ -45,6 +45,10 @@ import {
   PIPELINE,
   type AnalyticsCompare,
   type AnalyticsTrends,
+  type CompareCyclesModel,
+  type CompareCycleData,
+  type CompareSubjectMetrics,
+  type CompareCut,
   type TrendKpi,
   type AssessmentRef,
   type AuditEntry,
@@ -135,6 +139,7 @@ import {
   defaultMatrix,
   defaultMembers,
   mockPriors,
+  mockCompareSubjects,
   seedAuditEntries,
 } from "./mock-admin";
 
@@ -2890,6 +2895,187 @@ export class InMemoryDataProvider implements DataProvider {
     };
 
     return { metrics, columns: [liveCol, priorCol], awardLevels, priorsAreMock: true };
+  }
+
+  // ── compare cycles (per-subject, multi-cycle) ─────────────────────────────
+  // Read-only. The live cycle's figures are REAL — read from the existing
+  // computed outputs (boundaries, review, reliability, grades). Prior cycles
+  // have no real per-subject history, so their columns use clearly-labelled
+  // MOCK figures (see mockCompareSubjects), consistent with Trends/Compare.
+  getCompareCycles(cycleIds?: string[]): CompareCyclesModel {
+    const liveId = this.seed.liveCycle.id;
+    const all = this.listCycles();
+    const available = all.map((c) => ({ id: c.id, name: c.name, mock: c.mock, live: c.live }));
+
+    // Default = the two most recent cycles (listCycles is newest → oldest).
+    const wanted = (cycleIds && cycleIds.length >= 1 ? cycleIds : available.slice(0, 2).map((c) => c.id))
+      .filter((id) => available.some((c) => c.id === id));
+    const selected = wanted.length >= 1 ? wanted : available.slice(0, 2).map((c) => c.id);
+    // Render oldest → newest so slope/line charts read left-to-right in time.
+    const orderIndex = (id: string) => available.findIndex((c) => c.id === id);
+    const selectedIds = [...selected].sort((a, b) => orderIndex(b) - orderIndex(a));
+
+    const awardLevels = this.grading.awardLevels;
+    const performanceLevels = this.grading.performanceLevels;
+    const lowestAward = awardLevels[awardLevels.length - 1] ?? "";
+    const lowestPerf = performanceLevels[performanceLevels.length - 1] ?? "";
+
+    const subjects = this.seed.liveCycle.assessments.map((a) => ({
+      id: a.id,
+      short: a.shortName,
+      full: a.name,
+    }));
+
+    const meanOf = (xs: (number | null)[]): number | null => {
+      const vs = xs.filter((v): v is number => v != null && Number.isFinite(v));
+      return vs.length ? round(vs.reduce((s, v) => s + v, 0) / vs.length, 2) : null;
+    };
+
+    const buildLive = (): CompareCycleData => {
+      const grades = this.getGrades(liveId);
+      const awardDist: Record<string, number> = {};
+      for (const lvl of awardLevels) {
+        awardDist[lvl] = grades?.distribution.find((d) => d.level === lvl)?.count ?? 0;
+      }
+      const subjectsOut: Record<string, CompareSubjectMetrics> = {};
+      for (const a of this.seed.liveCycle.assessments) {
+        const b = this.getBoundaries(liveId, a.id);
+        const review = this.getReview(liveId, a.id);
+        const alphaRow = this.getReliability(liveId)?.rows.find(
+          (r) => r.level === "subject" && r.assessmentId === a.id,
+        );
+        // average p-value / point-biserial over RETAINED items (read, not recomputed)
+        const retained = (review?.items ?? []).filter((it) => !it.excluded);
+        const avgPValue = meanOf(retained.map((it) => it.pValue));
+        const avgPointBiserial = meanOf(retained.map((it) => it.pointBiserial));
+        const perfCounts: Record<string, number> = {};
+        for (const band of b?.bands ?? []) perfCounts[band.level] = band.students;
+        const cuts: CompareCut[] = (b?.cuts ?? []).map((c, i) => ({
+          name: `${b?.levels[i + 1] ?? ""} → ${b?.levels[i] ?? ""}`,
+          value: b ? Math.round((c / 100) * b.maxRaw) : null,
+        }));
+        const n = b?.n ?? null;
+        const lowCount = perfCounts[lowestPerf] ?? 0;
+        subjectsOut[a.id] = {
+          participants: n,
+          scoreMean: b ? b.stats.mean : null,
+          scoreMedian: b ? b.stats.median : null,
+          scoreMax: b ? b.maxRaw : null,
+          avgPValue,
+          avgPointBiserial,
+          alpha: alphaRow?.alpha ?? null,
+          itemsUsable: b ? b.stats.itemsScored : null,
+          itemsRemoved: b ? b.stats.excluded : null,
+          cuts,
+          perfCounts,
+          passOrAbove: n ? round(((n - lowCount) / n) * 100, 0) : null,
+        };
+      }
+      const partTotal = Object.values(subjectsOut).reduce<number>((s, m) => s + (m.participants ?? 0), 0);
+      const awardedCount = awardLevels
+        .filter((l) => l !== lowestAward)
+        .reduce((s, l) => s + (awardDist[l] ?? 0), 0);
+      return {
+        id: liveId,
+        name: this.seed.liveCycle.name,
+        mock: false,
+        live: true,
+        participantsTotal: partTotal,
+        avgScoreAllSubjects: meanOf(Object.values(subjectsOut).map((m) => m.scoreMean)),
+        passOrAboveCount: awardedCount,
+        avgPValue: meanOf(Object.values(subjectsOut).map((m) => m.avgPValue)),
+        avgAlpha: meanOf(Object.values(subjectsOut).map((m) => m.alpha)),
+        awardDist,
+        subjects: subjectsOut,
+      };
+    };
+
+    const buildMock = (ref: { id: string; name: string }): CompareCycleData => {
+      const mock = mockCompareSubjects(
+        ref.id,
+        this.seed.liveCycle.assessments.map((a) => ({ id: a.id, itemCount: a.items.length })),
+      );
+      const subjectsOut: Record<string, CompareSubjectMetrics> = {};
+      let partTotal = 0;
+      // award distribution: derived from the per-subject mock performance mix so
+      // the overall award chart stays coherent with the per-subject charts.
+      const awardDist: Record<string, number> = Object.fromEntries(awardLevels.map((l) => [l, 0]));
+      for (const a of this.seed.liveCycle.assessments) {
+        const m = mock[a.id]!;
+        partTotal += m.participants;
+        // Spread participants across performance levels by a simple difficulty mix.
+        const perfCounts: Record<string, number> = {};
+        const weights = [0.18, 0.32, 0.3, 0.2]; // top → lowest, illustrative
+        let assigned = 0;
+        performanceLevels.forEach((lvl, i) => {
+          const last = i === performanceLevels.length - 1;
+          const c = last ? m.participants - assigned : Math.round(m.participants * (weights[i] ?? 0));
+          perfCounts[lvl] = Math.max(0, c);
+          assigned += perfCounts[lvl];
+        });
+        const cuts: CompareCut[] = performanceLevels.slice(0, -1).map((_, i) => ({
+          name: `${performanceLevels[i + 1] ?? ""} → ${performanceLevels[i] ?? ""}`,
+          value: Math.round((m.scoreMax * (0.3 + i * 0.22)) ),
+        }));
+        const lowCount = perfCounts[lowestPerf] ?? 0;
+        subjectsOut[a.id] = {
+          participants: m.participants,
+          scoreMean: m.scoreMean,
+          scoreMedian: m.scoreMedian,
+          scoreMax: m.scoreMax,
+          avgPValue: m.avgPValue,
+          avgPointBiserial: m.avgPointBiserial,
+          alpha: m.alpha,
+          itemsUsable: m.itemsUsable,
+          itemsRemoved: m.itemsRemoved,
+          cuts,
+          perfCounts,
+          passOrAbove: m.participants ? round(((m.participants - lowCount) / m.participants) * 100, 0) : null,
+        };
+      }
+      // Overall award mix: top award when ≥3 top-perf subjects is hard to fake
+      // cheaply, so approximate from the cohort spread (clearly mock anyway).
+      const nStudents = Math.round(partTotal / Math.max(1, this.seed.liveCycle.assessments.length));
+      const awardWeights = [0.12, 0.26, 0.34]; // top three; lowest is the remainder
+      let awardAssigned = 0;
+      awardLevels.forEach((lvl, i) => {
+        const last = i === awardLevels.length - 1;
+        const c = last ? nStudents - awardAssigned : Math.round(nStudents * (awardWeights[i] ?? 0));
+        awardDist[lvl] = Math.max(0, c);
+        awardAssigned += awardDist[lvl] ?? 0;
+      });
+      const awardedCount = awardLevels
+        .filter((l) => l !== lowestAward)
+        .reduce((s, l) => s + (awardDist[l] ?? 0), 0);
+      return {
+        id: ref.id,
+        name: ref.name,
+        mock: true,
+        live: false,
+        participantsTotal: partTotal,
+        avgScoreAllSubjects: meanOf(Object.values(subjectsOut).map((m) => m.scoreMean)),
+        passOrAboveCount: awardedCount,
+        avgPValue: meanOf(Object.values(subjectsOut).map((m) => m.avgPValue)),
+        avgAlpha: meanOf(Object.values(subjectsOut).map((m) => m.alpha)),
+        awardDist,
+        subjects: subjectsOut,
+      };
+    };
+
+    const cycles = selectedIds.map((id) => {
+      const ref = available.find((c) => c.id === id)!;
+      return ref.live ? buildLive() : buildMock(ref);
+    });
+
+    return {
+      available,
+      selectedIds,
+      cycles,
+      subjects,
+      awardLevels,
+      performanceLevels,
+      anyMock: cycles.some((c) => c.mock),
+    };
   }
 
   // ── new cycle ─────────────────────────────────────────────────────────────
