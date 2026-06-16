@@ -96,7 +96,7 @@ function Triage({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
         </div>
         <div style={{ display: "flex", gap: 9 }}>
           <Button onClick={() => provider.loadSampleIncidentLog(cycleId)}>Load sample (labelled)</Button>
-          <Link href={`/cycles/${cycleId}/import`}><Button variant="ghost">Go to Data import</Button></Link>
+          <Link href={`/cycles/${cycleId}/import`}><Button variant="ghost">Go to upload</Button></Link>
         </div>
       </div>
     );
