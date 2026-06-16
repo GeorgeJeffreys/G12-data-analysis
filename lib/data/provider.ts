@@ -16,6 +16,7 @@
  * No screen or component changes — only the provider does.
  */
 
+import type { AssembleScoreAnalysisArgs, AssembleItemAnalysisArgs } from "@/lib/export/types";
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
@@ -158,6 +159,15 @@ export interface DataProvider {
   getGrades(cycleId: string): GradesModel | null;
   /** Per-student performance + per-element levels for the performance-report export. */
   getPerformanceReport(cycleId: string): PerformanceReportModel | null;
+  /**
+   * Engine primitives for the overall-score-analysis export (assembled into the
+   * MCQ_Overall_Score_Analysis workbook in the page). `preExclusion` keeps every
+   * item (naive scores, before item review); otherwise the reviewed exclusions
+   * are dropped. Export-only — no engine/scoring change.
+   */
+  getScoreAnalysisData(cycleId: string, preExclusion?: boolean): AssembleScoreAnalysisArgs | null;
+  /** Engine primitives for the item-analysis export (README + per-subject sheets). */
+  getItemAnalysisData(cycleId: string): AssembleItemAnalysisArgs | null;
   getGradingDefaults(): GradingDefaultsModel;
   /** Per-student technical exclusions (optional Student-review step). */
   getStudentReview(cycleId: string): StudentReviewModel | null;

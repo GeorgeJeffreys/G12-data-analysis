@@ -255,6 +255,8 @@ export class SupabaseDataProvider implements DataProvider {
   getStudentReview(cycleId: string): StudentReviewModel | null { return this.inner.getStudentReview(cycleId); }
   getDistinctionSafeguard(cycleId: string, scope?: string): DistinctionSafeguardModel | null { return this.inner.getDistinctionSafeguard(cycleId, scope); }
   getDocuments(cycleId: string): DocumentsModel | null { return this.inner.getDocuments(cycleId); }
+  getScoreAnalysisData(cycleId: string, preExclusion?: boolean) { return this.inner.getScoreAnalysisData(cycleId, preExclusion); }
+  getItemAnalysisData(cycleId: string) { return this.inner.getItemAnalysisData(cycleId); }
   getMembers(): MembersModel { return this.inner.getMembers(); }
   getRoles(): RolesModel { return this.inner.getRoles(); }
   getConfig(): ConfigModel { return this.inner.getConfig(); }

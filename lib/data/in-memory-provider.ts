@@ -32,6 +32,12 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
+import type {
+  AssembleScoreAnalysisArgs,
+  AssembleItemAnalysisArgs,
+  ItemResponseFact,
+  ItemReviewDecision,
+} from "@/lib/export/types";
 import type { Seed, SeedAssessment, SeedItem } from "./seed-types";
 import type {
   DataProvider,
@@ -1985,6 +1991,59 @@ export class InMemoryDataProvider implements DataProvider {
       smallSampleThreshold: SMALL_SAMPLE_THRESHOLD,
       overall,
       rows,
+    };
+  }
+
+  /**
+   * Engine primitives for the overall-score-analysis export. Reuses the same
+   * responses/items/exclusions the score engine reads — assembly + workbook
+   * building happen in the page (so xlsx-js-style stays out of the main bundle).
+   */
+  getScoreAnalysisData(cycleId: string, preExclusion = false): AssembleScoreAnalysisArgs | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const responses: ResponseRecord[] = [];
+    const items: ItemMeta[] = [];
+    const excludedItemIds: string[] = [];
+    for (const a of this.seed.liveCycle.assessments) {
+      responses.push(...this.responsesOf(a));
+      items.push(...this.itemMetasFor(a));
+      if (!preExclusion) {
+        const excluded = this.excludedSet(cycleId, a.id);
+        for (const it of a.items) if (excluded.has(it.id)) excludedItemIds.push(it.id);
+      }
+    }
+    return {
+      assessments: this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name })),
+      participants: this.seed.liveCycle.participants.map((p) => ({ id: p.id, label: p.label })),
+      responses,
+      items,
+      excludedItemIds,
+      scoreRunNote: preExclusion
+        ? "Naive (pre-exclusion) overall scores — computed before item review; no items excluded."
+        : "Overall scores after item-review exclusions.",
+    };
+  }
+
+  /** Engine primitives for the item-analysis export (full ItemStat per item). */
+  getItemAnalysisData(cycleId: string): AssembleItemAnalysisArgs | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const stats: ItemStat[] = [];
+    const facts: ItemResponseFact[] = [];
+    const reviews: Record<string, ItemReviewDecision> = {};
+    for (const a of this.seed.liveCycle.assessments) {
+      stats.push(...engine.computeItemStats({ responses: this.responsesOf(a), scoringConfig: this.scoringConfig() }));
+      const excluded = this.excludedSet(cycleId, a.id);
+      for (const r of a.responses) facts.push({ assessmentId: a.id, itemId: r.i, participantId: r.p, answered: true, responseTime: null });
+      for (const it of a.items) {
+        if (excluded.has(it.id)) reviews[it.id] = { exclude: true, reason: this.reasons.get(`${cycleId}:${a.id}:${it.id}`) ?? null };
+      }
+    }
+    return {
+      cycleName: this.getCycle(cycleId)?.name ?? "Cycle",
+      assessments: this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name })),
+      stats,
+      facts,
+      reviews,
     };
   }
 
