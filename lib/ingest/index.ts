@@ -24,6 +24,13 @@ export {
 } from "./normalize";
 export { validate } from "./validate";
 export { repairText, repairValue, looksLikeMojibake } from "./repair";
+export {
+  splitBySubject,
+  summarizeSubject,
+  summarizeSubjects,
+  mergeRawExports,
+} from "./split";
+export type { SubjectSummary, SubjectElementSummary } from "./split";
 export type * from "./types";
 
 export interface IngestAndCleanResult {

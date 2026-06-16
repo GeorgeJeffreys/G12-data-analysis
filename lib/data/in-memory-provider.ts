@@ -73,6 +73,17 @@ import {
   type QualityThresholdRow,
   type RetentionConfig,
   type ReviewModel,
+  type CombinedSplitModel,
+  type DetectedSubject,
+  type RawDataModel,
+  type RawColumnMeta,
+  type RawDataRow,
+  type RawElementBreak,
+  type DataCleaningModel,
+  type CleaningCheck,
+  type NaiveScoresModel,
+  type NaiveElementCol,
+  type NaiveStudentRow,
   type RoleDef,
   type RolesModel,
   type StudentSummary,
@@ -527,6 +538,199 @@ export class InMemoryDataProvider implements DataProvider {
       duplicates: live.duplicates,
       canContinue: live.validation.passed,
       technicalErrors: this.technicalErrorsUpload(cycleId),
+    };
+  }
+
+  // ── front of pipeline: combined upload · raw data · cleaning · naive scores ──
+  /** Distinct participant ids that have at least one response in an assessment. */
+  private participantsIn(a: SeedAssessment): Set<string> {
+    const set = new Set<string>();
+    for (const r of a.responses) set.add(r.p);
+    return set;
+  }
+  /** Distinct major elements in an assessment, in first-appearance order. */
+  private majorsOf(a: SeedAssessment): string[] {
+    const seen: string[] = [];
+    for (const it of a.items) if (it.major && !seen.includes(it.major)) seen.push(it.major);
+    return seen;
+  }
+  private demandCounts(a: SeedAssessment): { D1: number; D2: number; D3: number } {
+    const d = { D1: 0, D2: 0, D3: 0 };
+    for (const it of a.items) if (it.demand === "D1" || it.demand === "D2" || it.demand === "D3") d[it.demand] += 1;
+    return d;
+  }
+  /** Build the raw response matrix (participants × items) for a subject. */
+  private rawMatrix(a: SeedAssessment): { columns: RawColumnMeta[]; rows: RawDataRow[] } {
+    const columns: RawColumnMeta[] = a.items.map((it, i) => ({
+      id: it.id,
+      qLabel: `Q${i + 1}`,
+      major: it.major,
+      sub: it.sub,
+      demand: it.demand,
+    }));
+    const score = new Map<string, number>();
+    for (const r of a.responses) score.set(`${r.p} ${r.i}`, r.s);
+    const present = this.participantsIn(a);
+    const rows: RawDataRow[] = this.seed.liveCycle.participants
+      .filter((p) => present.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        studentId: p.studentId ?? p.id,
+        name: p.label,
+        cells: a.items.map((it) => {
+          const v = score.get(`${p.id} ${it.id}`);
+          return v === undefined ? null : v;
+        }),
+      }));
+    return { columns, rows };
+  }
+
+  getCombinedSplit(cycleId: string): CombinedSplitModel | null {
+    const live = this.seed.liveCycle;
+    if (cycleId !== live.id) return null;
+    const counts = live.assessments.map((a) => this.participantsIn(a).size);
+    const maxParts = Math.max(...counts, 0);
+    const essayIds = new Set(this.essaySubjectIds());
+    const subjects: DetectedSubject[] = live.assessments.map((a) => {
+      const participants = this.participantsIn(a).size;
+      const warn = participants < maxParts;
+      return {
+        id: a.id,
+        name: a.name,
+        shortName: a.shortName,
+        items: a.items.length,
+        participants,
+        elements: this.majorsOf(a),
+        rtl: a.rtl,
+        hasEssay: essayIds.has(a.id),
+        status: warn ? "warn" : "ok",
+        note: warn ? `${maxParts - participants} fewer participant${maxParts - participants > 1 ? "s" : ""} than the largest subject` : null,
+      };
+    });
+    return {
+      cycleId,
+      fileName: live.fileName,
+      fileSizeMB: live.fileSizeMB,
+      uploadedAgo: live.uploadedAgo,
+      totalItems: live.assessments.reduce((n, a) => n + a.items.length, 0),
+      totalParticipants: live.participants.length,
+      subjects,
+    };
+  }
+
+  getRawData(cycleId: string, assessmentId: string): RawDataModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const byElement: RawElementBreak[] = this.majorsOf(a).map((major) => {
+      const items = a.items.filter((it) => it.major === major);
+      const subs: string[] = [];
+      for (const it of items) if (it.sub && !subs.includes(it.sub)) subs.push(it.sub);
+      return { major, subs, items: items.length };
+    });
+    const subElementsCount = byElement.reduce((n, e) => n + e.subs.length, 0);
+    const { columns, rows } = this.rawMatrix(a);
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      participants: this.participantsIn(a).size,
+      items: a.items.length,
+      elementsCount: byElement.length,
+      subElementsCount,
+      demand: this.demandCounts(a),
+      byElement,
+      columns,
+      rows,
+    };
+  }
+
+  getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    // Surface the REAL validation report as cleaning checks; warnings vs must-fix
+    // are distinguished by status. The sample data is clean, so blockers only
+    // appear if a real upload fails validation.
+    const checks: CleaningCheck[] = this.seed.liveCycle.validation.checks.map((c) => ({
+      id: c.id,
+      status: c.status,
+      title: c.label,
+      detail: c.detail || null,
+      count: c.count != null ? String(c.count) : null,
+      action: c.status === "fail" ? "Resolve" : c.status === "warn" ? "Review" : null,
+    }));
+    const counts = {
+      pass: checks.filter((c) => c.status === "pass").length,
+      warn: checks.filter((c) => c.status === "warn").length,
+      fail: checks.filter((c) => c.status === "fail").length,
+    };
+    const { columns, rows } = this.rawMatrix(a);
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      checks,
+      counts,
+      rowsBefore: rows.length,
+      rowsAfter: rows.length,
+      canProceed: counts.fail === 0,
+      columns,
+      rows,
+    };
+  }
+
+  getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const majors = this.majorsOf(a);
+    const elements: NaiveElementCol[] = majors.map((major, i) => ({
+      major,
+      shortId: String.fromCharCode(65 + i), // A, B, C…
+      items: a.items.filter((it) => it.major === major).length,
+    }));
+    // Pre-exclusion raw score = sum of scores over scored (maxScore≥1) items.
+    // NO item exclusions applied — this is the as-submitted view, distinct from
+    // the post-exclusion scoring used downstream (parity untouched).
+    const scoredItems = a.items.filter((it) => (it.maxScore ?? 1) >= 1);
+    const mcqMax = scoredItems.length;
+    const itemsByMajor = new Map<string, Set<string>>();
+    for (const major of majors) itemsByMajor.set(major, new Set(a.items.filter((it) => it.major === major).map((it) => it.id)));
+
+    const present = this.participantsIn(a);
+    const students: NaiveStudentRow[] = this.seed.liveCycle.participants
+      .filter((p) => present.has(p.id))
+      .map((p) => {
+        const myScores = a.responses.filter((r) => r.p === p.id);
+        const byId = new Map(myScores.map((r) => [r.i, r.s]));
+        let raw = 0;
+        for (const it of scoredItems) raw += byId.get(it.id) ?? 0;
+        const perElement: Record<string, number> = {};
+        for (const major of majors) {
+          let got = 0;
+          for (const id of itemsByMajor.get(major)!) got += byId.get(id) ?? 0;
+          perElement[major] = got;
+        }
+        return {
+          id: p.id,
+          studentId: p.studentId ?? p.id,
+          name: p.label,
+          perElement,
+          raw,
+          pct: mcqMax ? Math.round((raw / mcqMax) * 1000) / 10 : 0,
+        };
+      })
+      .sort((x, y) => y.pct - x.pct);
+
+    const cohortAvgPct = students.length ? Math.round((students.reduce((n, s) => n + s.pct, 0) / students.length) * 10) / 10 : 0;
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      hasEssay: new Set(this.essaySubjectIds()).has(a.id),
+      mcqItems: mcqMax,
+      totalItems: a.items.length,
+      cohortAvgPct,
+      elements,
+      students,
     };
   }
 

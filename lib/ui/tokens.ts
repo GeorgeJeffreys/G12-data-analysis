@@ -48,7 +48,10 @@ export function ratingColor(rating: "Good" | "Review" | "Flag"): string {
 }
 
 export const PIPELINE_STAGES = [
-  "Data import",
+  "Upload",
+  "Raw data",
+  "Clean",
+  "Raw scores",
   "Review",
   "Adjustments",
   "Score",

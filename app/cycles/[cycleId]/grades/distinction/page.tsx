@@ -57,7 +57,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Distinction safeguard"
-      stageIndex={5}
+      stageIndex={8}
       done={5}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
