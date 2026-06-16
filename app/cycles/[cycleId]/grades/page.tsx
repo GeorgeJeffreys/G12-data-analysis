@@ -32,7 +32,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={5}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={8}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this cycle.</div>
       </CycleShell>
     );
@@ -49,7 +49,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Grades & sign-off"
-      stageIndex={5}
+      stageIndex={8}
       actions={
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>
@@ -365,7 +365,8 @@ function exportCsv(model: GradesModel) {
   const header = ["Participant ID", "Participant", ...model.assessments.map((a) => a.name), "Overall award"];
   const lines = [header.join(",")];
   for (const r of model.rows) {
-    const cells = [r.id, r.label, ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""), r.award];
+    // Real Student ID (matches what's shown on screen), not the internal key.
+    const cells = [r.studentId, r.label, ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""), r.award];
     lines.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","));
   }
   downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "grades_may_2026.csv");

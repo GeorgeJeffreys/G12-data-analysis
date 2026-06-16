@@ -20,7 +20,7 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseEssayMarks } from "@/lib/data/parse-essays";
 import { parseIncidentLog } from "@/lib/data/parse-incidents";
-import type { AdjustmentsModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
+import type { AdjustmentsModel, CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
 
 type Tone = "pass" | "warn" | "fail" | "neutral";
 
@@ -30,6 +30,7 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const model = useProviderData((p) => p.getIngest(cycleId), [cycleId]);
   const essay = useProviderData((p) => p.getEssayMarks(cycleId), [cycleId]) as EssayMarksModel | null;
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
+  const split = useProviderData((p) => p.getCombinedSplit(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
   const [open, setOpen] = useState<Record<number, boolean>>({ 1: true, 2: false, 3: false });
@@ -68,12 +69,12 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
     <CycleShell
       cycleId={cycleId}
       cycleName={cycleName}
-      page="Data import"
+      page="Upload exam data"
       stageIndex={0}
       primary={
-        <Link href={model.canContinue ? `/cycles/${cycleId}/review` : "#"} tabIndex={model.canContinue ? undefined : -1}>
+        <Link href={model.canContinue ? `/cycles/${cycleId}/raw-data` : "#"} tabIndex={model.canContinue ? undefined : -1}>
           <Button variant="pri" disabled={!model.canContinue}>
-            Continue to review
+            {split ? `Confirm ${split.subjects.length} subjects & continue` : "Continue to raw data"}
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>
@@ -81,12 +82,15 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 30px", gap: 14, flex: 1, maxWidth: 1040 }}>
         <div>
-          <div className="hf-h1">Data import</div>
+          <div className="hf-h1">Upload exam data</div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
-            Upload the exam export and any optional files. Only the raw export is required — resolve its
-            blocking issues — to continue. Essay marks and the incident log never block progress.
+            Drop in <strong>one combined file</strong> with every subject in it — we detect each subject and split it for
+            you. Only the raw export is required (resolve its blocking issues to continue); essay marks and the incident
+            log are optional and never block progress.
           </div>
         </div>
+
+        {split && <CombinedSplitPanel split={split} />}
 
         <ImportCard n="01" title="Raw exam export" required tone={exportTone} status={exportStatus} open={!!open[1]} onToggle={() => toggle(1)}>
           <ExportBody model={model} counts={counts} resolved={resolved} onResolve={resolve} />
@@ -101,6 +105,63 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
         </ImportCard>
       </div>
     </CycleShell>
+  );
+}
+
+// ── combined-upload detection: subjects split out of the single export ───────
+function CombinedSplitPanel({ split }: { split: CombinedSplitModel }) {
+  const warned = split.subjects.filter((s) => s.status === "warn");
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <span className="hf-lbl">Detected {split.subjects.length} subjects in this file</span>
+        <span className="hf-sub" style={{ fontSize: 11.5 }}>{split.totalItems} items total · {split.totalParticipants} participants · split automatically</span>
+      </div>
+      <div className="hf-card" style={{ overflow: "hidden" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+          <thead>
+            <tr>
+              <th className="hf-th">Detected subject</th>
+              <th className="hf-th" style={{ textAlign: "right" }}>Items</th>
+              <th className="hf-th" style={{ textAlign: "right" }}>Participants</th>
+              <th className="hf-th" style={{ textAlign: "right" }}>Elements</th>
+              <th className="hf-th" style={{ textAlign: "right" }}>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {split.subjects.map((s) => (
+              <tr key={s.id} className="hf-hover">
+                <td className="hf-td" style={{ fontWeight: 600 }}>
+                  <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    {s.name}
+                    {s.hasEssay && <Badge tone="accent">has essay</Badge>}
+                    {s.rtl && <Badge>RTL</Badge>}
+                  </span>
+                </td>
+                <td className="hf-td hf-mono" style={{ textAlign: "right" }}>{s.items}</td>
+                <td className="hf-td hf-mono" style={{ textAlign: "right", color: s.status === "warn" ? H.warn : H.ink }}>{s.participants}</td>
+                <td className="hf-td hf-mono" style={{ textAlign: "right", color: H.ink2 }} title={s.elements.join(" · ")}>{s.elements.length}</td>
+                <td className="hf-td" style={{ textAlign: "right" }}>
+                  {s.status === "warn" ? (
+                    <Badge tone="warn"><Mark kind="warn" size={11} />{s.note}</Badge>
+                  ) : (
+                    <Badge tone="good"><Mark kind="pass" size={11} />Split OK</Badge>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {warned.length > 0 && (
+        <div style={{ display: "flex", gap: 10, padding: "10px 14px", borderRadius: 10, background: H.warnSoft, alignItems: "center" }}>
+          <Mark kind="warn" size={15} />
+          <span style={{ fontSize: 12, color: H.ink, flex: 1 }}>
+            {warned.length} subject{warned.length === 1 ? "" : "s"} {warned.length === 1 ? "has" : "have"} fewer participants than the largest — fine if some students didn’t sit them. You can confirm in cleaning.
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 

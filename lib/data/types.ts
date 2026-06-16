@@ -19,7 +19,10 @@ export interface CurrentUser {
 }
 
 export const PIPELINE = [
-  "Data import",
+  "Upload",
+  "Raw data",
+  "Clean",
+  "Raw scores",
   "Review",
   "Adjustments",
   "Score",
@@ -87,6 +90,116 @@ export interface IngestModel {
   duplicates: number;
   canContinue: boolean;
   technicalErrors: TechnicalErrorsUpload;
+}
+
+// --- Front-of-pipeline: combined upload, raw data, cleaning, naive scores ----
+export type CleaningStatus = "pass" | "warn" | "fail";
+
+/** One subject detected when a combined export is split. */
+export interface DetectedSubject {
+  id: string;
+  name: string;
+  shortName: string;
+  items: number;
+  participants: number;
+  /** Major element names found in this subject (3–5, never hard-coded). */
+  elements: string[];
+  rtl: boolean;
+  hasEssay: boolean;
+  status: "ok" | "warn";
+  note: string | null;
+}
+export interface CombinedSplitModel {
+  cycleId: string;
+  fileName: string;
+  fileSizeMB: number;
+  uploadedAgo: string;
+  totalItems: number;
+  totalParticipants: number;
+  subjects: DetectedSubject[];
+}
+
+/** Column metadata for the raw spreadsheet view. */
+export interface RawColumnMeta {
+  id: string;
+  qLabel: string;
+  major: string | null;
+  sub: string | null;
+  demand: string | null;
+}
+/** One participant row in the raw spreadsheet (cells aligned to `columns`). */
+export interface RawDataRow {
+  id: string;
+  studentId: string;
+  name: string;
+  /** 1 correct · 0 incorrect · null omitted/blank, in column order. */
+  cells: (number | null)[];
+}
+export interface RawElementBreak {
+  major: string;
+  subs: string[];
+  items: number;
+}
+export interface RawDataModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  participants: number;
+  items: number;
+  /** Number of major elements present (varies by subject). */
+  elementsCount: number;
+  subElementsCount: number;
+  demand: { D1: number; D2: number; D3: number };
+  byElement: RawElementBreak[];
+  columns: RawColumnMeta[];
+  rows: RawDataRow[];
+}
+
+export interface CleaningCheck {
+  id: string;
+  status: CleaningStatus;
+  title: string;
+  detail: string | null;
+  count: string | null;
+  /** Suggested action label (e.g. "Resolve", "Delete column"); null = informational. */
+  action: string | null;
+}
+export interface DataCleaningModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  checks: CleaningCheck[];
+  counts: { pass: number; warn: number; fail: number };
+  rowsBefore: number;
+  /** Rows remaining after the current (UI-selected) removals. */
+  rowsAfter: number;
+  /** True when no must-fix blocker remains. Warnings never block. */
+  canProceed: boolean;
+  columns: RawColumnMeta[];
+  rows: RawDataRow[];
+}
+
+export interface NaiveElementCol {
+  major: string;
+  shortId: string;
+  items: number;
+}
+export interface NaiveStudentRow {
+  id: string;
+  studentId: string;
+  name: string;
+  /** Raw correct count per major element. */
+  perElement: Record<string, number>;
+  raw: number;
+  pct: number;
+}
+export interface NaiveScoresModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  hasEssay: boolean;
+  mcqItems: number;
+  totalItems: number;
+  cohortAvgPct: number;
+  elements: NaiveElementCol[];
+  students: NaiveStudentRow[];
 }
 
 export interface ItemRow {
