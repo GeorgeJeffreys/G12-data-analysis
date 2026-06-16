@@ -16,12 +16,19 @@
  * AFTER mount. The "land on current step" decision stays a post-mount client
  * effect, never divergent render logic — so server and client always agree on
  * the initial output and hydration is clean for an empty or populated cycle.
+ *
+ * The placeholder NEVER hangs forever: if the cycle hasn't resolved into a
+ * navigation within a few seconds (slow/failed live load) we surface a clean
+ * error instead of an infinite "Opening cycle…".
  */
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+
+/** How long we wait for a real cycle to resolve before showing an error. */
+const RESOLVE_TIMEOUT_MS = 8000;
 
 export default function CycleEntry({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -31,19 +38,54 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
   // Gate every cycle-data-dependent branch behind mount, so the server and the
   // first client render produce byte-identical output (the placeholder below).
   const [mounted, setMounted] = useState(false);
+  const [timedOut, setTimedOut] = useState(false);
   useEffect(() => setMounted(true), []);
 
   // Real cycles redirect to their current pipeline step. Mock priors have no
   // step to land on (doNext just points home), so we never redirect them. The
-  // decision runs only after mount, as a client-side effect.
-  const target = mounted && cycle && !cycle.mock ? cycle.doNext.href : null;
+  // decision runs only after mount, as a client-side effect. A self-referential
+  // target (no further step) is treated as "no redirect", so we fall through to
+  // a small overview instead of spinning forever.
+  const selfPath = `/cycles/${cycleId}`;
+  const redirectTo = mounted && cycle && !cycle.mock && cycle.doNext.href !== selfPath ? cycle.doNext.href : null;
   useEffect(() => {
-    if (target && target !== `/cycles/${cycleId}`) router.replace(target);
-  }, [target, cycleId, router]);
+    if (redirectTo) router.replace(redirectTo);
+  }, [redirectTo, router]);
+
+  // Safety net: never hang on the placeholder. If, after mount, we are still
+  // waiting (no cycle resolved, or a redirect that hasn't navigated) past the
+  // timeout, show an error state. Cleared whenever the inputs change.
+  const waiting = mounted && (!cycle || redirectTo !== null);
+  useEffect(() => {
+    if (!waiting) {
+      setTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setTimedOut(true), RESOLVE_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [waiting, cycleId]);
 
   // First paint (server + hydration): a stable placeholder identical on both
   // sides. Real cycles also keep it on screen while the redirect effect runs.
   if (!mounted) return <Landing />;
+
+  if (timedOut) {
+    return (
+      <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: "Couldn’t open" }]}>
+        <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 14, flex: 1 }}>
+          <div className="hf-h1">Couldn’t open this cycle</div>
+          <div className="hf-sub" style={{ maxWidth: 560 }}>
+            The cycle data didn’t load. This can happen if the connection dropped or the cycle isn’t
+            available. Try again, or go back to the cycles list.
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+            <button className="hf-btn" onClick={() => { setTimedOut(false); router.refresh(); }}>Retry</button>
+            <button className="hf-btn" onClick={() => router.push("/")}>Back to cycles</button>
+          </div>
+        </div>
+      </Shell>
+    );
+  }
 
   if (!cycle) {
     return (
@@ -73,8 +115,30 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
     );
   }
 
-  // Real cycle — redirecting to the current step; keep the placeholder meanwhile.
-  return <Landing />;
+  // Real cycle with a current step — redirecting; keep the placeholder meanwhile.
+  if (redirectTo) return <Landing />;
+
+  // Real cycle with no further step to land on (e.g. freshly created, nothing
+  // uploaded yet). Show a small overview with an entry point rather than hang.
+  return (
+    <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}>
+      <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 14, flex: 1 }}>
+        <div>
+          <div className="hf-lbl" style={{ color: H.ink3 }}>Cycle</div>
+          <div className="hf-h1" style={{ marginTop: 4 }}>{cycle.name}</div>
+          <div className="hf-sub" style={{ marginTop: 7 }}>
+            {cycle.participants.toLocaleString()} participants · {cycle.assessmentCount} assessments · started {cycle.startedAt}
+          </div>
+        </div>
+        <div className="hf-card" style={{ padding: "18px 20px", maxWidth: 560 }}>
+          <div className="hf-sub">{cycle.doNext.body}</div>
+          <button className="hf-btn" style={{ marginTop: 12 }} onClick={() => router.push(cycle.doNext.href)}>
+            {cycle.doNext.cta}
+          </button>
+        </div>
+      </div>
+    </Shell>
+  );
 }
 
 /** Stable, provider-independent placeholder shown during SSR/hydration and while
