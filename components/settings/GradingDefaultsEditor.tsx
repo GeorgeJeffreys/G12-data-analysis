@@ -11,7 +11,7 @@
  * new level without a star mapping, warns first — because exports and
  * certificates read the configured set rather than a hardcoded one.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Button, Card } from "@/components/ui/primitives";
@@ -192,24 +192,34 @@ export function GradingDefaultsEditor() {
       <Card style={{ padding: "18px 20px" }}>
         <div className="hf-h2" style={{ marginBottom: 4 }}>Overall award levels</div>
         <div className="hf-sub" style={{ marginBottom: 12 }}>
-          Best → lowest. The overall award is derived from each student’s overall score using these cut-points.
-        </div>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", marginBottom: 16, background: H.warnSoft, border: `1px solid ${H.warn}33`, borderRadius: 10 }}>
-          <Mark kind="warn" size={17} />
-          <span style={{ fontSize: 12.5, color: H.ink }}>
-            <strong>Unverified rule.</strong> The real award-derivation rule isn’t in the source files. This
-            classifies the overall score into the awards by cut-point (a placeholder) — confirm with the
-            assessment team before going live.
-          </span>
+          Best → lowest. These are the award <strong>vocabulary</strong> — their order maps positionally to the
+          award-derivation rule below (top = Distinction tier, then Advanced, Secondary, and the lowest is
+          No&nbsp;Award). The award is <strong>not</strong> a cut on an overall score; it is derived from the pattern
+          of the five subject performance levels (Wave&nbsp;3a). Renaming a level renames it everywhere it appears.
         </div>
         <LevelTable
           rows={award}
           editable={editable}
           showStars={false}
+          showCut={false}
           onChange={setAward}
           empty={(label) => ({ label, cut: 50 })}
           inUse={inUse.award}
         />
+
+        {/* the confirmed level-pattern award rule — policy-set, display-only */}
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${H.line}` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div className="hf-h2" style={{ fontSize: 14 }}>Award-derivation rule</div>
+            <DisplayBadge />
+          </div>
+          <div className="hf-sub" style={{ marginBottom: 12 }}>
+            Evaluated highest → lowest, first match wins. These counts are policy-set and fixed in the engine
+            (<span className="hf-mono">lib/engine/award.ts</span>) — changing them changes the awards real students
+            receive, so they are not editable here.
+          </div>
+          <AwardRuleTable awards={award.map((a) => a.label)} />
+        </div>
       </Card>
 
       {!editable && (
@@ -233,6 +243,7 @@ function LevelTable<T extends { label: string; cut: number | null; stars?: strin
   rows,
   editable,
   showStars,
+  showCut = true,
   onChange,
   empty,
   inUse,
@@ -240,6 +251,7 @@ function LevelTable<T extends { label: string; cut: number | null; stars?: strin
   rows: T[];
   editable: boolean;
   showStars: boolean;
+  showCut?: boolean;
   onChange: (rows: T[]) => void;
   empty: (label: string) => T;
   inUse: string[];
@@ -263,7 +275,7 @@ function LevelTable<T extends { label: string; cut: number | null; stars?: strin
             <th className="hf-th" style={{ width: 30 }}>#</th>
             <th className="hf-th">{showStars ? "Level label" : "Award label"}</th>
             {showStars && <th className="hf-th">Stars</th>}
-            <th className="hf-th" style={{ textAlign: "right" }}>Default cut ≥</th>
+            {showCut && <th className="hf-th" style={{ textAlign: "right" }}>Default cut ≥</th>}
             {editable && <th className="hf-th" style={{ textAlign: "right" }}>Reorder / remove</th>}
           </tr>
         </thead>
@@ -285,13 +297,15 @@ function LevelTable<T extends { label: string; cut: number | null; stars?: strin
                     <TextField value={r.stars ?? ""} width={90} mono editable={editable} placeholder="(blank)" onChange={(v) => update(i, { stars: v } as Partial<T>)} />
                   </td>
                 )}
-                <td className="hf-td" style={{ textAlign: "right" }}>
-                  {last ? (
-                    <span className="hf-sub hf-mono">remainder</span>
-                  ) : (
-                    <NumberField value={r.cut ?? 0} editable={editable} onChange={(v) => update(i, { cut: v } as Partial<T>)} />
-                  )}
-                </td>
+                {showCut && (
+                  <td className="hf-td" style={{ textAlign: "right" }}>
+                    {last ? (
+                      <span className="hf-sub hf-mono">remainder</span>
+                    ) : (
+                      <NumberField value={r.cut ?? 0} editable={editable} onChange={(v) => update(i, { cut: v } as Partial<T>)} />
+                    )}
+                  </td>
+                )}
                 {editable && (
                   <td className="hf-td" style={{ textAlign: "right", whiteSpace: "nowrap" }}>
                     <IconBtn label="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</IconBtn>
@@ -309,6 +323,63 @@ function LevelTable<T extends { label: string; cut: number | null; stars?: strin
           <Icon name="plus" size={13} /> Add {showStars ? "performance level" : "award level"}
         </Button>
       )}
+    </div>
+  );
+}
+
+/** Small "display-only" badge — for policy-fixed values that aren't editable. */
+function DisplayBadge() {
+  return (
+    <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>
+      DISPLAY-ONLY
+    </span>
+  );
+}
+
+/**
+ * The confirmed Wave-3a level-pattern award rule, rendered read-only against the
+ * live award vocabulary. Mirrors `deriveAward` exactly — the counts are the
+ * engine's fixed literals (≥3 Outstanding, ≥3 Exceeds, ≥4 Meets), not config.
+ */
+function AwardRuleTable({ awards }: { awards: string[] }) {
+  const distinction = awards[0] ?? "Distinction";
+  const advanced = awards[1] ?? distinction;
+  const secondary = awards[2] ?? advanced;
+  const noAward = awards[3] ?? secondary;
+  const rules: { award: string; rule: ReactNode }[] = [
+    {
+      award: distinction,
+      rule: (
+        <>
+          <strong>★★★ Outstanding</strong> in <strong>≥&nbsp;3</strong> subjects <em>and</em> <strong>≥&nbsp;★ Meets</strong> in
+          every remaining subject <em>and</em> the student clears the D3 safeguard.
+        </>
+      ),
+    },
+    { award: advanced, rule: (<><strong>★★ Exceeds</strong> (or better) in <strong>≥&nbsp;3</strong> subjects.</>) },
+    { award: secondary, rule: (<><strong>★ Meets</strong> (or better) in <strong>≥&nbsp;4</strong> subjects.</>) },
+    { award: noAward, rule: (<>None of the above patterns are met.</>) },
+  ];
+  return (
+    <div className="hf-scroll-x">
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 460 }}>
+        <thead>
+          <tr>
+            <th className="hf-th" style={{ width: 30 }}>#</th>
+            <th className="hf-th">Award</th>
+            <th className="hf-th">Granted when</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rules.map((r, i) => (
+            <tr key={i}>
+              <td className="hf-td hf-mono" style={{ color: H.ink3, width: 30 }}>{i + 1}</td>
+              <td className="hf-td" style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{r.award}</td>
+              <td className="hf-td" style={{ fontSize: 12.5, color: H.ink }}>{r.rule}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

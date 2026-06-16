@@ -2760,7 +2760,8 @@ export class InMemoryDataProvider implements DataProvider {
       retention: { ...this.retention },
       branding: { ...this.branding },
       safeguard: {
-        distinctionThreshold: this.safeguard.distinctionThreshold,
+        // The D3 safeguard reads this demand level (editable); the threshold is
+        // the dynamic per-exam majority of available D3 items, not a fixed count.
         topDifficultyDemand: this.resolveTopDifficulty(),
         demandLevels: this.allDemandLevels(),
       },
