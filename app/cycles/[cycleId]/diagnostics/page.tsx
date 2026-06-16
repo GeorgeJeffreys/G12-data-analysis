@@ -14,7 +14,8 @@ import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Badge } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
-import type { DiagnosticsModel, DiagnosticsAssessment } from "@/lib/data/types";
+import { ReliabilityPanel } from "@/components/ui/reliability";
+import type { DiagnosticsModel, DiagnosticsAssessment, ReliabilityModel } from "@/lib/data/types";
 import type { DiagStatus } from "@/lib/diagnostics";
 
 const statusColor = (s: DiagStatus) => (s === "Good" ? H.good : s === "Review" ? H.warn : H.bad);
@@ -23,6 +24,7 @@ const statusBg = (s: DiagStatus) => (s === "Good" ? H.goodSoft : s === "Review" 
 export default function DiagnosticsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
+  const reliability = useProviderData((p) => p.getReliability(cycleId), [cycleId]) as ReliabilityModel | null;
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const [active, setActive] = useState(0);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
@@ -153,6 +155,9 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
               </span>
             </div>
           </div>
+
+          {/* Family C — internal consistency (Cronbach's α) for this subject */}
+          {reliability && <ReliabilityPanel model={reliability} assessmentId={a.assessmentId} />}
           </div>
           </div>
         </div>
