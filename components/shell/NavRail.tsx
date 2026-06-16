@@ -8,7 +8,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { H } from "@/lib/ui/tokens";
-import { useProvider } from "@/lib/data/context";
+import { AccountMenu } from "./AccountMenu";
 
 // Three areas, with the batch-2 rail icons (design/hf.jsx HRAIL).
 const NAV = [
@@ -23,8 +23,6 @@ const NAV = [
 
 export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Settings" }) {
   const pathname = usePathname();
-  const provider = useProvider();
-  const user = provider.getCurrentUser();
   const activeKey =
     active ??
     (pathname.startsWith("/settings")
@@ -107,23 +105,7 @@ export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Setting
         );
       })}
       <div style={{ flex: 1 }} />
-      <div
-        title={`${user.name} · ${user.role === "lead_admin" ? "Lead" : user.role}`}
-        style={{
-          width: 30,
-          height: 30,
-          borderRadius: 999,
-          background: H.tint2,
-          color: H.ink2,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 11,
-          fontWeight: 700,
-        }}
-      >
-        {user.initials}
-      </div>
+      <AccountMenu />
     </nav>
   );
 }

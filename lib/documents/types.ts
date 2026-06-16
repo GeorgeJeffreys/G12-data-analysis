@@ -49,4 +49,8 @@ export interface GenerateResult {
   fonts: FontInfo;
   kinds: Partial<Record<DocKind, KindResult>>;
   perStudent: PerStudentStatus[];
+  /** Object URL of the single combined .zip of all generated .pptx files. */
+  zipUrl?: string;
+  /** Suggested download filename for the combined zip. */
+  zipName?: string;
 }
