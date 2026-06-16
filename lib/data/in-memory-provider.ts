@@ -76,6 +76,8 @@ import {
   type RoleDef,
   type RolesModel,
   type StudentSummary,
+  type UnofficialSubject,
+  type UnofficialElement,
   type DistinctionCandidate,
   type DistinctionSafeguardModel,
   type EssayMarksModel,
@@ -1885,6 +1887,10 @@ export class InMemoryDataProvider implements DataProvider {
     }
 
     const grades = this.getGrades(cycleId)!;
+    // Element/sub-element levels for the UNOFFICIAL diagnostic report (Part 4) —
+    // a richer, internal/learner breakdown than the official certificate/report.
+    const perf = this.getPerformanceReport(cycleId);
+    const starOf = (lvl: string) => starsFor(lvl, this.grading.starMap);
     // DOWNSTREAM: the Student Summary carries each subject's performance `level`
     // + its report `stars`, and the overall `award`, as free strings. Stars come
     // from the configured level→stars map (ScoringConfig), so an added/removed
@@ -1893,21 +1899,48 @@ export class InMemoryDataProvider implements DataProvider {
     // award label. The next prompt (Settings CRUD + certificates) wires the
     // validation that every configured level has a star mapping and every award
     // has a template slot before generation.
-    const students: StudentSummary[] = grades.rows.map((r) => ({
-      participantId: r.id,
-      name: r.label,
-      award: r.award,
-      subjects: slotDefs.map((d) => {
+    const students: StudentSummary[] = grades.rows.map((r) => {
+      const perfStudent = perf?.students.find((s) => s.participantId === r.id);
+      const unofficial: UnofficialSubject[] = slotDefs.map((d) => {
         const ref = resolve(d.re);
         const cell = ref ? r.grades[ref.id] : undefined;
+        const subjectMeta = ref ? perf?.subjects.find((s) => s.assessmentId === ref.id) : undefined;
+        const result = ref ? perfStudent?.subjects[ref.id] : undefined;
+        const elements: UnofficialElement[] = (subjectMeta?.majorElements ?? []).map((major) => ({
+          major,
+          level: result?.elements[major] ?? "",
+          stars: starOf(result?.elements[major] ?? ""),
+          subs: (subjectMeta?.subElements[major] ?? []).map((sub) => ({
+            sub,
+            level: result?.subElements[major]?.[sub] ?? "",
+            stars: starOf(result?.subElements[major]?.[sub] ?? ""),
+          })),
+        }));
         return {
           slot: d.slot,
           assessment: ref?.name ?? d.slot,
           level: cell?.level ?? "",
           stars: cell?.stars ?? "",
+          elements,
         };
-      }),
-    }));
+      });
+      return {
+        participantId: r.id,
+        name: r.label,
+        award: r.award,
+        subjects: slotDefs.map((d) => {
+          const ref = resolve(d.re);
+          const cell = ref ? r.grades[ref.id] : undefined;
+          return {
+            slot: d.slot,
+            assessment: ref?.name ?? d.slot,
+            level: cell?.level ?? "",
+            stars: cell?.stars ?? "",
+          };
+        }),
+        unofficial,
+      };
+    });
 
     return { cycleId, locked, students, settings, subjectOrder };
   }

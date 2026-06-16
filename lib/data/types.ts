@@ -423,6 +423,28 @@ export interface SubjectResult {
   stars: string;
 }
 
+/** One sub-element's achieved level within a major element (unofficial report). */
+export interface UnofficialSubElement {
+  sub: string;
+  level: string;
+  stars: string;
+}
+/** One major element's achieved level + its sub-elements (unofficial report). */
+export interface UnofficialElement {
+  major: string;
+  level: string;
+  stars: string;
+  subs: UnofficialSubElement[];
+}
+/** One subject's element/sub-element breakdown for the unofficial diagnostic report. */
+export interface UnofficialSubject {
+  slot: string;
+  assessment: string;
+  level: string;
+  stars: string;
+  elements: UnofficialElement[];
+}
+
 export interface StudentSummary {
   /** Maps to the {{RESULTID}} token. */
   participantId: string;
@@ -431,6 +453,12 @@ export interface StudentSummary {
   award: string;
   /** Per-subject performance level + stars, in canonical S1..S5 order. */
   subjects: SubjectResult[];
+  /**
+   * Per-subject major-element / sub-element breakdown for the UNOFFICIAL
+   * diagnostic report (richer than the official certificate/performance report).
+   * Populated only when grades are locked. Marked clearly as unofficial in the UI.
+   */
+  unofficial?: UnofficialSubject[];
 }
 
 export interface DocSettings {
