@@ -23,6 +23,15 @@ export interface SubnavItem {
   on: boolean;
 }
 
+/**
+ * Fixed width of the top-right action slot. The export/action area is reserved
+ * to this width on every page (right-aligned within it) so that a longer label
+ * ("Export comparison") or a second action ("Performance report") never widens
+ * the cluster and pushes the section tabs sideways. Sized to comfortably hold
+ * the widest real case (two export buttons / an action + primary).
+ */
+const ACTION_SLOT = 320;
+
 export function Shell({
   crumb,
   actions,
@@ -73,21 +82,30 @@ export function Shell({
             G12<span style={{ color: H.ink }}>++</span>
           </Link>
           <span style={{ width: 1, height: 20, background: H.line2 }} />
-          <nav aria-label="Breadcrumb" className="hf-sub" style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-            {crumb.map((c, i) => (
-              <span key={i} style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
-                {i > 0 && <span style={{ color: H.ink3 }}>›</span>}
-                {c.href ? (
-                  <Link href={c.href} style={{ color: "inherit", textDecoration: "none", whiteSpace: "nowrap" }}>
-                    {c.label}
-                  </Link>
-                ) : (
-                  <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
-                )}
-              </span>
-            ))}
-          </nav>
-          {/* section tabs — compact text buttons, top-right (was a separate row) */}
+          {/* Left zone: breadcrumb + any quiet status pill. This zone absorbs the
+              header's flexible space, so the status appearing/disappearing never
+              shifts the section tabs or the action slot to its right. */}
+          <div style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", gap: 12 }}>
+            <nav aria-label="Breadcrumb" className="hf-sub" style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+              {crumb.map((c, i) => (
+                <span key={i} style={{ display: "flex", alignItems: "center", gap: 7, minWidth: 0 }}>
+                  {i > 0 && <span style={{ color: H.ink3 }}>›</span>}
+                  {c.href ? (
+                    <Link href={c.href} style={{ color: "inherit", textDecoration: "none", whiteSpace: "nowrap" }}>
+                      {c.label}
+                    </Link>
+                  ) : (
+                    <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.label}</span>
+                  )}
+                </span>
+              ))}
+            </nav>
+            {status}
+          </div>
+          {/* section tabs — compact text buttons, top-right (was a separate row).
+              Their right edge is pinned a fixed distance from the screen edge by
+              the action slot below, so changing pages (and export labels) never
+              moves them horizontally. */}
           {subnav && (
             <nav aria-label="Section" style={{ display: "flex", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
               {subnav.map((it) => (
@@ -111,9 +129,24 @@ export function Shell({
               ))}
             </nav>
           )}
-          {subnav && (status || actions) && <span style={{ width: 1, height: 20, background: H.line2 }} />}
-          {status}
-          {actions}
+          {/* Action slot — a fixed-width, right-aligned region for the export /
+              page actions. Reserved on every page that has section tabs (even when
+              empty) so the tabs sit in the same place whether or not a page has an
+              action, and so different label widths stay self-contained here. */}
+          {(subnav || actions) && (
+            <div
+              style={{
+                flex: `0 0 ${ACTION_SLOT}px`,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "flex-end",
+                gap: 8,
+                minWidth: 0,
+              }}
+            >
+              {actions}
+            </div>
+          )}
         </div>
 
         {/* pipeline row */}
