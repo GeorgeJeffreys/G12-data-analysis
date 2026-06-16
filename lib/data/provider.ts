@@ -117,6 +117,22 @@ export interface SetBoundaryInput {
   /** Update a single target %. */
   targetIndex?: number;
   targetValue?: number;
+  /**
+   * Backsolve cuts from the current targets, store them as the editable starting
+   * point + snapshot, and switch to "cuts" mode. Used for both "use suggestion"
+   * and "re-suggest".
+   */
+  suggest?: boolean;
+  /** Reset a single cut back to the stored suggestion snapshot. */
+  resetCutIndex?: number;
+  /** Reset all cuts back to the stored suggestion snapshot. */
+  resetToSuggestion?: boolean;
+  /**
+   * Mark a cut as a deliberate waiver of a guard-rail (value knowingly set
+   * outside policy bounds). Recorded in the audit trail; the value is NOT
+   * silently re-clamped.
+   */
+  waiveGuardrail?: boolean;
 }
 
 export interface DataProvider {

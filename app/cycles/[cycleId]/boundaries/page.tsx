@@ -11,6 +11,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
+import type { BoundaryModel } from "@/lib/data/types";
 import { H } from "@/lib/ui/tokens";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import { Shell } from "@/components/shell/Shell";
@@ -49,9 +50,15 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const setMode = (mode: "cuts" | "pct") => provider.setBoundary(cycleId, scope, { mode });
   const setTarget = (index: number, v: number) =>
     provider.setBoundary(cycleId, scope, { targetIndex: index, targetValue: v });
+  // Wave 3b — suggestion actions.
+  const suggest = () => provider.setBoundary(cycleId, scope, { suggest: true });
+  const resetAll = () => provider.setBoundary(cycleId, scope, { resetToSuggestion: true });
+  const resetCut = (index: number) => provider.setBoundary(cycleId, scope, { resetCutIndex: index });
 
   const targetSum = model.targets.reduce((a, b) => a + (Number(b) || 0), 0);
   const remainder = 100 - targetSum;
+  // Raw cut alongside % (cut-scores are conceptually raw; the model stores %).
+  const rawOf = (pct: number) => (model.maxRaw > 0 ? Math.round((pct / 100) * model.maxRaw) : null);
   const mockMix = model.isAward ? MOCK_PRIOR_MIX_AWARD : MOCK_PRIOR_MIX_PERFORMANCE;
 
   const seg = (val: "cuts" | "pct", label: string, sub: string) => (
@@ -192,9 +199,17 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                           <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
                             <CutInput value={b.cut ?? 0} onCommit={(v) => setCut(i, v)} />
                             <span className="hf-sub">%</span>
+                            {rawOf(b.cut ?? 0) != null && (
+                              <span className="hf-sub" style={{ fontSize: 10 }}>≥{rawOf(b.cut ?? 0)}</span>
+                            )}
                           </span>
                         ) : (
-                          <span className="hf-mono" style={{ fontWeight: 600 }}>{b.cut}%</span>
+                          <span className="hf-mono" style={{ fontWeight: 600 }}>
+                            {b.cut}%
+                            {rawOf(b.cut ?? 0) != null && (
+                              <span className="hf-sub" style={{ fontSize: 10, marginLeft: 4 }}>≥{rawOf(b.cut ?? 0)}</span>
+                            )}
+                          </span>
                         )}
                       </td>
                       <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13.5, fontWeight: 600 }}>
@@ -202,9 +217,15 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                       </td>
                       <td className="hf-td" style={{ textAlign: "right" }}>
                         {model.mode === "pct" && !isLowest ? (
-                          <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
-                            <CutInput value={model.targets[i] ?? 0} width={58} onCommit={(v) => setTarget(i, v)} />
-                            <span className="hf-sub">%</span>
+                          <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                            <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
+                              <CutInput value={model.targets[i] ?? 0} width={58} onCommit={(v) => setTarget(i, v)} />
+                              <span className="hf-sub">%</span>
+                            </span>
+                            {/* honest: nearest achievable vs the target above */}
+                            <span className="hf-sub" style={{ fontSize: 10, color: b.pct.toFixed(0) === String(model.targets[i]) ? H.ink3 : H.pink }}>
+                              ≈ {b.pct.toFixed(1)}% actual
+                            </span>
                           </span>
                         ) : (
                           <span className="hf-mono" style={{ color: H.ink2 }}>{b.pct.toFixed(1)}%</span>
@@ -247,8 +268,179 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             </div>
           </div>
         </div>
+
+        {/* Wave 3b — suggested cut-scores: backsolve working, guard-rails, ½-D3. */}
+        <SuggestionPanel
+          model={model}
+          onSuggest={suggest}
+          onResetAll={resetAll}
+          onResetCut={resetCut}
+        />
       </div>
     </CycleShell>
+  );
+}
+
+/**
+ * Suggested cut-scores panel (Wave 3b). Shows, per cut: the backsolved
+ * suggestion in RAW marks + %, the target vs nearest-achievable % (honest about
+ * the gap at small cohorts), any guard-rail clamp or tie that moved the value,
+ * and whether the live cut is still the suggestion or has been edited. Offers
+ * re-suggest and reset-to-suggestion, and surfaces the cohort-level ½-D3 warning
+ * on the Outstanding cut. Suggestions are a starting point — always editable.
+ */
+function SuggestionPanel({
+  model,
+  onSuggest,
+  onResetAll,
+  onResetCut,
+}: {
+  model: BoundaryModel;
+  onSuggest: () => void;
+  onResetAll: () => void;
+  onResetCut: (index: number) => void;
+}) {
+  const { suggestion, suggestedCuts, cuts, guardrails, maxRaw, d3Warning, isAward, locked } = model;
+  const rawOf = (pct: number) => (maxRaw > 0 ? Math.round((pct / 100) * maxRaw) : null);
+  const cutLevels = model.levels.slice(0, model.cuts.length); // non-lowest bands
+  const anyEdited =
+    suggestedCuts != null && cuts.some((c, i) => suggestedCuts[i] != null && c !== suggestedCuts[i]);
+
+  return (
+    <div className="hf-card" style={{ flex: "0 0 auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div>
+          <div className="hf-lbl" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            Suggested cut-scores
+            <span style={{ fontSize: 8, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>
+              BACKSOLVED
+            </span>
+          </div>
+          <div className="hf-sub" style={{ fontSize: 11, marginTop: 3, maxWidth: 620 }}>
+            {isAward
+              ? "Backsolved from the target award distribution. The 25%/90% subject guard-rails and the ½-D3 check apply to per-subject performance cuts, not the overall award."
+              : `Backsolved from the target distribution, then held inside the policy guard-rails (≥ ${guardrails.floorPct}% floor, ≤ ${guardrails.ceilingPct}% ceiling). Cut = minimum raw score to be IN the level. Suggestions are a starting point — edit them for this year's item statistics, prior-sitting baseline, or incident reports.`}
+          </div>
+        </div>
+        {!locked && (
+          <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
+            <Button variant="ghost" onClick={onSuggest}>
+              <Icon name="arrow" />
+              {suggestedCuts ? "Re-suggest" : "Use as boundaries"}
+            </Button>
+            {anyEdited && (
+              <Button variant="ghost" onClick={onResetAll}>
+                Reset all to suggestion
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* per-cut working */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {cutLevels.map((level, i) => {
+          const pc = suggestion.perCut[i];
+          if (!pc) return null;
+          const liveCut = cuts[i] ?? 0;
+          const snap = suggestedCuts?.[i] ?? null;
+          const edited = snap != null && liveCut !== snap;
+          const sRaw = rawOf(pc.cut);
+          const liveRaw = rawOf(liveCut);
+          const outsideBounds = liveCut < guardrails.floorPct || liveCut > guardrails.ceilingPct;
+          return (
+            <div
+              key={level}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                flexWrap: "wrap",
+                padding: "8px 10px",
+                borderRadius: 8,
+                background: H.tint,
+                border: `1px solid ${H.line}`,
+              }}
+            >
+              <span style={{ fontSize: 12, fontWeight: 700, minWidth: 132 }}>
+                {isAward ? AWARD_SHORT[level] ?? level : level}
+                {model.bands[i]?.stars ? (
+                  <span className="hf-mono" style={{ color: H.pink, marginLeft: 6, letterSpacing: 1 }}>{model.bands[i]!.stars}</span>
+                ) : null}
+              </span>
+
+              {/* suggested raw cut + % */}
+              <span className="hf-mono" style={{ fontSize: 12.5, fontWeight: 700, minWidth: 120 }}>
+                suggest ≥ {sRaw != null ? `${sRaw} ` : ""}<span style={{ color: H.ink3, fontWeight: 600 }}>({pc.cut}%)</span>
+              </span>
+
+              {/* target vs nearest-achievable — honest about the gap */}
+              <span className="hf-sub" style={{ fontSize: 11, minWidth: 220 }}>
+                target {pc.targetPct}% · nearest achievable {pc.achievedPct.toFixed(1)}% = {pc.achievedCount} student{pc.achievedCount === 1 ? "" : "s"}
+              </span>
+
+              {/* guard-rail clamp badge */}
+              {pc.clamp && (
+                <span title="Guard-rail moved the distribution result" style={{ fontSize: 10.5, fontWeight: 700, color: H.bad, background: "#fbe9ef", border: `1px solid ${H.pink}`, borderRadius: 5, padding: "2px 6px" }}>
+                  {pc.clamp.bound === "floor"
+                    ? `distribution suggested ${pc.clamp.from}% → raised to ${pc.clamp.to}% (policy floor)`
+                    : pc.clamp.bound === "ceiling"
+                      ? `distribution suggested ${pc.clamp.from}% → lowered to ${pc.clamp.to}% (policy ceiling)`
+                      : `adjusted to ${pc.clamp.to}% to keep levels ordered`}
+                </span>
+              )}
+
+              {/* tie badge */}
+              {pc.tie && (
+                <span title="Several students share this score — a cut can't split them" style={{ fontSize: 10.5, fontWeight: 700, color: H.ink2, background: H.tint2, border: `1px solid ${H.line2}`, borderRadius: 5, padding: "2px 6px" }}>
+                  tie: {pc.tie.count} students at {pc.tie.atScore}% — band forced off target
+                </span>
+              )}
+
+              {/* edited vs suggested chip + reset */}
+              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+                {snap != null &&
+                  (edited ? (
+                    <>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: H.ink2 }}>
+                        edited → {liveRaw != null ? `${liveRaw} ` : ""}({liveCut}%)
+                      </span>
+                      {!locked && (
+                        <button onClick={() => onResetCut(i)} className="hf-sub" style={{ fontSize: 10.5, color: H.pink, background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                          reset
+                        </button>
+                      )}
+                    </>
+                  ) : (
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: H.good }}>suggested</span>
+                  ))}
+                {outsideBounds && (
+                  <span title="Set outside policy bounds — recorded as a waiver" style={{ fontSize: 10.5, fontWeight: 700, color: H.bad }}>
+                    ⚑ outside {guardrails.floorPct}–{guardrails.ceilingPct}% (waived)
+                  </span>
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ½-D3 cohort sanity check on the Outstanding cut */}
+      {!isAward && d3Warning.applicable && (
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 12px", borderRadius: 8, background: d3Warning.consistent ? H.tint : "#fbe9ef", border: `1px solid ${d3Warning.consistent ? H.line : H.pink}` }}>
+          <Mark kind={d3Warning.consistent ? "pass" : "warn"} size={15} />
+          <span className="hf-sub" style={{ fontSize: 11.5 }}>
+            <strong style={{ color: d3Warning.consistent ? H.ink2 : H.bad }}>
+              ½-D3 check on the Outstanding cut:{" "}
+            </strong>
+            {d3Warning.consistent
+              ? `all ${d3Warning.outstandingCount} student(s) clearing the cut reached ≥ ${d3Warning.halfThreshold}/${d3Warning.d3Total} D3 items correct.`
+              : `${d3Warning.belowHalf} of ${d3Warning.outstandingCount} student(s) clear the cut WITHOUT ≥ ${d3Warning.halfThreshold}/${d3Warning.d3Total} D3 items correct.`}{" "}
+            <span style={{ color: H.ink3 }}>{d3Warning.note}</span>
+          </span>
+        </div>
+      )}
+    </div>
   );
 }
 

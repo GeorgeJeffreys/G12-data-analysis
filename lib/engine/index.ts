@@ -134,6 +134,18 @@ export type {
   ReliabilityLevel,
 } from "./reliability";
 export {
+  deriveAward,
+  qualifiesForDistinctionByLevels,
+  d3MajorityThreshold,
+  passesD3Majority,
+} from "./award";
+export type {
+  AwardRuleConfig,
+  AwardInput,
+  AwardCounts,
+  AwardOutcome,
+} from "./award";
+export {
   DEFAULT_SCORING_CONFIG,
   defaultScoringConfig,
   classifyByCuts,

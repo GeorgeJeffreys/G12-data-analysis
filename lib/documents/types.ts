@@ -4,7 +4,7 @@
  */
 import type { DocSettings, StudentSummary } from "@/lib/data/types";
 
-export type DocKind = "certificate" | "report";
+export type DocKind = "certificate" | "report" | "unofficial";
 
 export interface GenerateRequest {
   cycleId: string;

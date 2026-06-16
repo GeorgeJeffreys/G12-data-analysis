@@ -5,6 +5,7 @@
  */
 
 import type { QualityRating } from "@/lib/engine";
+import type { PerCutSuggestion } from "@/lib/engine/cut-scores";
 import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { SeedPreview } from "./seed-types";
@@ -386,6 +387,8 @@ export interface PerfElementResult {
   level: string;
   /** Major element → performance level. */
   elements: Record<string, string>;
+  /** Major element → (sub-element → performance level). Finer-grained breakdown. */
+  subElements: Record<string, Record<string, string>>;
 }
 export interface PerfReportStudent {
   participantId: string;
@@ -398,6 +401,8 @@ export interface PerfReportSubject {
   assessmentId: string;
   name: string;
   majorElements: string[];
+  /** Major element → its ordered sub-elements (the construct structure, read from data). */
+  subElements: Record<string, string[]>;
 }
 export interface PerfReportSummarySubject {
   label: string;
@@ -479,6 +484,39 @@ export interface BoundaryScopeRef {
   label: string;
 }
 
+/**
+ * Cohort-level ½-D3 sanity check on the Outstanding cut (Wave 3b Part 3).
+ * A WARNING, not a hard clamp — and the precise "cut implies ½-D3" rule is
+ * flagged as a methodology nuance for human confirmation (see cut-scores.ts).
+ */
+export interface D3HalfWarning {
+  /** False when the subject has no D3 items or no Outstanding-band students. */
+  applicable: boolean;
+  /** True when no Outstanding student cleared the cut without ≥ ½ D3 correct. */
+  consistent: boolean;
+  d3Total: number;
+  halfThreshold: number;
+  outstandingCount: number;
+  belowHalf: number;
+  /** Human copy describing the (confirmation-pending) interpretation. */
+  note: string;
+}
+
+/**
+ * The backsolved suggestion derived from the current target distribution — the
+ * "what the targets imply" working, shown honestly with target-vs-achieved.
+ */
+export interface BoundarySuggestion {
+  /** Suggested cuts after guard-rails, length L−1. */
+  cuts: number[];
+  /** Per-cut working (distribution value, clamp, tie, target-vs-achieved). */
+  perCut: PerCutSuggestion[];
+  /** Targets the suggestion was solved from. */
+  targets: number[];
+  /** ½-D3 sanity check against the suggested Outstanding cut. */
+  d3: D3HalfWarning;
+}
+
 export interface BoundaryModel {
   cycleId: string;
   scope: string;
@@ -498,6 +536,20 @@ export interface BoundaryModel {
   stats: { mean: number; median: number; sd: number; itemsScored: number; excluded: number };
   n: number;
   locked: boolean;
+  /** Policy hard bounds (percent of subject max). */
+  guardrails: { floorPct: number; ceilingPct: number };
+  /** Subject total max (raw marks) — lets the UI show raw cut alongside %. */
+  maxRaw: number;
+  /** Backsolved suggestion from the CURRENT targets (recomputed every read). */
+  suggestion: BoundarySuggestion;
+  /**
+   * Committed suggestion snapshot, per cut. When a cut equals its snapshot it is
+   * "suggested"; when it differs the user has "edited" it. null until a
+   * suggestion has been adopted as the editable starting point.
+   */
+  suggestedCuts: number[] | null;
+  /** ½-D3 warning evaluated against the EFFECTIVE (current) Outstanding cut. */
+  d3Warning: D3HalfWarning;
 }
 
 export interface GradeCell {
@@ -515,6 +567,21 @@ export interface GradeMatrixRow {
   grades: Record<string, GradeCell>;
   /** Overall award level. */
   award: string;
+  /**
+   * Present only when the student's level pattern qualified for Distinction but
+   * the D3-majority cap denied it — the visible "why" (e.g. 3/7 correct, majority
+   * 4 in the named subject). Null/absent otherwise.
+   */
+  distinctionCap?: {
+    /** Short subject name of the exam that failed the majority. */
+    subject: string;
+    /** D3 items answered correctly on that exam. */
+    correct: number;
+    /** D3 items available on that exam. */
+    available: number;
+    /** The majority threshold (strictly more than half of available). */
+    majority: number;
+  } | null;
   /** Overall raw score across all subjects (MCQ + essay + alterations). */
   overallRaw: number;
   /** Maximum attainable overall score. */
@@ -560,6 +627,28 @@ export interface SubjectResult {
   stars: string;
 }
 
+/** One sub-element's achieved level within a major element (unofficial report). */
+export interface UnofficialSubElement {
+  sub: string;
+  level: string;
+  stars: string;
+}
+/** One major element's achieved level + its sub-elements (unofficial report). */
+export interface UnofficialElement {
+  major: string;
+  level: string;
+  stars: string;
+  subs: UnofficialSubElement[];
+}
+/** One subject's element/sub-element breakdown for the unofficial diagnostic report. */
+export interface UnofficialSubject {
+  slot: string;
+  assessment: string;
+  level: string;
+  stars: string;
+  elements: UnofficialElement[];
+}
+
 export interface StudentSummary {
   /** Maps to the {{RESULTID}} token. */
   participantId: string;
@@ -568,6 +657,12 @@ export interface StudentSummary {
   award: string;
   /** Per-subject performance level + stars, in canonical S1..S5 order. */
   subjects: SubjectResult[];
+  /**
+   * Per-subject major-element / sub-element breakdown for the UNOFFICIAL
+   * diagnostic report (richer than the official certificate/performance report).
+   * Populated only when grades are locked. Marked clearly as unofficial in the UI.
+   */
+  unofficial?: UnofficialSubject[];
 }
 
 export interface DocSettings {
@@ -803,11 +898,19 @@ export type SafeguardResult = "pass" | "capped" | "override";
 export interface DistinctionCandidate {
   id: string;
   name: string;
-  topDifficultyAnswered: number;
+  /** D3 items answered correctly on the selected exam scope. */
+  topDifficultyCorrect: number;
+  /** D3 items available on the selected exam scope (after exclusions). */
+  topDifficultyAvailable: number;
+  /** Majority threshold for the selected scope (strictly more than half of available). */
+  majority: number;
+  /** Whether the student cleared the majority on the selected scope. */
   meets: boolean;
   provisionalAward: string;
   cappedAward: string;
   result: SafeguardResult;
+  /** The visible "why" when capped (the failing exam's working); null otherwise. */
+  capReason: string | null;
   overrideReason: string | null;
   overrideBy: string | null;
 }
@@ -824,7 +927,7 @@ export interface DistinctionSafeguardModel {
   candidates: DistinctionCandidate[];
   counts: { inLine: number; meet: number; capped: number; overridden: number };
   canOverride: boolean;
-  /** // CONFIRM: "answered" is treated as attempted (a non-blank response), not "answered correctly". */
+  /** Explains the D3 metric: correct (not attempts) vs the dynamic majority of available. */
   attemptedNote: string;
 }
 

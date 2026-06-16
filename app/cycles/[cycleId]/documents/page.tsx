@@ -18,8 +18,14 @@ import { getDocumentGenerator } from "@/lib/documents/generator";
 import type { DocKind, GenerateResult } from "@/lib/documents/types";
 import type { DocumentsModel, StudentSummary } from "@/lib/data/types";
 
-type Choice = "both" | "certificate" | "report";
 type Step = "config" | "generating" | "results";
+
+const ALL_KINDS: DocKind[] = ["certificate", "report", "unofficial"];
+const KIND_LABEL: Record<DocKind, string> = {
+  certificate: "Certificates",
+  report: "Performance reports",
+  unofficial: "Unofficial reports",
+};
 
 const CERT_FIELDS = [
   ["{{NAME}}", "Student full name"],
@@ -35,6 +41,13 @@ const REPORT_FIELDS = [
   ["{{RESULTID}}", "Participant ID"],
   ["{{EXAMDATE}} · {{TESTCENTRE}} · {{ISSUEDATE}}", "Cycle settings"],
 ];
+const UNOFFICIAL_FIELDS = [
+  ["{{NAME}}", "Student full name"],
+  ["{{S1..S5_LEVEL}}", "Per-subject performance level + stars"],
+  ["{{Sx_ELEMENT_LEVELS}}", "Major-element levels per subject"],
+  ["{{Sx_SUBELEMENT_LEVELS}}", "Sub-element levels per major element"],
+  ["UNOFFICIAL", "Marked clearly as unofficial / diagnostic"],
+];
 
 export default function DocumentsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -42,18 +55,23 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
   const model = useProviderData((p) => p.getDocuments(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
 
-  const [choice, setChoice] = useState<Choice>("both");
-  const [certFile, setCertFile] = useState<File | null>(null);
-  const [reportFile, setReportFile] = useState<File | null>(null);
+  const [selected, setSelected] = useState<Set<DocKind>>(() => new Set<DocKind>(["certificate", "report"]));
+  const [files, setFiles] = useState<Partial<Record<DocKind, File | null>>>({});
   const [step, setStep] = useState<Step>("config");
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [previewBig, setPreviewBig] = useState(false);
 
-  const kinds: DocKind[] = useMemo(
-    () => (choice === "both" ? ["certificate", "report"] : [choice]),
-    [choice],
-  );
+  const kinds: DocKind[] = useMemo(() => ALL_KINDS.filter((k) => selected.has(k)), [selected]);
+  const toggleKind = (k: DocKind) =>
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(k)) next.delete(k);
+      else next.add(k);
+      if (next.size === 0) next.add(k); // never empty
+      return next;
+    });
+  const setFile = (k: DocKind, f: File | null) => setFiles((prev) => ({ ...prev, [k]: f }));
 
   if (!model) {
     return (
@@ -96,7 +114,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
     );
   }
 
-  const requiredReady = kinds.every((k) => (k === "certificate" ? certFile : reportFile));
+  const requiredReady = kinds.every((k) => files[k]);
   const first = model.students[0];
 
   const doGenerate = async () => {
@@ -104,8 +122,10 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
     setStep("generating");
     try {
       const templates: Partial<Record<DocKind, ArrayBuffer>> = {};
-      if (kinds.includes("certificate") && certFile) templates.certificate = await certFile.arrayBuffer();
-      if (kinds.includes("report") && reportFile) templates.report = await reportFile.arrayBuffer();
+      for (const k of kinds) {
+        const f = files[k];
+        if (f) templates[k] = await f.arrayBuffer();
+      }
       const res = await getDocumentGenerator().generate({
         cycleId,
         kinds,
@@ -170,21 +190,27 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
           )}
 
           <Section n={1} title="Document type">
-            <div style={{ display: "flex", gap: 8 }}>
-              <Choice2 label="Both" on={choice === "both"} onClick={() => setChoice("both")} />
-              <Choice2 label="Certificates" on={choice === "certificate"} onClick={() => setChoice("certificate")} />
-              <Choice2 label="Reports" on={choice === "report"} onClick={() => setChoice("report")} />
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {ALL_KINDS.map((k) => (
+                <Choice2 key={k} label={KIND_LABEL[k]} on={selected.has(k)} onClick={() => toggleKind(k)} unofficial={k === "unofficial"} />
+              ))}
             </div>
+            {selected.has("unofficial") && (
+              <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 8, display: "flex", gap: 7, alignItems: "flex-start" }}>
+                <Mark kind="warn" size={14} />
+                <span>
+                  The <b>unofficial report</b> is a diagnostic, internal/learner breakdown showing the level achieved at
+                  major-element and sub-element granularity — <b>not</b> an official certificate or performance report.
+                </span>
+              </div>
+            )}
           </Section>
 
           <Section n={2} title="Template(s)">
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {kinds.includes("certificate") && (
-                <TemplateUpload label="Certificate template" file={certFile} onFile={setCertFile} />
-              )}
-              {kinds.includes("report") && (
-                <TemplateUpload label="Performance report template" file={reportFile} onFile={setReportFile} />
-              )}
+              {kinds.map((k) => (
+                <TemplateUpload key={k} label={`${KIND_LABEL[k]} template`} file={files[k] ?? null} onFile={(f) => setFile(k, f)} />
+              ))}
             </div>
           </Section>
 
@@ -192,6 +218,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {kinds.includes("certificate") && <FieldList title="Certificate" fields={CERT_FIELDS} />}
               {kinds.includes("report") && <FieldList title="Performance report" fields={REPORT_FIELDS} />}
+              {kinds.includes("unofficial") && <FieldList title="Unofficial report (element/sub-element)" fields={UNOFFICIAL_FIELDS} />}
             </div>
             <div className="hf-sub" style={{ fontSize: 12, marginTop: 9 }}>
               Stars are derived from each level — never entered. The Result ID replaces the certificate’s baked-in fixed ID.
@@ -221,6 +248,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
             <div style={{ transform: "scale(0.86)", transformOrigin: "top center", display: "flex", flexDirection: "column", gap: 10 }}>
               {first && kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
               {first && kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
+              {first && kinds.includes("unofficial") && <UnofficialPreview student={first} />}
             </div>
             <div className="hf-sub" style={{ fontSize: 11, textAlign: "center", marginTop: -10 }}>
               {first ? first.name : "First student"}’s data · highlighted fields are merged · <button onClick={() => setPreviewBig(true)} style={{ border: "none", background: "transparent", color: H.pink, cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>see closer</button>
@@ -258,7 +286,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
               title={requiredReady ? undefined : "Upload the required template(s) first"}
             >
               <Icon name="award" color="#fff" />
-              Generate {model.students.length}{choice === "both" ? " × 2" : ""} document{model.students.length === 1 && choice !== "both" ? "" : "s"}
+              Generate {model.students.length}{kinds.length > 1 ? ` × ${kinds.length}` : ""} document{model.students.length === 1 && kinds.length === 1 ? "" : "s"}
             </Button>
           )}
         </aside>
@@ -275,6 +303,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
             </div>
             {kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
             {kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
+            {kinds.includes("unofficial") && <UnofficialPreview student={first} />}
           </div>
         </div>
       )}
@@ -427,23 +456,65 @@ function Section({ n, title, children }: { n: number; title: string; children: R
   );
 }
 
-function Choice2({ label, on, onClick }: { label: string; on: boolean; onClick: () => void }) {
+function Choice2({ label, on, onClick, unofficial }: { label: string; on: boolean; onClick: () => void; unofficial?: boolean }) {
   return (
     <button
       onClick={onClick}
       style={{
         padding: "8px 16px",
         borderRadius: 8,
-        border: `1px solid ${on ? H.pink : H.line2}`,
+        border: `1px ${unofficial ? "dashed" : "solid"} ${on ? H.pink : H.line2}`,
         background: on ? H.pinkSoft : H.paper,
         color: on ? H.pink : H.ink2,
         fontWeight: on ? 700 : 600,
         fontSize: 12.5,
         cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
       }}
     >
+      {on && <Mark kind="pass" size={12} />}
       {label}
     </button>
+  );
+}
+
+/** Compact, clearly-UNOFFICIAL element/sub-element preview for the first student. */
+function UnofficialPreview({ student }: { student: StudentSummary }) {
+  const subjects = student.unofficial ?? [];
+  return (
+    <div style={{ background: "#fff", border: `1px dashed ${H.pink}`, borderRadius: 6, boxShadow: "0 4px 18px rgba(31,42,49,.12)", padding: "16px 18px", position: "relative" }}>
+      <div style={{ position: "absolute", top: 8, right: 10, fontSize: 8.5, fontWeight: 800, letterSpacing: 1, color: H.pink, border: `1px dashed ${H.pink}`, borderRadius: 4, padding: "1px 5px" }}>UNOFFICIAL</div>
+      <div style={{ fontWeight: 800, color: H.pink, fontSize: 13 }}>Diagnostic Breakdown</div>
+      <div style={{ fontWeight: 700, fontSize: 14, marginTop: 4 }}><Field>{student.name}</Field></div>
+      <div className="hf-sub" style={{ fontSize: 10, marginTop: 4 }}>Levels at major-element and sub-element granularity · internal / learner use only</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
+        {subjects.map((s) => (
+          <div key={s.slot}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, fontWeight: 700 }}>
+              <span style={{ flex: 1 }}>{s.assessment}</span>
+              <span className="hf-mono" style={{ color: H.pink, letterSpacing: 1 }}>{s.stars || "·"}</span>
+            </div>
+            {s.elements.map((el) => (
+              <div key={el.major} style={{ marginTop: 3 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, paddingLeft: 6 }}>
+                  <span style={{ flex: 1, color: H.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={el.major}>{el.major}</span>
+                  <span className="hf-mono" style={{ color: H.pink, letterSpacing: 1 }}>{el.stars || "·"}</span>
+                </div>
+                {el.subs.map((su) => (
+                  <div key={su.sub} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, paddingLeft: 16, color: H.ink3 }}>
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={su.sub}>{su.sub}</span>
+                    <span className="hf-mono" style={{ letterSpacing: 1 }}>{su.stars || "·"}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+        ))}
+        {subjects.length === 0 && <div className="hf-sub" style={{ fontSize: 11 }}>No element data.</div>}
+      </div>
+    </div>
   );
 }
 
