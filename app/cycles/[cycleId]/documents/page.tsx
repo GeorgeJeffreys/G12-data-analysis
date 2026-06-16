@@ -16,7 +16,8 @@ import { Button, Card, Pill } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { getDocumentGenerator } from "@/lib/documents/generator";
 import type { DocKind, GenerateResult } from "@/lib/documents/types";
-import type { DocumentsModel, StudentSummary } from "@/lib/data/types";
+import type { DocumentsModel } from "@/lib/data/types";
+import { BatchPreview, CertificateProof, ReportProof, UnofficialProof, studentIssues } from "@/components/documents/BatchPreview";
 
 type Step = "config" | "generating" | "results";
 
@@ -60,7 +61,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
   const [step, setStep] = useState<Step>("config");
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [previewBig, setPreviewBig] = useState(false);
+  const [showBatch, setShowBatch] = useState(false);
 
   const kinds: DocKind[] = useMemo(() => ALL_KINDS.filter((k) => selected.has(k)), [selected]);
   const toggleKind = (k: DocKind) =>
@@ -116,6 +117,9 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
 
   const requiredReady = kinds.every((k) => files[k]);
   const first = model.students[0];
+  // Content issues detectable without measurement (blank name, missing award/level).
+  // Name-overflow is added inside the batch preview where fonts are measured.
+  const flaggedCount = model.students.filter((s) => studentIssues(s, kinds).length).length;
 
   const doGenerate = async () => {
     setError(null);
@@ -241,18 +245,27 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span className="hf-lbl">Preview · first student</span>
               <div style={{ flex: 1 }} />
-              <button onClick={() => setPreviewBig(true)} className="hf-btn ghost" style={{ fontSize: 11, padding: "3px 7px" }} title="Expand the preview">
-                Expand
+              <button onClick={() => setShowBatch(true)} className="hf-btn ghost" style={{ fontSize: 11, padding: "3px 7px" }} title="Page through every student">
+                Verify all
               </button>
             </div>
-            <div style={{ transform: "scale(0.86)", transformOrigin: "top center", display: "flex", flexDirection: "column", gap: 10 }}>
-              {first && kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
-              {first && kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
-              {first && kinds.includes("unofficial") && <UnofficialPreview student={first} />}
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center" }}>
+              {first && kinds.includes("certificate") && <CertificateProof student={first} settings={model.settings} scale={300 / 1122} />}
+              {first && kinds.includes("report") && <ReportProof student={first} settings={model.settings} scale={232 / 1080} />}
+              {first && kinds.includes("unofficial") && <UnofficialProof student={first} width={300} />}
             </div>
-            <div className="hf-sub" style={{ fontSize: 11, textAlign: "center", marginTop: -10 }}>
-              {first ? first.name : "First student"}’s data · highlighted fields are merged · <button onClick={() => setPreviewBig(true)} style={{ border: "none", background: "transparent", color: H.pink, cursor: "pointer", fontSize: 11, fontWeight: 600, padding: 0 }}>see closer</button>
+            <div className="hf-sub" style={{ fontSize: 11, textAlign: "center" }}>
+              {first ? first.name : "First student"}’s data · highlighted fields are merged
             </div>
+            <Button variant="pri" style={{ justifyContent: "center" }} onClick={() => setShowBatch(true)} disabled={!model.students.length}>
+              <Icon name="search" color="#fff" />
+              Preview &amp; verify {model.students.length} student{model.students.length === 1 ? "" : "s"}
+            </Button>
+            {flaggedCount > 0 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 7, justifyContent: "center", fontSize: 11.5, color: H.warn, fontWeight: 700 }}>
+                <Mark kind="warn" size={13} /> {flaggedCount} student{flaggedCount === 1 ? "" : "s"} with content issues — check before generating
+              </div>
+            )}
           </div>
 
           <div style={{ flex: 1 }} />
@@ -260,7 +273,7 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
           <Card style={{ padding: "11px 13px", display: "flex", gap: 10, alignItems: "flex-start", background: H.paper }}>
             <Mark kind="warn" size={15} />
             <span className="hf-sub" style={{ fontSize: 11 }}>
-              <strong>Georgia Pro Condensed</strong> (certificate name line) is proprietary and may be absent — the name line will use a substitute. Embed fonts in the template to keep the exact look.
+              The preview is a <strong>content &amp; layout check</strong>, not a print-exact proof. <strong>Barlow</strong> (report) is loaded so report overflow is accurate; the certificate name uses a fallback for the proprietary <strong>Georgia Pro Condensed</strong>, so its overflow is approximate.
             </span>
           </Card>
 
@@ -292,20 +305,14 @@ export default function DocumentsPage({ params }: { params: { cycleId: string } 
         </aside>
       </div>
 
-      {/* expanded preview — a closer look without owning the viewport */}
-      {previewBig && first && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.4)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 24 }} onClick={() => setPreviewBig(false)}>
-          <div style={{ display: "flex", flexDirection: "column", gap: 16, maxHeight: "90vh", overflow: "auto", maxWidth: 520, width: "100%" }} onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: "#fff", fontWeight: 700, fontSize: 13 }}>Preview · {first.name}</span>
-              <div style={{ flex: 1 }} />
-              <Button variant="ghost" onClick={() => setPreviewBig(false)} style={{ background: H.paper }}>Close</Button>
-            </div>
-            {kinds.includes("certificate") && <CertPreview student={first} settings={model.settings} />}
-            {kinds.includes("report") && <ReportPreview student={first} settings={model.settings} />}
-            {kinds.includes("unofficial") && <UnofficialPreview student={first} />}
-          </div>
-        </div>
+      {/* full-cohort verification preview — page through every student before generating */}
+      {showBatch && (
+        <BatchPreview
+          students={model.students}
+          settings={model.settings}
+          kinds={kinds}
+          onClose={() => setShowBatch(false)}
+        />
       )}
     </CycleShell>
   );
@@ -480,44 +487,6 @@ function Choice2({ label, on, onClick, unofficial }: { label: string; on: boolea
   );
 }
 
-/** Compact, clearly-UNOFFICIAL element/sub-element preview for the first student. */
-function UnofficialPreview({ student }: { student: StudentSummary }) {
-  const subjects = student.unofficial ?? [];
-  return (
-    <div style={{ background: "#fff", border: `1px dashed ${H.pink}`, borderRadius: 6, boxShadow: "0 4px 18px rgba(31,42,49,.12)", padding: "16px 18px", position: "relative" }}>
-      <div style={{ position: "absolute", top: 8, right: 10, fontSize: 8.5, fontWeight: 800, letterSpacing: 1, color: H.pink, border: `1px dashed ${H.pink}`, borderRadius: 4, padding: "1px 5px" }}>UNOFFICIAL</div>
-      <div style={{ fontWeight: 800, color: H.pink, fontSize: 13 }}>Diagnostic Breakdown</div>
-      <div style={{ fontWeight: 700, fontSize: 14, marginTop: 4 }}><Field>{student.name}</Field></div>
-      <div className="hf-sub" style={{ fontSize: 10, marginTop: 4 }}>Levels at major-element and sub-element granularity · internal / learner use only</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 10 }}>
-        {subjects.map((s) => (
-          <div key={s.slot}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, fontWeight: 700 }}>
-              <span style={{ flex: 1 }}>{s.assessment}</span>
-              <span className="hf-mono" style={{ color: H.pink, letterSpacing: 1 }}>{s.stars || "·"}</span>
-            </div>
-            {s.elements.map((el) => (
-              <div key={el.major} style={{ marginTop: 3 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10.5, paddingLeft: 6 }}>
-                  <span style={{ flex: 1, color: H.ink2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={el.major}>{el.major}</span>
-                  <span className="hf-mono" style={{ color: H.pink, letterSpacing: 1 }}>{el.stars || "·"}</span>
-                </div>
-                {el.subs.map((su) => (
-                  <div key={su.sub} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, paddingLeft: 16, color: H.ink3 }}>
-                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={su.sub}>{su.sub}</span>
-                    <span className="hf-mono" style={{ letterSpacing: 1 }}>{su.stars || "·"}</span>
-                  </div>
-                ))}
-              </div>
-            ))}
-          </div>
-        ))}
-        {subjects.length === 0 && <div className="hf-sub" style={{ fontSize: 11 }}>No element data.</div>}
-      </div>
-    </div>
-  );
-}
-
 function TemplateUpload({ label, file, onFile }: { label: string; file: File | null; onFile: (f: File | null) => void }) {
   return (
     <Card style={{ padding: "14px 16px", display: "flex", alignItems: "center", gap: 13 }}>
@@ -567,47 +536,6 @@ function SettingField({ label, value, onCommit }: { label: string; value: string
         style={{ border: `1px solid ${H.line2}`, borderRadius: 7, padding: "7px 9px", fontSize: 12.5, outline: "none", background: H.paper, color: H.ink }}
       />
     </label>
-  );
-}
-
-function Field({ children }: { children: React.ReactNode }) {
-  return <span style={{ background: H.pinkSoft, color: H.pink, padding: "0 6px", borderRadius: 4 }}>{children}</span>;
-}
-
-function CertPreview({ student, settings }: { student: StudentSummary; settings: DocumentsModel["settings"] }) {
-  return (
-    <div style={{ background: "#fff", border: `1px solid ${H.line2}`, borderRadius: 6, boxShadow: "0 4px 18px rgba(31,42,49,.12)", padding: 20, textAlign: "center", position: "relative" }}>
-      <div style={{ position: "absolute", inset: 8, border: `1.5px solid ${H.pink}`, borderRadius: 4, opacity: 0.45, pointerEvents: "none" }} />
-      <div style={{ fontFamily: "var(--font-script)", fontSize: 24, color: H.pink }}>Alsama</div>
-      <div className="hf-lbl" style={{ fontSize: 9, marginTop: 6 }}>G12++ Certificate</div>
-      <div style={{ fontSize: 17, fontWeight: 700, marginTop: 10 }}><Field>{student.name}</Field></div>
-      <div className="hf-sub" style={{ fontSize: 11, marginTop: 6 }}>has been awarded</div>
-      <div style={{ fontSize: 15, fontWeight: 800, color: H.pink, marginTop: 4 }}><Field>{student.award}</Field></div>
-      <div className="hf-sub hf-mono" style={{ fontSize: 9.5, marginTop: 10 }}>
-        Result ID <Field>{student.participantId}</Field> · {settings.testCentre}
-      </div>
-    </div>
-  );
-}
-
-function ReportPreview({ student, settings }: { student: StudentSummary; settings: DocumentsModel["settings"] }) {
-  return (
-    <div style={{ background: "#fff", border: `1px solid ${H.line2}`, borderRadius: 6, boxShadow: "0 4px 18px rgba(31,42,49,.12)", padding: "16px 18px" }}>
-      <div style={{ fontWeight: 800, color: H.pink, fontSize: 13 }}>Exam Performance Report</div>
-      <div style={{ fontWeight: 700, fontSize: 14, marginTop: 4 }}><Field>{student.name}</Field></div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10 }}>
-        {student.subjects.map((s) => (
-          <div key={s.slot} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
-            <span style={{ flex: 1, color: H.ink2 }}>{s.assessment}</span>
-            <span className="hf-mono" style={{ color: H.pink, fontWeight: 700, width: 28, letterSpacing: 1 }}>{s.stars || "·"}</span>
-            <span style={{ width: 150, fontWeight: 600 }}><Field>{s.level || "—"}</Field></span>
-          </div>
-        ))}
-      </div>
-      <div className="hf-sub hf-mono" style={{ fontSize: 9.5, marginTop: 10 }}>
-        Result ID <Field>{student.participantId}</Field> · {settings.examDate}
-      </div>
-    </div>
   );
 }
 
