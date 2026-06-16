@@ -175,6 +175,15 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                           >
                             {fmtNum(r.overallRaw)} / {fmtNum(r.overallMax)} · {r.overallPct.toFixed(1)}%
                           </span>
+                          {r.distinctionCap && (
+                            <span
+                              title={`Capped below Distinction — ${r.distinctionCap.correct}/${r.distinctionCap.available} D3 items correct in ${r.distinctionCap.subject}; majority is ${r.distinctionCap.majority}`}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, color: H.warn, background: H.warnSoft, padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" }}
+                            >
+                              <Icon name="lock" size={10} color={H.warn} />
+                              D3 cap · {r.distinctionCap.correct}/{r.distinctionCap.available} (need {r.distinctionCap.majority})
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
