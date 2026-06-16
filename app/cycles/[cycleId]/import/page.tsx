@@ -54,10 +54,14 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
     setResolved(s);
   };
 
-  const exportTone: Tone = counts.fail ? "fail" : counts.warn ? "warn" : "pass";
-  const exportStatus = counts.fail
-    ? `${counts.fail} must fix`
-    : `${counts.pass ?? 0} passed${counts.warn ? ` · ${counts.warn} warning${counts.warn > 1 ? "s" : ""}` : ""}`;
+  // An empty/draft cycle hasn't ingested a raw export yet — the normal starting
+  // state for this screen, not an error. Show a neutral "Not added" until upload.
+  const exportTone: Tone = !model.uploaded ? "neutral" : counts.fail ? "fail" : counts.warn ? "warn" : "pass";
+  const exportStatus = !model.uploaded
+    ? "Not added"
+    : counts.fail
+      ? `${counts.fail} must fix`
+      : `${counts.pass ?? 0} passed${counts.warn ? ` · ${counts.warn} warning${counts.warn > 1 ? "s" : ""}` : ""}`;
 
   const essayUp = !!essay?.uploaded;
   const essayStatus = essayUp ? `${essay!.matchedCount} matched · ${essay!.unmatchedIds.length} unmatched` : "Not added";
@@ -223,6 +227,10 @@ function ExportBody({
   resolved: DuplicateStrategy | null;
   onResolve: (s: DuplicateStrategy) => void;
 }) {
+  // Empty cycle: no raw export ingested yet. Render the upload prompt rather than
+  // a file-meta + validation report for data that doesn't exist (which used to
+  // crash reading `report.stats.mcqRows`). An empty cycle is the normal start.
+  if (!model.uploaded) return <ExportEmpty />;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* file meta */}
@@ -278,7 +286,31 @@ function ExportBody({
       )}
 
       <div className="hf-sub" style={{ fontSize: 11.5 }}>
-        MCQ-only rows after cleaning: <span className="hf-mono">{model.report.stats.mcqRows.toLocaleString()}</span>. Surveys and non-MCQ rows removed; Arabic encoding repaired.
+        MCQ-only rows after cleaning: <span className="hf-mono">{(model.report.stats?.mcqRows ?? 0).toLocaleString()}</span>. Surveys and non-MCQ rows removed; Arabic encoding repaired.
+      </div>
+    </div>
+  );
+}
+
+/** Empty-state for the raw export card before anything is ingested. The combined
+ *  export is the one required input; uploading it splits the subjects and starts
+ *  the pipeline. NB: wiring this upload to Supabase (persisting the parsed export
+ *  + assessments) is the outstanding dependency — see the note below. */
+function ExportEmpty() {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div className="hf-sub" style={{ fontSize: 12, maxWidth: 640 }}>
+        Upload <b style={{ color: H.ink }}>one combined export</b> containing every subject. We detect each subject,
+        split it, and run validation automatically — no file is required for the optional essay-marks and incident-log
+        steps below.
+      </div>
+      <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+        <Button disabled title="Raw-export ingest to Supabase is not yet wired (see note)"><Icon name="upload" size={13} />Upload exam export</Button>
+      </div>
+      <div className="hf-sub" style={{ fontSize: 11.5, color: H.ink2, background: H.tint, borderRadius: 8, padding: "10px 12px", maxWidth: 640 }}>
+        <b>Dependency:</b> persisting a raw export (and its split assessments/items/responses) to Supabase isn’t wired up
+        yet, so the combined upload can’t be ingested live from here. Cycles and their assessment list are persisted; the
+        raw-export ingest RPC is the missing piece. Essay marks and the incident log below upload and persist locally.
       </div>
     </div>
   );

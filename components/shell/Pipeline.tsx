@@ -9,37 +9,14 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { H, PIPELINE_STAGES } from "@/lib/ui/tokens";
+import { stageRoute } from "@/lib/data/pipeline-route";
 
 /**
- * Map a pipeline stage index to its route (10-stage pipeline). Score+Boundaries
- * share the boundaries screen, so both navigate there.
+ * Map a pipeline stage index to its route (10-stage pipeline). Shared with the
+ * provider's current-step resolver via `stageRoute` so navigation and the
+ * "land on current step" logic can never disagree.
  */
-export function stageHref(cycleId: string, index: number): string {
-  const base = `/cycles/${cycleId}`;
-  switch (index) {
-    case 0: // Upload
-      return `${base}/import`;
-    case 1: // Raw data
-      return `${base}/raw-data`;
-    case 2: // Clean
-      return `${base}/clean`;
-    case 3: // Raw scores
-      return `${base}/raw-scores`;
-    case 4: // Review
-      return `${base}/review`;
-    case 5: // Adjustments
-      return `${base}/adjustments`;
-    case 6: // Score
-    case 7: // Boundaries
-      return `${base}/boundaries`;
-    case 8: // Grades
-      return `${base}/grades`;
-    case 9: // Export
-      return `${base}/documents`;
-    default:
-      return base;
-  }
-}
+export const stageHref = stageRoute;
 
 export function Pipeline({
   active = 2,

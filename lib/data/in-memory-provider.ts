@@ -32,6 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
+import { doNextForStage } from "./pipeline-route";
 import { SUBJECT_CATALOG } from "./subject-catalog";
 import type {
   AssembleScoreAnalysisArgs,
@@ -512,7 +513,6 @@ export class InMemoryDataProvider implements DataProvider {
     const live = this.seed.liveCycle;
     if (cycleId === live.id) {
       const refs = this.assessmentRefs(cycleId);
-      const first = refs[0];
       return {
         id: live.id,
         name: live.name,
@@ -522,14 +522,13 @@ export class InMemoryDataProvider implements DataProvider {
         stageIndex: this.locked.has(live.id) ? PIPELINE.length - 1 : live.stageIndex,
         locked: this.locked.has(live.id),
         mock: false,
-        doNext: this.locked.has(live.id)
-          ? { title: "Generate documents", body: "Grades are signed off. Generate certificates and performance reports for every student.", href: `/cycles/${live.id}/documents`, cta: "Generate documents" }
-          : {
-              title: "Review item quality",
-              body: "Assessments are validated and waiting for quality review before scoring.",
-              href: first ? `/cycles/${live.id}/review/${encodeURIComponent(first.id)}` : `/cycles/${live.id}`,
-              cta: "Go to item review",
-            },
+        // Land on the cycle's FIRST INCOMPLETE step — never skip ahead to a
+        // screen (Review/Boundaries/…) whose data doesn't exist yet. A locked
+        // cycle's work is done, so its next action is document generation; an
+        // empty/draft cycle resolves to Upload (stageIndex 0). The previous code
+        // hard-coded "Review item quality" regardless of progress, which threw a
+        // brand-new cycle straight onto the Cronbach/Review screen.
+        doNext: doNextForStage(live.id, this.locked.has(live.id) ? PIPELINE.length - 1 : live.stageIndex),
         assessments: refs,
       };
     }
@@ -555,15 +554,20 @@ export class InMemoryDataProvider implements DataProvider {
   getIngest(cycleId: string): IngestModel | null {
     const live = this.seed.liveCycle;
     if (cycleId !== live.id) return null;
+    // A raw export has actually been ingested only once some subject has
+    // responses. A freshly-created (empty) cycle has none — the Import screen
+    // shows its upload prompt instead of an all-zero "validation report".
+    const uploaded = live.assessments.some((a) => a.responses.length > 0);
     return {
       cycleId,
+      uploaded,
       fileName: live.fileName,
       fileSizeMB: live.fileSizeMB,
       uploadedAgo: live.uploadedAgo,
       report: live.validation,
       preview: live.preview,
       duplicates: live.duplicates,
-      canContinue: live.validation.passed,
+      canContinue: uploaded && live.validation.passed,
       technicalErrors: this.technicalErrorsUpload(cycleId),
     };
   }
@@ -615,6 +619,10 @@ export class InMemoryDataProvider implements DataProvider {
   getCombinedSplit(cycleId: string): CombinedSplitModel | null {
     const live = this.seed.liveCycle;
     if (cycleId !== live.id) return null;
+    // The split panel summarises a raw export AFTER it's been ingested. With no
+    // upload yet (empty cycle) there is nothing to split — return null so the
+    // Import screen shows its upload prompt, not "Detected 0-item subjects".
+    if (!live.assessments.some((a) => a.responses.length > 0)) return null;
     const counts = live.assessments.map((a) => this.participantsIn(a).size);
     const maxParts = Math.max(...counts, 0);
     const essayIds = new Set(this.essaySubjectIds());

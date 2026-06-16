@@ -83,6 +83,10 @@ export interface TechnicalErrorsUpload {
 
 export interface IngestModel {
   cycleId: string;
+  /** Whether a raw exam export has actually been ingested for this cycle. An
+   *  empty/draft cycle is the normal starting state — the screen renders an
+   *  upload prompt rather than a (meaningless, all-zero) validation report. */
+  uploaded: boolean;
   fileName: string;
   fileSizeMB: number;
   uploadedAgo: string;

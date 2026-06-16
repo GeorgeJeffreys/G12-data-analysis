@@ -151,7 +151,14 @@ export interface Hydrated {
   };
 }
 
-const EMPTY_VALIDATION = { passed: true, checks: [] } as unknown as ValidationReport;
+// A brand-new cycle has no raw export yet: an empty-but-well-formed report so
+// every reader (the Import screen reads `report.stats.mcqRows`) is safe before
+// any upload. `stats` is required by ValidationReport — never leave it absent.
+const EMPTY_VALIDATION: ValidationReport = {
+  passed: true,
+  checks: [],
+  stats: { rawRows: 0, mcqRows: 0, droppedSurveyRows: 0, droppedNonMcqRows: 0, assessments: 0, participants: 0, items: 0 },
+};
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
 
 export async function hydrate(supabase: DB): Promise<Hydrated | null> {
