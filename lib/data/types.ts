@@ -230,6 +230,8 @@ export interface PerfElementResult {
   level: string;
   /** Major element → performance level. */
   elements: Record<string, string>;
+  /** Major element → (sub-element → performance level). Finer-grained breakdown. */
+  subElements: Record<string, Record<string, string>>;
 }
 export interface PerfReportStudent {
   participantId: string;
@@ -242,6 +244,8 @@ export interface PerfReportSubject {
   assessmentId: string;
   name: string;
   majorElements: string[];
+  /** Major element → its ordered sub-elements (the construct structure, read from data). */
+  subElements: Record<string, string[]>;
 }
 export interface PerfReportSummarySubject {
   label: string;

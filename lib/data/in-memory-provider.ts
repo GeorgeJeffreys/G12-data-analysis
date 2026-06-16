@@ -949,22 +949,35 @@ export class InMemoryDataProvider implements DataProvider {
     if (!grades) return null;
     const perfLevels = this.grading.performanceLevels;
 
-    // subjects with ordered major elements + per-(participant,element) levels
+    // subjects with ordered major elements + sub-elements, and per-participant
+    // levels at both major-element and sub-element granularity. The construct
+    // structure (3–5 major elements per subject, each with sub-elements) is read
+    // from the data, never hardcoded.
     const subjects: PerfReportSubject[] = [];
-    const elementLevelByP = new Map<string, Map<string, Map<string, string>>>(); // assessmentId -> pid -> element -> level
+    const elementLevelByP = new Map<string, Map<string, Map<string, string>>>(); // assessmentId -> pid -> major -> level
+    // assessmentId -> pid -> major -> sub -> level
+    const subLevelByP = new Map<string, Map<string, Map<string, Map<string, string>>>>();
     for (const a of this.seed.liveCycle.assessments) {
       const cuts = this.boundaryState(cycleId, a.id).cuts;
       const itemMajor = new Map<string, string | null>();
+      const itemSub = new Map<string, string | null>();
       const majorOrder: string[] = [];
+      const subOrder: Record<string, string[]> = {};
       for (const it of a.items) {
         itemMajor.set(it.id, it.major);
+        itemSub.set(it.id, it.sub);
         if (it.major && !majorOrder.includes(it.major)) majorOrder.push(it.major);
+        if (it.major && it.sub) {
+          (subOrder[it.major] ??= []);
+          if (!subOrder[it.major]!.includes(it.sub)) subOrder[it.major]!.push(it.sub);
+        }
       }
-      subjects.push({ assessmentId: a.id, name: a.name, majorElements: majorOrder });
+      subjects.push({ assessmentId: a.id, name: a.name, majorElements: majorOrder, subElements: subOrder });
 
       const excluded = this.excludedSet(cycleId, a.id);
-      // accumulate raw/n per (participant, element)
+      // accumulate raw/n per (participant, major) and per (participant, major, sub)
       const acc = new Map<string, Map<string, { raw: number; n: number }>>();
+      const subAcc = new Map<string, Map<string, Map<string, { raw: number; n: number }>>>();
       for (const r of this.responsesOf(a)) {
         if (excluded.has(r.itemId)) continue;
         const el = itemMajor.get(r.itemId);
@@ -975,6 +988,18 @@ export class InMemoryDataProvider implements DataProvider {
         cell.raw += r.score;
         cell.n += 1;
         byEl.set(el, cell);
+
+        const sub = itemSub.get(r.itemId);
+        if (sub) {
+          let byMajor = subAcc.get(r.participantId);
+          if (!byMajor) subAcc.set(r.participantId, (byMajor = new Map()));
+          let bySub = byMajor.get(el);
+          if (!bySub) byMajor.set(el, (bySub = new Map()));
+          const sc = bySub.get(sub) ?? { raw: 0, n: 0 };
+          sc.raw += r.score;
+          sc.n += 1;
+          bySub.set(sub, sc);
+        }
       }
       const pMap = new Map<string, Map<string, string>>();
       for (const [pid, byEl] of acc) {
@@ -986,6 +1011,21 @@ export class InMemoryDataProvider implements DataProvider {
         pMap.set(pid, lvls);
       }
       elementLevelByP.set(a.id, pMap);
+
+      const pSubMap = new Map<string, Map<string, Map<string, string>>>();
+      for (const [pid, byMajor] of subAcc) {
+        const majorMap = new Map<string, Map<string, string>>();
+        for (const [el, bySub] of byMajor) {
+          const subLvls = new Map<string, string>();
+          for (const [sub, cell] of bySub) {
+            const pct = cell.n ? (cell.raw / cell.n) * 100 : 0;
+            subLvls.set(sub, classify(pct, perfLevels, cuts));
+          }
+          majorMap.set(el, subLvls);
+        }
+        pSubMap.set(pid, majorMap);
+      }
+      subLevelByP.set(a.id, pSubMap);
     }
 
     const students: PerfReportStudent[] = grades.rows.map((row) => {
@@ -995,7 +1035,13 @@ export class InMemoryDataProvider implements DataProvider {
         const elements: Record<string, string> = {};
         const lvls = elementLevelByP.get(a.id)?.get(row.id);
         if (lvls) for (const [el, lv] of lvls) elements[el] = lv;
-        sub[a.id] = { level, elements };
+        const subElements: Record<string, Record<string, string>> = {};
+        const subLvls = subLevelByP.get(a.id)?.get(row.id);
+        if (subLvls) for (const [el, bySub] of subLvls) {
+          subElements[el] = {};
+          for (const [s, lv] of bySub) subElements[el]![s] = lv;
+        }
+        sub[a.id] = { level, elements, subElements };
       }
       return { participantId: row.id, name: row.label, award: row.award, subjects: sub };
     });

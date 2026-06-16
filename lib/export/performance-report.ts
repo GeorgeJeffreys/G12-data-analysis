@@ -53,12 +53,16 @@ export interface PRSubject {
   assessmentId: string;
   name: string;
   majorElements: string[];
+  /** Major element → its ordered sub-elements (construct structure, from data). */
+  subElements?: Record<string, string[]>;
 }
 
-/** A student's result on one subject: overall level + per-element levels. */
+/** A student's result on one subject: overall level + per-element + per-sub-element levels. */
 export interface PRStudentSubject {
   level: string;
   elements: Record<string, string>;
+  /** Major element → (sub-element → level). Finer-grained breakdown. */
+  subElements?: Record<string, Record<string, string>>;
 }
 
 export interface PRStudent {
@@ -234,7 +238,7 @@ function buildStudentProfilesSheet(input: PerformanceReportInput): XLSX.WorkShee
     r += 1;
     aoa[r] = ["Award Level", st.award];
     r += 1;
-    aoa[r] = ["Subject", "Subject Performance", "Major Elements Performance"];
+    aoa[r] = ["Subject", "Subject Performance", "Major Elements Performance", "Sub-Elements Performance"];
     const headerRow = r;
     r += 1;
     for (const subj of input.summarySubjects) {
@@ -243,7 +247,17 @@ function buildStudentProfilesSheet(input: PerformanceReportInput): XLSX.WorkShee
       const bullets = result
         ? Object.entries(result.elements).map(([el, lvl]) => `• ${el}: ${lvl}`).join("\n") || "—"
         : "—";
-      aoa[r] = [subj.label, level, bullets];
+      // Sub-element breakdown: each major element, then its sub-elements indented.
+      const subBullets = result?.subElements
+        ? Object.entries(result.subElements)
+            .map(([el, subs]) => {
+              const lines = Object.entries(subs).map(([s, lvl]) => `   – ${s}: ${lvl}`);
+              return lines.length ? `• ${el}\n${lines.join("\n")}` : null;
+            })
+            .filter((x): x is string => x !== null)
+            .join("\n") || "—"
+        : "—";
+      aoa[r] = [subj.label, level, bullets, subBullets];
       if (result?.level) fills.push({ r, c: 1, lvl: result.level });
       r += 1;
     }
@@ -258,18 +272,20 @@ function buildStudentProfilesSheet(input: PerformanceReportInput): XLSX.WorkShee
   for (const st of input.students) {
     styleCell(ws, rr, 0, TITLE_STYLE); // student name
     styleCell(ws, rr + 1, 0, HEADER_STYLE); // "Award Level"
-    for (let c = 0; c < 3; c++) styleCell(ws, rr + 2, c, HEADER_STYLE); // subject header
+    for (let c = 0; c < 4; c++) styleCell(ws, rr + 2, c, HEADER_STYLE); // subject header
     rr += 3 + input.summarySubjects.length + 1;
     void st;
   }
   for (const f of fills) {
     const style = PERFORMANCE_STYLES[levelIndex(levels, f.lvl)];
     if (style) styleCell(ws, f.r, f.c, style);
-    const addr = XLSX.utils.encode_cell({ r: f.r, c: 2 });
-    const cell = ws[addr] as XLSX.CellObject | undefined;
-    if (cell) cell.s = { ...(cell.s as object), alignment: { wrapText: true, vertical: "top" } };
+    for (const c of [2, 3]) {
+      const addr = XLSX.utils.encode_cell({ r: f.r, c });
+      const cell = ws[addr] as XLSX.CellObject | undefined;
+      if (cell) cell.s = { ...(cell.s as object), alignment: { wrapText: true, vertical: "top" } };
+    }
   }
-  ws["!cols"] = [{ wch: 24 }, { wch: 26 }, { wch: 52 }];
+  ws["!cols"] = [{ wch: 24 }, { wch: 26 }, { wch: 52 }, { wch: 58 }];
   return ws;
 }
 
