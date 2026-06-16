@@ -14,6 +14,8 @@ import { H } from "@/lib/ui/tokens";
 import { CycleShell, Alert } from "@/components/shell/CycleShell";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { Button } from "@/components/ui/primitives";
+import { ExportButtons } from "@/components/ui/ExportButtons";
+import { downloadCsv, downloadWorkbook } from "@/lib/ui/export";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
@@ -52,16 +54,11 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       page="Grades & sign-off"
       stageIndex={8}
       actions={
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>
-            <Icon name="doc" />
-            Export CSV
-          </Button>
-          <Button variant="ghost" onClick={() => { exportExcel(provider, cycleId, model); provider.recordExport(cycleId, "Students' Performance Report (Excel)"); }}>
-            <Icon name="doc" />
-            Performance report
-          </Button>
-        </div>
+        <ExportButtons
+          xlsxLabel="Performance report (.xlsx)"
+          onCsv={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}
+          onXlsx={async () => { await exportExcel(provider, cycleId, model); provider.recordExport(cycleId, "Students' Performance Report (Excel)"); }}
+        />
       }
       primary={
         model.locked ? (
@@ -436,24 +433,16 @@ function AwardBadge({ award }: { award: string }) {
   );
 }
 
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
 function exportCsv(model: GradesModel) {
-  const header = ["Participant ID", "Participant", ...model.assessments.map((a) => a.name), "Overall award"];
-  const lines = [header.join(",")];
-  for (const r of model.rows) {
+  const headers = ["Student ID", "Student Name", ...model.assessments.map((a) => a.name), "Award Level"];
+  const rows = model.rows.map((r) => [
     // Real Student ID (matches what's shown on screen), not the internal key.
-    const cells = [r.studentId, r.label, ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""), r.award];
-    lines.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","));
-  }
-  downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "grades_may_2026.csv");
+    r.studentId,
+    r.label,
+    ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""),
+    r.award,
+  ]);
+  downloadCsv("grades_may_2026.csv", headers, rows);
 }
 
 async function exportExcel(provider: DataProvider, cycleId: string, model: GradesModel) {
@@ -497,8 +486,5 @@ async function exportExcel(provider: DataProvider, cycleId: string, model: Grade
     alterations,
     audit: auditEntries,
   });
-  const buf = exp.workbookToBuffer(wb);
-  const bytes = new Uint8Array(buf.byteLength);
-  bytes.set(buf);
-  downloadBlob(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "students_performance_report_may_2026.xlsx");
+  await downloadWorkbook("students_performance_report_may_2026.xlsx", wb);
 }
