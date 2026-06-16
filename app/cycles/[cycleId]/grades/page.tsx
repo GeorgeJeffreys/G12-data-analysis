@@ -32,7 +32,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={5}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={8}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this cycle.</div>
       </CycleShell>
     );
@@ -49,7 +49,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Grades & sign-off"
-      stageIndex={5}
+      stageIndex={8}
       actions={
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>

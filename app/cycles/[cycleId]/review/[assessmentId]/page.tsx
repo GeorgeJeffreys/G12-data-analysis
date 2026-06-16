@@ -200,7 +200,7 @@ export default function ReviewPage({
       cycleId={cycleId}
       cycleName={cycleName}
       page="Item review & scoring"
-      stageIndex={1}
+      stageIndex={4}
       primary={
         <Link href={`/cycles/${cycleId}/adjustments`}>
           <Button variant="pri">

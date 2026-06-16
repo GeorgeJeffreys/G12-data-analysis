@@ -27,7 +27,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
     cycleId,
     cycleName,
     page: "Adjustments",
-    stageIndex: 2,
+    stageIndex: 5,
     done: 2,
     primary: (
       <Link href={`/cycles/${cycleId}/boundaries`}>
