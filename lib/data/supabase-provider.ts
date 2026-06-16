@@ -27,6 +27,7 @@ import type { Database } from "@/lib/types/database";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import { InMemoryDataProvider } from "./in-memory-provider";
 import { hydrate, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
+import { catalogNamesFor } from "./subject-catalog";
 import type { Seed } from "./seed-types";
 import type { GradingConfig } from "./grading";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
@@ -223,6 +224,13 @@ export class SupabaseDataProvider implements DataProvider {
       name: string,
       args: unknown,
     ) => Promise<{ error: { message: string } | null }>;
+  }
+  /** Like `rpcFn` but keeps the returned scalar/row (for RPCs that return an id). */
+  private rpcData<T>(name: string, args: unknown): Promise<{ data: T | null; error: { message: string } | null }> {
+    return (this.supabase.rpc.bind(this.supabase) as unknown as (
+      n: string,
+      a: unknown,
+    ) => Promise<{ data: T | null; error: { message: string } | null }>)(name, args);
   }
   private rpc<N extends keyof Database["public"]["Functions"]>(
     name: N,
@@ -518,14 +526,24 @@ export class SupabaseDataProvider implements DataProvider {
     this.rpc("record_documents", { p_cycle: cycleId, p_detail: detail });
   }
 
-  // new cycle — returns the local id immediately and fires the RPC. Full async
-  // create flow (using the DB-returned id) is a follow-up; the seeded demo cycle
-  // is the primary path.
-  createCycle(input: CreateCycleInput): string {
-    const id = this.inner.createCycle(input);
-    this.bump();
-    this.rpc("create_cycle", { p_name: input.name, p_region: "eu-west" });
-    return id;
+  // new cycle — persists the cycle AND its chosen assessments in one audited
+  // SECURITY DEFINER call, then re-hydrates from the database (which loads the
+  // newly-created cycle as the live one) and returns its REAL id so the caller
+  // can navigate straight to it.
+  async createCycle(input: CreateCycleInput): Promise<string> {
+    const p_assessments = catalogNamesFor(input.assessmentIds).map((name) => ({ name }));
+    const { data, error } = await this.rpcData<string>("create_cycle_with_assessments", {
+      p_name: input.name,
+      p_region: "eu-west",
+      p_assessments,
+    });
+    if (error || !data) {
+      // eslint-disable-next-line no-console
+      console.error("create_cycle_with_assessments failed:", error?.message ?? "no id returned");
+      throw new Error(error?.message ?? "Could not create the cycle.");
+    }
+    await this.rehydrate();
+    return data;
   }
 
   // helper: average essay rows to one final mark per participant+subject

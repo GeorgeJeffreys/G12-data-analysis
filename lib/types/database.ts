@@ -363,6 +363,11 @@ export interface Database {
     Functions: {
       // 0001
       create_cycle: { Args: { p_name: string; p_region?: string }; Returns: ExamCycleRow };
+      // 0004
+      create_cycle_with_assessments: {
+        Args: { p_name: string; p_region?: string; p_assessments?: unknown };
+        Returns: string;
+      };
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };
       decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };

@@ -32,6 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
+import { SUBJECT_CATALOG } from "./subject-catalog";
 import type {
   AssembleScoreAnalysisArgs,
   AssembleItemAnalysisArgs,
@@ -3139,24 +3140,28 @@ export class InMemoryDataProvider implements DataProvider {
 
   // ── new cycle ─────────────────────────────────────────────────────────────
   getNewCycle(): NewCycleModel {
+    // The picker offers the canonical G12++ subject catalog, not the assessments
+    // of whatever cycle happens to be loaded — so it is fully populated even
+    // before any cycle exists (live Supabase, fresh database).
     return {
       defaultName: "May 2026",
       sittingDate: "14 May 2026",
-      assessments: this.seed.liveCycle.assessments.map((a) => ({
-        id: a.id,
-        name: a.name,
-        rtl: a.rtl,
+      assessments: SUBJECT_CATALOG.map((s) => ({
+        id: s.id,
+        name: s.name,
+        rtl: s.rtl,
         included: true,
         fileName: null,
       })),
     };
   }
 
-  createCycle(input: CreateCycleInput): string {
-    // MOCK: cycles need the database. Records the intent in the audit log and
-    // returns the live cycle id (the only one with real data) so navigation works.
+  createCycle(input: CreateCycleInput): Promise<string> {
+    // In-memory/demo mode has no database: record the intent in the audit log and
+    // resolve to the demo cycle id (the only one with real data) so navigation
+    // works. The Supabase provider overrides this to persist a real cycle.
     this.audit("cycle", "Created cycle", `${input.name} — ${input.assessmentIds.length} assessments`, this.seed.liveCycle.id);
     this.bump();
-    return this.seed.liveCycle.id;
+    return Promise.resolve(this.seed.liveCycle.id);
   }
 }

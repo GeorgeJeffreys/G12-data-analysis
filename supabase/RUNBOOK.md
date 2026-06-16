@@ -4,9 +4,16 @@ This is the **provider built blind** (no DB access from the build environment).
 Run these steps from your own machine to seed the database and verify the
 round-trip, RLS, and the privileged transitions. Everything is reversible.
 
-Prereqs: migrations `0001`, `0002`, **and `0003`** applied in the Supabase SQL
-editor (run `supabase/migrations/0003_adjustments_essays_config.sql` if you
-haven't), and Node ≥ 20.
+Prereqs: migrations `0001`, `0002`, `0003`, **and `0004`** applied in the
+Supabase SQL editor (run `supabase/migrations/0003_adjustments_essays_config.sql`
+and `supabase/migrations/0004_create_cycle_with_assessments.sql` if you haven't),
+and Node ≥ 20.
+
+> **`0004` is required for the new-cycle flow.** It adds
+> `create_cycle_with_assessments(p_name, p_region, p_assessments)`, which the
+> live provider calls to persist a new cycle together with its chosen
+> assessments and return the new cycle id. Without it, "Create cycle" on the
+> live app will error.
 
 ---
 
@@ -157,7 +164,7 @@ Confirm the transition functions exist:
 select proname
 from pg_proc
 where proname in (
-  'create_cycle','set_cycle_status','decide_item_exclusion','write_item_stats',
+  'create_cycle','create_cycle_with_assessments','set_cycle_status','decide_item_exclusion','write_item_stats',
   'lock_grades','unlock_grades','save_grade_scheme','set_import_validation',
   'record_export','write_scores','upsert_essay_marks','clear_essay_marks',
   'insert_incidents','clear_incidents','decide_incident','confirm_distinction_caps',
@@ -179,9 +186,12 @@ order by 1;   -- expect all 21
   blobs (grading defaults, thresholds, retention, branding, safeguard) are
   re-applied on hydration. Member/role *management* still uses the in-memory list
   for the UI — `memberships` remains the source of truth for access.
-- **`createCycle`** returns a local id and fires `create_cycle`; the full async
-  new-cycle flow (navigating to the DB-returned id) is a follow-up. The seeded
-  demo cycle is the primary path.
+- **`createCycle`** persists through `create_cycle_with_assessments` (migration
+  `0004`): it inserts the cycle + its chosen assessments in one audited call,
+  re-hydrates (the new cycle becomes the live one), and returns the real DB id so
+  the UI navigates straight to it. The assessment picker is the canonical G12++
+  subject catalog (`lib/data/subject-catalog.ts`), so it is populated even before
+  any cycle exists.
 - **Engine write path** writes `item_stats`/`participant_scores` directly with
   the secret client (the SECURITY DEFINER role-checks need an `auth.uid()`, which
   the secret client doesn't have). This is the sanctioned privileged-writer path.

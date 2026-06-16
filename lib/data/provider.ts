@@ -271,8 +271,9 @@ export interface DataProvider {
   recordExport(cycleId: string, detail: string): void;
   recordDocuments(cycleId: string, detail: string): void;
 
-  // new-cycle action (mock — no DB)
-  createCycle(input: CreateCycleInput): string;
+  // new-cycle action — persists to the database (Supabase provider) and returns
+  // the real new cycle id; the in-memory provider resolves to its demo cycle.
+  createCycle(input: CreateCycleInput): Promise<string>;
 
   // reactivity (for useSyncExternalStore)
   subscribe(listener: () => void): () => void;

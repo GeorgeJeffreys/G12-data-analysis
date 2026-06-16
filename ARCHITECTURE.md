@@ -502,8 +502,11 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   safeguard; data-retention and branding are mock per-workspace settings.
 - **Roles & permissions** — the capability grid plus add / rename / **delete**
   role (`deleteRole`, Lead-only, blocked while members are assigned).
-- **New cycle** (`createCycle`): records the intent in the audit log and returns
-  the live cycle (no DB) — clearly labelled mock.
+- **New cycle** (`createCycle`): in-memory/demo mode records the intent in the
+  audit log and resolves to the demo cycle; the Supabase provider persists the
+  cycle + its chosen assessments (`create_cycle_with_assessments`, migration
+  `0004`) and returns the real new cycle id. The picker is the canonical G12++
+  subject catalog (`lib/data/subject-catalog.ts`).
 
 ### UI pass (navigation, responsiveness, item review, lock, Settings CRUD)
 
@@ -684,7 +687,9 @@ granularity, **clearly marked unofficial** (internal/learner diagnostic).
 - **Duplicate-resolution** is detected by the real validator; the resolution
   action is a provider **stub** (records the choice, no row mutation). The sample
   export has no duplicates, so the panel doesn't appear on the live cycle.
-- **"Start new cycle"** is a no-op (needs the database).
+- **"Start new cycle"** persists on the live (Supabase) provider — it creates the
+  cycle and its assessments and navigates to the real new cycle. In-memory/demo
+  mode resolves to the demo cycle (no DB).
 - **Technical-errors data.** The upload + parse path is real, but the seed has no
   attached faults file. The `Load sample` button injects a small fixture flagged
   `SAMPLE` everywhere it appears; its incidents point at real seeded

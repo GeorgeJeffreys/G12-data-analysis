@@ -2,8 +2,8 @@
 
 /**
  * Start a new cycle — name it, pick the assessments, add each raw export now or
- * later. MOCK: cycles need the database, so "Create cycle" records the intent in
- * the audit log and returns to the (only) live cycle.
+ * later. "Create cycle" persists through the DataProvider (a real Supabase write
+ * when running live), then navigates to the new cycle by its real id.
  */
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -24,13 +24,23 @@ export default function NewCyclePage() {
     () => Object.fromEntries(model.assessments.map((a) => [a.id, a.included])),
   );
   const [files, setFiles] = useState<Record<string, string>>({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const selectedCount = useMemo(() => Object.values(included).filter(Boolean).length, [included]);
 
-  const create = () => {
-    const assessmentIds = model.assessments.filter((a) => included[a.id]).map((a) => a.id);
-    const cycleId = provider.createCycle({ name, sittingDate, assessmentIds });
-    router.push(`/cycles/${cycleId}`);
+  const create = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const assessmentIds = model.assessments.filter((a) => included[a.id]).map((a) => a.id);
+      const cycleId = await provider.createCycle({ name, sittingDate, assessmentIds });
+      router.push(`/cycles/${cycleId}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not create the cycle. Please try again.");
+      setBusy(false);
+    }
   };
 
   return (
@@ -39,8 +49,10 @@ export default function NewCyclePage() {
       crumb={[{ label: "Cycles", href: "/" }, { label: "New cycle" }]}
       actions={
         <div style={{ display: "flex", gap: 8 }}>
-          <Button variant="ghost" onClick={() => router.push("/")}>Cancel</Button>
-          <Button variant="pri" disabled={selectedCount === 0 || !name.trim()} onClick={create}>Create cycle</Button>
+          <Button variant="ghost" onClick={() => router.push("/")} disabled={busy}>Cancel</Button>
+          <Button variant="pri" disabled={busy || selectedCount === 0 || !name.trim()} onClick={create}>
+            {busy ? "Creating…" : "Create cycle"}
+          </Button>
         </div>
       }
     >
@@ -119,9 +131,13 @@ export default function NewCyclePage() {
               })}
             </Card>
             <div className="hf-sub" style={{ fontSize: 12, marginTop: 10 }}>
-              You can create the cycle now and upload missing exports from the pipeline — each assessment validates on upload.{" "}
-              <span style={{ color: H.ink3 }}>(Mock — no cycle is persisted in this build.)</span>
+              You can create the cycle now and upload missing exports from the pipeline — each assessment validates on upload.
             </div>
+            {error && (
+              <div style={{ marginTop: 12, padding: "10px 13px", borderRadius: 8, background: "#3a1d1d", color: "#f3b4b4", fontSize: 12.5 }}>
+                {error}
+              </div>
+            )}
           </div>
         </div>
       </div>
