@@ -54,6 +54,10 @@ import type {
   GradesModel,
   GradingDefaultsModel,
   IngestModel,
+  CombinedSplitModel,
+  RawDataModel,
+  DataCleaningModel,
+  NaiveScoresModel,
   MembersModel,
   NewCycleModel,
   PerformanceReportModel,
@@ -237,6 +241,10 @@ export class SupabaseDataProvider implements DataProvider {
   listCycles(): CycleSummary[] { return this.inner.listCycles(); }
   getCycle(cycleId: string): CycleDetail | null { return this.inner.getCycle(cycleId); }
   getIngest(cycleId: string): IngestModel | null { return this.inner.getIngest(cycleId); }
+  getCombinedSplit(cycleId: string): CombinedSplitModel | null { return this.inner.getCombinedSplit(cycleId); }
+  getRawData(cycleId: string, assessmentId: string): RawDataModel | null { return this.inner.getRawData(cycleId, assessmentId); }
+  getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null { return this.inner.getDataCleaning(cycleId, assessmentId); }
+  getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null { return this.inner.getNaiveScores(cycleId, assessmentId); }
   getReview(cycleId: string, assessmentId: string): ReviewModel | null { return this.inner.getReview(cycleId, assessmentId); }
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null { return this.inner.getItemDetail(cycleId, assessmentId, itemId); }
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null { return this.inner.getBoundaries(cycleId, scope); }
