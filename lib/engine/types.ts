@@ -29,6 +29,8 @@ export interface ItemMeta {
   majorElement?: string | null;
   subElement?: string | null;
   demandLevel?: string | null;
+  /** Optional context tag (e.g. Scientific Thinking: Biology / Personal). */
+  context?: string | null;
   /** Maximum attainable score for the item. Defaults to 1 (dichotomous MCQ). */
   maxScore?: number;
 }

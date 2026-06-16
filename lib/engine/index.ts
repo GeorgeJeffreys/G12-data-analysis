@@ -24,6 +24,8 @@ import { ingestAndClean as ingestAndCleanRows } from "@/lib/ingest";
 import { computeItemStats as computeItemStatsImpl } from "./stats";
 import { computeScores as computeScoresImpl } from "./scores";
 import { rollUp as rollUpImpl } from "./rollup";
+import { computeReliability as computeReliabilityImpl } from "./reliability";
+import type { ReliabilityInput, ReliabilityResult } from "./reliability";
 import type {
   IngestResult,
   ItemMeta,
@@ -51,6 +53,8 @@ export interface ComputationEngine {
     options?: ScoreOptions,
   ): ParticipantScore[];
   rollUp(input: RollUpInput): RollUp;
+  /** Cronbach's α reliability — additive; never perturbs the other statistics. */
+  computeReliability(input: ReliabilityInput): ReliabilityResult;
 }
 
 /**
@@ -94,6 +98,10 @@ class TypeScriptEngine implements ComputationEngine {
   rollUp(input: RollUpInput): RollUp {
     return rollUpImpl(input);
   }
+
+  computeReliability(input: ReliabilityInput): ReliabilityResult {
+    return computeReliabilityImpl(input.responses, this.version, input.items);
+  }
 }
 
 const engine: ComputationEngine = new TypeScriptEngine();
@@ -113,6 +121,18 @@ export {
 } from "./stats";
 export { computeScores } from "./scores";
 export { rollUp } from "./rollup";
+export {
+  computeReliability,
+  cronbachAlpha,
+  LOW_ITEMS_THRESHOLD,
+  SMALL_SAMPLE_THRESHOLD,
+} from "./reliability";
+export type {
+  ReliabilityInput,
+  ReliabilityResult,
+  ReliabilityGroup,
+  ReliabilityLevel,
+} from "./reliability";
 export {
   deriveAward,
   qualifiesForDistinctionByLevels,

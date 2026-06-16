@@ -26,6 +26,7 @@ import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
 import { Histogram, BreakdownBars } from "@/components/ui/charts";
+import { ReliabilityPanel } from "@/components/ui/reliability";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 const REASONS = [
@@ -128,6 +129,7 @@ export default function ReviewPage({
     (p) => (selectedId ? p.getItemDetail(cycleId, assessmentId, selectedId) : null),
     [cycleId, assessmentId, selectedId],
   );
+  const reliability = useProviderData((p) => p.getReliability(cycleId), [cycleId]);
 
   const elements = useMemo(
     () => (model ? [...new Set(model.items.map((i) => i.major).filter(Boolean) as string[])].sort() : []),
@@ -285,6 +287,12 @@ export default function ReviewPage({
             <div className="hf-sub" style={{ padding: "13px 26px" }}>
               Showing {view.length} of {model.items.length} items · click a row for its deep-dive
             </div>
+            {/* read-only Cronbach's α (reliability) for this subject + breakdowns */}
+            {reliability && (
+              <div style={{ padding: "0 26px 28px" }}>
+                <ReliabilityPanel model={reliability} assessmentId={assessmentId} />
+              </div>
+            )}
           </div>
         </div>
 
