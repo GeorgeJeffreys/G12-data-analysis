@@ -31,6 +31,7 @@ import {
   PIPELINE,
   type AnalyticsCompare,
   type AnalyticsTrends,
+  type TrendKpi,
   type AssessmentRef,
   type AuditEntry,
   type AuditFilter,
@@ -97,6 +98,7 @@ import {
 import {
   ALL_CAPABILITY_IDS,
   ANALYTICS_CYCLE_LABELS,
+  ANALYTICS_CYCLE_NAMES,
   CAPABILITY_GROUPS,
   DEFAULT_ROLES,
   defaultMatrix,
@@ -807,8 +809,8 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── grades & sign-off ───────────────────────────────────────────────────--
-  /** Per-participant overall percentage = total raw / total max across assessments. */
-  private overallPctByParticipant(cycleId: string): Map<string, number> {
+  /** Per-participant overall raw / max / pct across all assessments. */
+  private overallScoreByParticipant(cycleId: string): Map<string, { raw: number; max: number; pct: number }> {
     const totals = new Map<string, { raw: number; max: number }>();
     for (const a of this.seed.liveCycle.assessments) {
       for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
@@ -818,8 +820,14 @@ export class InMemoryDataProvider implements DataProvider {
         totals.set(pid, t);
       }
     }
+    const out = new Map<string, { raw: number; max: number; pct: number }>();
+    for (const [pid, t] of totals) out.set(pid, { raw: t.raw, max: t.max, pct: t.max ? (t.raw / t.max) * 100 : 0 });
+    return out;
+  }
+  /** Per-participant overall percentage = total raw / total max across assessments. */
+  private overallPctByParticipant(cycleId: string): Map<string, number> {
     const out = new Map<string, number>();
-    for (const [pid, t] of totals) out.set(pid, t.max ? (t.raw / t.max) * 100 : 0);
+    for (const [pid, s] of this.overallScoreByParticipant(cycleId)) out.set(pid, s.pct);
     return out;
   }
 
@@ -839,7 +847,7 @@ export class InMemoryDataProvider implements DataProvider {
       cutsByScope.set(a.id, this.boundaryState(cycleId, a.id).cuts);
     }
     const awardCuts = this.boundaryState(cycleId, "overall").cuts;
-    const overallPcts = this.overallPctByParticipant(cycleId);
+    const overallScores = this.overallScoreByParticipant(cycleId);
     const safeguard = this.distinctionDecisions(cycleId); // studentId -> capped?
 
     const rows = this.seed.liveCycle.participants.map((p) => {
@@ -849,14 +857,24 @@ export class InMemoryDataProvider implements DataProvider {
         const level = pct === undefined ? "" : classify(pct, perfLevels, cutsByScope.get(a.id)!);
         grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
       }
-      const op = overallPcts.get(p.id);
+      const score = overallScores.get(p.id);
+      const op = score?.pct;
       let award = op === undefined ? "" : classify(op, awardLevels, awardCuts);
       // Distinction safeguard: cap a Distinction that fell short of the rule
       // (unless a Lead overrode it). awardLevels[1] = Advanced achievement.
       if (award === awardLevels[0] && safeguard.get(p.id) === "capped") {
         award = awardLevels[1] ?? award;
       }
-      return { id: p.id, label: p.label, grades, award };
+      return {
+        id: p.id,
+        studentId: p.studentId ?? p.id,
+        label: p.label,
+        grades,
+        award,
+        overallRaw: round(score?.raw ?? 0, 1),
+        overallMax: round(score?.max ?? 0, 1),
+        overallPct: round(score?.pct ?? 0, 1),
+      };
     });
 
     const distCounts = new Map<string, number>();
@@ -2106,11 +2124,11 @@ export class InMemoryDataProvider implements DataProvider {
     const ptsExcluded = series((p) => p.itemsExcluded, live.itemsExcluded);
     const ptsQuality = series((p) => p.meanQuality, live.meanQuality);
 
-    const kpis = [
-      { label: "Participants", value: live.participants.toLocaleString(), delta: delta(ptsParticipants), points: ptsParticipants },
-      { label: "Cohort mean", value: `${live.cohortMean}%`, delta: delta(ptsMean), points: ptsMean },
-      { label: "Items excluded", value: String(live.itemsExcluded), delta: delta(ptsExcluded), points: ptsExcluded },
-      { label: "Mean item quality", value: String(live.meanQuality), delta: delta(ptsQuality), points: ptsQuality },
+    const kpis: TrendKpi[] = [
+      { label: "Participants", value: live.participants.toLocaleString(), delta: delta(ptsParticipants), points: ptsParticipants, format: "intComma" },
+      { label: "Cohort mean", value: `${live.cohortMean}%`, delta: delta(ptsMean), points: ptsMean, format: "pct" },
+      { label: "Items excluded", value: String(live.itemsExcluded), delta: delta(ptsExcluded), points: ptsExcluded, format: "int" },
+      { label: "Mean item quality", value: String(live.meanQuality), delta: delta(ptsQuality), points: ptsQuality, format: "int" },
     ];
 
     const byAssessment = this.seed.liveCycle.assessments.map((a) => {
@@ -2124,8 +2142,18 @@ export class InMemoryDataProvider implements DataProvider {
       { label: ANALYTICS_CYCLE_LABELS[ANALYTICS_CYCLE_LABELS.length - 1] ?? "May 26", dist: live.awardDist },
     ];
 
+    // Full cycle names: mock priors' names, with the last replaced by the real
+    // live cycle name. Parallel to cycleLabels; the last entry is "current".
+    const cycleNames = ANALYTICS_CYCLE_LABELS.map((_, i) =>
+      i === ANALYTICS_CYCLE_LABELS.length - 1
+        ? this.seed.liveCycle.name
+        : ANALYTICS_CYCLE_NAMES[i] ?? ANALYTICS_CYCLE_LABELS[i] ?? "",
+    );
+
     return {
       cycleLabels: ANALYTICS_CYCLE_LABELS,
+      cycleNames,
+      currentIndex: ANALYTICS_CYCLE_LABELS.length - 1,
       kpis,
       byAssessment,
       awardOverTime,

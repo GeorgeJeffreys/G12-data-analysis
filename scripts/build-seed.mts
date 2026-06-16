@@ -86,6 +86,8 @@ function main() {
   const participants = participantOrder.map((id, i) => ({
     id,
     label: `Student ${String(i + 1).padStart(2, "0")}`,
+    // Demo data is de-identified — the pseudonym IS the Student ID here.
+    studentId: id,
   }));
 
   const assessments: SeedAssessment[] = [];

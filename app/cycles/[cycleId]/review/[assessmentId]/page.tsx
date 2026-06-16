@@ -14,7 +14,7 @@
  *  - true whole-table zoom: − / + (and trackpad pinch) scale the entire table —
  *    columns, text and rows together — so zooming out genuinely fits more rows.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
@@ -24,6 +24,7 @@ import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Chip, Pill, QualityBar } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
+import { InfoTip } from "@/components/ui/infotip";
 import { Histogram, BreakdownBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
@@ -34,6 +35,56 @@ const REASONS = [
   "Ambiguous wording",
   "Off-syllabus",
 ];
+
+/**
+ * Inline plain-language definition of the item-quality score. Kept accurate to
+ * the real implementation: the engine rates four psychometric statistics
+ * Good/Review/Flag (thresholds from ScoringConfig.quality — see
+ * lib/engine/config.ts), those four ratings are averaged into the 0–100 index
+ * (Good=1, Review=0.55, Flag=0.12; see qualityIndexOf in the provider /
+ * scripts/build-seed.mts), and the bar colours come from qualityTier
+ * (lib/ui/tokens.ts). "Overall review" is the worst of the four.
+ */
+function QualityInfo() {
+  const Stat = ({ name, good }: { name: string; good: string }) => (
+    <li style={{ marginBottom: 3 }}>
+      <b style={{ color: H.ink }}>{name}</b> — {good}
+    </li>
+  );
+  return (
+    <InfoTip label="What does the item Quality score mean?" width={320}>
+      <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700, color: H.ink, fontSize: 12, marginBottom: 4 }}>Item quality (0–100)</div>
+        <p style={{ margin: "0 0 7px" }}>
+          A composite indicator of how well this question performed across the whole cohort — a higher score means a
+          more reliable question.
+        </p>
+        <div style={{ fontWeight: 600, color: H.ink, marginBottom: 3 }}>Built from four checks</div>
+        <ul style={{ margin: "0 0 7px", paddingLeft: 16 }}>
+          <Stat name="Difficulty (p-value)" good="average score; good 0.30–0.85, flagged below 0.20 or above 0.90" />
+          <Stat name="Item-total correlation" good="agreement with the rest of the test; good ≥ 0.30, flagged below 0.10" />
+          <Stat name="Point-biserial" good="good ≥ 0.30, flagged below 0.10" />
+          <Stat name="Discrimination" good="top third vs bottom third; good ≥ 0.30, flagged below 0.10" />
+        </ul>
+        <p style={{ margin: "0 0 7px" }}>
+          Each check is rated <b style={{ color: H.good }}>Good</b> (1.0), <b style={{ color: H.warn }}>Review</b> (0.55)
+          or <b style={{ color: H.bad }}>Flag</b> (0.12); the four are averaged into the 0–100 score. The “Overall
+          review” is the worst of the four.
+        </p>
+        <div style={{ fontWeight: 600, color: H.ink, marginBottom: 3 }}>Reading the bar</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Dot c={H.good} /> 65–100 good</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Dot c={H.warn} /> 30–64 review</span>
+          <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Dot c={H.bad} /> under 30 poor</span>
+        </div>
+        <p style={{ margin: "7px 0 0", color: H.ink3, fontSize: 10.5 }}>Thresholds are configurable in Settings → Configuration.</p>
+      </div>
+    </InfoTip>
+  );
+}
+function Dot({ c }: { c: string }) {
+  return <span style={{ width: 8, height: 8, borderRadius: 999, background: c, flex: "0 0 auto" }} />;
+}
 
 type QualityFilter = "all" | "review" | "poor";
 type SortKey = "q" | "pValue" | "itemTotal" | "pointBiserial" | "discrimination" | "quality";
@@ -136,10 +187,11 @@ export default function ReviewPage({
     </span>
   );
 
-  const SortableTh = ({ label, k, align = "right" }: { label: string; k: SortKey; align?: "left" | "right" }) => (
+  const SortableTh = ({ label, k, align = "right", info }: { label: string; k: SortKey; align?: "left" | "right"; info?: ReactNode }) => (
     <th className="hf-th" style={{ textAlign: align, cursor: "pointer" }} onClick={() => toggleSort(k)} title="Sort">
       {label}
       {sort.key === k ? (sort.dir === 1 ? " ↑" : " ↓") : ""}
+      {info ? <span style={{ marginLeft: 5 }}>{info}</span> : null}
     </th>
   );
 
@@ -202,7 +254,7 @@ export default function ReviewPage({
                   <SortableTh label="Item" k="q" align="left" />
                   <th className="hf-th">Curriculum</th>
                   <th className="hf-th">Demand</th>
-                  <SortableTh label="Quality" k="quality" align="left" />
+                  <SortableTh label="Quality" k="quality" align="left" info={<QualityInfo />} />
                   <SortableTh label="p-val" k="pValue" />
                   <SortableTh label="it-r" k="itemTotal" />
                   <SortableTh label="pt-bis" k="pointBiserial" />

@@ -54,8 +54,12 @@ export interface SeedAssessment {
 }
 
 export interface SeedParticipant {
+  /** Stable internal key (pseudonym in the demo seed; row UUID on live data). */
   id: string;
+  /** Display name (full name on live data; "Student NN" in the de-identified demo). */
   label: string;
+  /** Human Student ID for display (qm_participant_id on live data). Falls back to `id`. */
+  studentId?: string;
 }
 
 export interface SeedPreview {

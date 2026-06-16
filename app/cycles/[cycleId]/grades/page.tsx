@@ -149,7 +149,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                     >
                       <td className="hf-td">
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span className="hf-mono" style={{ fontSize: 11, color: H.ink3 }}>{r.id}</span>
+                          <span className="hf-mono" style={{ fontSize: 11, color: H.ink3 }} title="Student ID">{r.studentId}</span>
                           <div style={{ minWidth: 0 }}>
                             <span style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</span>
                             {/* always-visible, quiet composition; click the row to maximise */}
@@ -166,7 +166,16 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                         );
                       })}
                       <td className="hf-td" style={{ textAlign: "center" }}>
-                        <AwardBadge award={r.award} />
+                        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+                          <AwardBadge award={r.award} />
+                          <span
+                            className="hf-mono"
+                            style={{ fontSize: 11, color: H.ink2, whiteSpace: "nowrap" }}
+                            title="Overall raw score / maximum · percentage"
+                          >
+                            {fmtNum(r.overallRaw)} / {fmtNum(r.overallMax)} · {r.overallPct.toFixed(1)}%
+                          </span>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -234,6 +243,11 @@ function InlineComposition({ cs }: { cs?: StudentComposition }) {
 }
 
 /** Plain subject-name column header (no "+E" essay suffix). */
+/** Compact number: integers stay whole; fractional scores show one decimal. */
+function fmtNum(n: number): string {
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
 function subjectHeader(shortName: string): string {
   if (/applicable/i.test(shortName)) return "Applicable Math";
   if (/english/i.test(shortName)) return "English";

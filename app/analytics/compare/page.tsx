@@ -10,7 +10,7 @@ import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Chip } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { analyticsSubnav } from "@/lib/ui/subnav";
-import { MockBanner, awardRamp } from "@/components/ui/analytics";
+import { MockBanner, AwardCompareChart } from "@/components/ui/analytics";
 
 function numeric(v: string): number {
   const n = parseFloat(v.replace(/[^0-9.\-]/g, ""));
@@ -20,7 +20,6 @@ function numeric(v: string): number {
 export default function ComparePage() {
   const model = useProviderData((p) => p.getAnalyticsCompare());
   const [live, prior] = model.columns;
-  const maxShare = Math.max(1, ...model.awardLevels.flatMap((g) => model.columns.map((c) => c.dist[g] ?? 0)));
 
   return (
     <Shell
@@ -87,24 +86,17 @@ export default function ComparePage() {
             </table>
           </Card>
 
-          {/* award distribution grouped */}
+          {/* award mix for the TWO selected cycles — distinct from Trends' over-time view */}
           <Card style={{ flex: "1 1 320px", minWidth: 280, padding: "18px 20px" }}>
-            <div className="hf-lbl" style={{ marginBottom: 16 }}>Award distribution</div>
-            <div style={{ display: "flex", justifyContent: "space-around", alignItems: "flex-end", height: 170 }}>
-              {model.awardLevels.map((g, i) => (
-                <div key={g} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 140 }}>
-                    <div style={{ width: 16, height: `${((live?.dist[g] ?? 0) / maxShare) * 100}%`, background: awardRamp(i, model.awardLevels.length), borderRadius: "2px 2px 0 0" }} title={`${live?.cycle} ${live?.dist[g] ?? 0}%`} />
-                    <div style={{ width: 16, height: `${((prior?.dist[g] ?? 0) / maxShare) * 100}%`, background: H.ink2, opacity: 0.4, borderRadius: "2px 2px 0 0" }} title={`${prior?.cycle} ${prior?.dist[g] ?? 0}%`} />
-                  </div>
-                  <span style={{ fontSize: 8.5, fontWeight: 700, color: H.ink2, maxWidth: 56, textAlign: "center", lineHeight: 1.05 }}>{g.replace(/ (award|achievement award)$/i, "")}</span>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 14 }}>
-              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: H.ink2 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: H.pink }} />{live?.cycle}</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10.5, color: H.ink2 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2, opacity: 0.4 }} />{prior?.cycle} (mock)</span>
-            </div>
+            <div className="hf-lbl" style={{ marginBottom: 2 }}>Award mix: {live?.cycle} vs {prior?.cycle}</div>
+            <div className="hf-sub" style={{ fontSize: 11, marginBottom: 14 }}>% of cohort in each award level, this cycle vs the prior sitting</div>
+            {live && prior && (
+              <AwardCompareChart
+                levels={model.awardLevels}
+                primary={{ name: live.cycle, dist: live.dist }}
+                secondary={{ name: `${prior.cycle} (mock)`, dist: prior.dist }}
+              />
+            )}
           </Card>
         </div>
       </div>

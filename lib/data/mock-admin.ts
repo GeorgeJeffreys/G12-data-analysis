@@ -104,6 +104,8 @@ export const QUALITY_THRESHOLDS: QualityThresholdRow[] = [
 // --- Analytics: MOCK prior cycles (no real history yet) ----------------------
 // Only the *live* cycle's aggregates are real; these priors are illustrative.
 export const ANALYTICS_CYCLE_LABELS = ["May 25", "Nov 25", "Jan 26", "May 26"];
+/** Full cycle names (parallel to ANALYTICS_CYCLE_LABELS) for explicit labelling. */
+export const ANALYTICS_CYCLE_NAMES = ["May 2025", "November 2025", "January 2026", "May 2026"];
 
 export interface MockPrior {
   label: string;
