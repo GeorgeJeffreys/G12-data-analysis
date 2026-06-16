@@ -19,6 +19,8 @@ import { CycleShell } from "@/components/shell/CycleShell";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
+import { ExportButtons } from "@/components/ui/ExportButtons";
+import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import { Icon, Mark } from "@/components/ui/icons";
 
 // MOCK: there is no prior cycle. Cross-cycle comparison is driven by these
@@ -55,6 +57,29 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const resetAll = () => provider.setBoundary(cycleId, scope, { resetToSuggestion: true });
   const resetCut = (index: number) => provider.setBoundary(cycleId, scope, { resetCutIndex: index });
 
+  // Export every scope's cut-scores (raw + %) and band distribution.
+  const gatherScopes = () =>
+    model.scopes
+      .map((s) => {
+        const bm = provider.getBoundaries(cycleId, s.id);
+        return bm ? { label: s.label, maxRaw: bm.maxRaw, isAward: bm.isAward, bands: bm.bands } : null;
+      })
+      .filter((x): x is NonNullable<typeof x> => x !== null);
+  const exportBoundariesCsv = () => {
+    const headers = ["Scope", "Level", "Stars", "Min Score (%)", "Min Score (raw)", "Students", "% of cohort"];
+    const rows = gatherScopes().flatMap((s) =>
+      s.bands.map((b) => [s.label, b.level, b.stars ?? "", b.cut ?? "—", b.cut === null ? "—" : Math.round((b.cut / 100) * s.maxRaw), b.students, b.pct]),
+    );
+    downloadCsv(`${fileStem("cut_scores", cycleName)}.csv`, headers, rows);
+    provider.recordExport(cycleId, "Cut-scores & band distribution (CSV)");
+  };
+  const exportBoundariesXlsx = async () => {
+    const exp = await import("@/lib/export");
+    const wb = exp.buildBoundariesWorkbook({ cycleName, scopes: gatherScopes() });
+    await downloadWorkbook(`${fileStem("cut_scores", cycleName)}.xlsx`, wb);
+    provider.recordExport(cycleId, "Cut-scores & band distribution (Excel)");
+  };
+
   const targetSum = model.targets.reduce((a, b) => a + (Number(b) || 0), 0);
   const remainder = 100 - targetSum;
   // Raw cut alongside % (cut-scores are conceptually raw; the model stores %).
@@ -86,6 +111,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       cycleName={cycleName}
       page="Scoring & grade boundaries"
       stageIndex={7}
+      actions={<ExportButtons onCsv={exportBoundariesCsv} onXlsx={exportBoundariesXlsx} />}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri">
