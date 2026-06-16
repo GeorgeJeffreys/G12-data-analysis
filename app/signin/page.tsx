@@ -7,9 +7,9 @@
  * AccessGate. When Supabase isn't configured (the in-memory demo), the button
  * just enters the app.
  */
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { H } from "@/lib/ui/tokens";
 import { EntryFrame } from "@/components/entry/EntryFrame";
 import { Icon } from "@/components/ui/icons";
@@ -17,8 +17,17 @@ import { createClient } from "@/lib/supabase/client";
 
 const SUPABASE = process.env.NEXT_PUBLIC_DATA_PROVIDER === "supabase";
 
-export default function SignInPage() {
+/** Only allow internal absolute paths as a post-login destination (no
+ *  open-redirect to "//evil.com" or absolute URLs). Falls back to the home page. */
+function safeNext(raw: string | null): string {
+  if (raw && raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  return "/";
+}
+
+function SignInForm() {
   const router = useRouter();
+  const params = useSearchParams();
+  const dest = safeNext(params.get("next") ?? params.get("redirect"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -28,7 +37,7 @@ export default function SignInPage() {
     e.preventDefault();
     setError(null);
     if (!SUPABASE) {
-      router.push("/");
+      router.push(dest);
       return;
     }
     setBusy(true);
@@ -39,8 +48,10 @@ export default function SignInPage() {
         setError(error.message);
         return;
       }
-      // The AccessGate decides ok vs access-denied from `memberships`.
-      router.push("/");
+      // The session cookie is now persisted; the provider's onAuthStateChange
+      // re-hydrates so the AccessGate sees the session instead of bouncing back.
+      // The gate decides ok vs access-denied from `memberships`.
+      router.push(dest);
       router.refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -108,5 +119,14 @@ export default function SignInPage() {
         </div>
       </form>
     </EntryFrame>
+  );
+}
+
+export default function SignInPage() {
+  // useSearchParams() requires a Suspense boundary in the App Router.
+  return (
+    <Suspense fallback={<EntryFrame><div style={{ width: 380 }} /></EntryFrame>}>
+      <SignInForm />
+    </Suspense>
   );
 }

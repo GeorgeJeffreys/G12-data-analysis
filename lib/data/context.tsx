@@ -79,9 +79,12 @@ function AccessGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (exempt) return;
-    if (status === "no-session") router.replace("/signin");
-    else if (status === "not-member") router.replace("/access-denied");
-  }, [status, exempt, router]);
+    if (status === "no-session") {
+      // Remember where the user was headed so sign-in can return them there.
+      const next = pathname && pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+      router.replace(`/signin${next}`);
+    } else if (status === "not-member") router.replace("/access-denied");
+  }, [status, exempt, pathname, router]);
 
   if (exempt) return <>{children}</>;
   if (status === "loading" || status === "no-session" || status === "not-member") {

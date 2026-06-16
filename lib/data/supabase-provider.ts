@@ -111,6 +111,23 @@ export class SupabaseDataProvider implements DataProvider {
   constructor(private supabase: DB) {
     this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER);
     void this.init();
+    // The provider instance outlives client-side navigation, so a sign-in that
+    // happens after construction (on /signin) would otherwise leave `status`
+    // stuck at its initial value and the access gate would bounce back to
+    // /signin. React to auth changes so the gate re-evaluates without a reload.
+    this.supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") {
+        this.user = LOADING_USER;
+        this.cycleId = "";
+        this.status = "no-session";
+        this.bump();
+      } else if (event === "SIGNED_IN" && this.status === "no-session") {
+        // We were locked out and now hold a session — re-hydrate from scratch.
+        this.status = "loading";
+        this.bump();
+        void this.init();
+      }
+    });
   }
 
   // ── reactivity ─────────────────────────────────────────────────────────
