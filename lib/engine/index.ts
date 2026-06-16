@@ -114,6 +114,18 @@ export {
 export { computeScores } from "./scores";
 export { rollUp } from "./rollup";
 export {
+  deriveAward,
+  qualifiesForDistinctionByLevels,
+  d3MajorityThreshold,
+  passesD3Majority,
+} from "./award";
+export type {
+  AwardRuleConfig,
+  AwardInput,
+  AwardCounts,
+  AwardOutcome,
+} from "./award";
+export {
   DEFAULT_SCORING_CONFIG,
   defaultScoringConfig,
   classifyByCuts,

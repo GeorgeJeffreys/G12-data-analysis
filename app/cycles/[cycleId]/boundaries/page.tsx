@@ -85,7 +85,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       cycleId={cycleId}
       cycleName={cycleName}
       page="Scoring & grade boundaries"
-      stageIndex={4}
+      stageIndex={7}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri">

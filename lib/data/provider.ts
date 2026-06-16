@@ -33,6 +33,10 @@ import type {
   GradesModel,
   GradingDefaultsModel,
   IngestModel,
+  CombinedSplitModel,
+  RawDataModel,
+  DataCleaningModel,
+  NaiveScoresModel,
   MembersModel,
   NewCycleModel,
   PerformanceReportModel,
@@ -138,6 +142,14 @@ export interface DataProvider {
   listCycles(): CycleSummary[];
   getCycle(cycleId: string): CycleDetail | null;
   getIngest(cycleId: string): IngestModel | null;
+  /** Combined-upload detection: subjects split out of the single export. */
+  getCombinedSplit(cycleId: string): CombinedSplitModel | null;
+  /** Raw "show me my data" view for one subject (summary + breakdown + matrix). */
+  getRawData(cycleId: string, assessmentId: string): RawDataModel | null;
+  /** Data-cleaning view for one subject (validation report + raw matrix). */
+  getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null;
+  /** Naive (pre-exclusion) overall scores for one subject. */
+  getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null;
   getReview(cycleId: string, assessmentId: string): ReviewModel | null;
   /** Full per-question deep-dive for the Item review right panel. */
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null;

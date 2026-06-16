@@ -20,7 +20,10 @@ export interface CurrentUser {
 }
 
 export const PIPELINE = [
-  "Data import",
+  "Upload",
+  "Raw data",
+  "Clean",
+  "Raw scores",
   "Review",
   "Adjustments",
   "Score",
@@ -88,6 +91,116 @@ export interface IngestModel {
   duplicates: number;
   canContinue: boolean;
   technicalErrors: TechnicalErrorsUpload;
+}
+
+// --- Front-of-pipeline: combined upload, raw data, cleaning, naive scores ----
+export type CleaningStatus = "pass" | "warn" | "fail";
+
+/** One subject detected when a combined export is split. */
+export interface DetectedSubject {
+  id: string;
+  name: string;
+  shortName: string;
+  items: number;
+  participants: number;
+  /** Major element names found in this subject (3–5, never hard-coded). */
+  elements: string[];
+  rtl: boolean;
+  hasEssay: boolean;
+  status: "ok" | "warn";
+  note: string | null;
+}
+export interface CombinedSplitModel {
+  cycleId: string;
+  fileName: string;
+  fileSizeMB: number;
+  uploadedAgo: string;
+  totalItems: number;
+  totalParticipants: number;
+  subjects: DetectedSubject[];
+}
+
+/** Column metadata for the raw spreadsheet view. */
+export interface RawColumnMeta {
+  id: string;
+  qLabel: string;
+  major: string | null;
+  sub: string | null;
+  demand: string | null;
+}
+/** One participant row in the raw spreadsheet (cells aligned to `columns`). */
+export interface RawDataRow {
+  id: string;
+  studentId: string;
+  name: string;
+  /** 1 correct · 0 incorrect · null omitted/blank, in column order. */
+  cells: (number | null)[];
+}
+export interface RawElementBreak {
+  major: string;
+  subs: string[];
+  items: number;
+}
+export interface RawDataModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  participants: number;
+  items: number;
+  /** Number of major elements present (varies by subject). */
+  elementsCount: number;
+  subElementsCount: number;
+  demand: { D1: number; D2: number; D3: number };
+  byElement: RawElementBreak[];
+  columns: RawColumnMeta[];
+  rows: RawDataRow[];
+}
+
+export interface CleaningCheck {
+  id: string;
+  status: CleaningStatus;
+  title: string;
+  detail: string | null;
+  count: string | null;
+  /** Suggested action label (e.g. "Resolve", "Delete column"); null = informational. */
+  action: string | null;
+}
+export interface DataCleaningModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  checks: CleaningCheck[];
+  counts: { pass: number; warn: number; fail: number };
+  rowsBefore: number;
+  /** Rows remaining after the current (UI-selected) removals. */
+  rowsAfter: number;
+  /** True when no must-fix blocker remains. Warnings never block. */
+  canProceed: boolean;
+  columns: RawColumnMeta[];
+  rows: RawDataRow[];
+}
+
+export interface NaiveElementCol {
+  major: string;
+  shortId: string;
+  items: number;
+}
+export interface NaiveStudentRow {
+  id: string;
+  studentId: string;
+  name: string;
+  /** Raw correct count per major element. */
+  perElement: Record<string, number>;
+  raw: number;
+  pct: number;
+}
+export interface NaiveScoresModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  hasEssay: boolean;
+  mcqItems: number;
+  totalItems: number;
+  cohortAvgPct: number;
+  elements: NaiveElementCol[];
+  students: NaiveStudentRow[];
 }
 
 export interface ItemRow {
@@ -231,6 +344,8 @@ export interface PerfElementResult {
   level: string;
   /** Major element → performance level. */
   elements: Record<string, string>;
+  /** Major element → (sub-element → performance level). Finer-grained breakdown. */
+  subElements: Record<string, Record<string, string>>;
 }
 export interface PerfReportStudent {
   participantId: string;
@@ -243,6 +358,8 @@ export interface PerfReportSubject {
   assessmentId: string;
   name: string;
   majorElements: string[];
+  /** Major element → its ordered sub-elements (the construct structure, read from data). */
+  subElements: Record<string, string[]>;
 }
 export interface PerfReportSummarySubject {
   label: string;
@@ -407,6 +524,21 @@ export interface GradeMatrixRow {
   grades: Record<string, GradeCell>;
   /** Overall award level. */
   award: string;
+  /**
+   * Present only when the student's level pattern qualified for Distinction but
+   * the D3-majority cap denied it — the visible "why" (e.g. 3/7 correct, majority
+   * 4 in the named subject). Null/absent otherwise.
+   */
+  distinctionCap?: {
+    /** Short subject name of the exam that failed the majority. */
+    subject: string;
+    /** D3 items answered correctly on that exam. */
+    correct: number;
+    /** D3 items available on that exam. */
+    available: number;
+    /** The majority threshold (strictly more than half of available). */
+    majority: number;
+  } | null;
   /** Overall raw score across all subjects (MCQ + essay + alterations). */
   overallRaw: number;
   /** Maximum attainable overall score. */
@@ -452,6 +584,28 @@ export interface SubjectResult {
   stars: string;
 }
 
+/** One sub-element's achieved level within a major element (unofficial report). */
+export interface UnofficialSubElement {
+  sub: string;
+  level: string;
+  stars: string;
+}
+/** One major element's achieved level + its sub-elements (unofficial report). */
+export interface UnofficialElement {
+  major: string;
+  level: string;
+  stars: string;
+  subs: UnofficialSubElement[];
+}
+/** One subject's element/sub-element breakdown for the unofficial diagnostic report. */
+export interface UnofficialSubject {
+  slot: string;
+  assessment: string;
+  level: string;
+  stars: string;
+  elements: UnofficialElement[];
+}
+
 export interface StudentSummary {
   /** Maps to the {{RESULTID}} token. */
   participantId: string;
@@ -460,6 +614,12 @@ export interface StudentSummary {
   award: string;
   /** Per-subject performance level + stars, in canonical S1..S5 order. */
   subjects: SubjectResult[];
+  /**
+   * Per-subject major-element / sub-element breakdown for the UNOFFICIAL
+   * diagnostic report (richer than the official certificate/performance report).
+   * Populated only when grades are locked. Marked clearly as unofficial in the UI.
+   */
+  unofficial?: UnofficialSubject[];
 }
 
 export interface DocSettings {
@@ -695,11 +855,19 @@ export type SafeguardResult = "pass" | "capped" | "override";
 export interface DistinctionCandidate {
   id: string;
   name: string;
-  topDifficultyAnswered: number;
+  /** D3 items answered correctly on the selected exam scope. */
+  topDifficultyCorrect: number;
+  /** D3 items available on the selected exam scope (after exclusions). */
+  topDifficultyAvailable: number;
+  /** Majority threshold for the selected scope (strictly more than half of available). */
+  majority: number;
+  /** Whether the student cleared the majority on the selected scope. */
   meets: boolean;
   provisionalAward: string;
   cappedAward: string;
   result: SafeguardResult;
+  /** The visible "why" when capped (the failing exam's working); null otherwise. */
+  capReason: string | null;
   overrideReason: string | null;
   overrideBy: string | null;
 }
@@ -716,7 +884,7 @@ export interface DistinctionSafeguardModel {
   candidates: DistinctionCandidate[];
   counts: { inLine: number; meet: number; capped: number; overridden: number };
   canOverride: boolean;
-  /** // CONFIRM: "answered" is treated as attempted (a non-blank response), not "answered correctly". */
+  /** Explains the D3 metric: correct (not attempts) vs the dynamic majority of available. */
   attemptedNote: string;
 }
 

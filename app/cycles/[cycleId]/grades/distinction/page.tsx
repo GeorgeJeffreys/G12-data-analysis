@@ -2,12 +2,13 @@
 
 /**
  * Screen 06b — Distinction safeguard (sits with the grading / sign-off stage).
- * A Distinction is only awarded when a student actually attempted enough of the
- * hardest questions. Runs on the provisional awards from boundaries; every cap
- * and override is attributed and audit-logged, and only a Lead can override.
+ * A Distinction is only awarded when a student answers correctly a MAJORITY of
+ * the available D3 (hardest) items on each exam — a dynamic, per-exam threshold.
+ * Runs on the candidates whose subject-level pattern qualifies for a Distinction;
+ * every cap and override is attributed and audit-logged, and only a Lead can override.
  *
- * All numbers are computed from the real seeded cycle — top-difficulty attempted
- * counts come from genuine responses minus any per-student technical exclusions.
+ * All numbers are computed from the real seeded cycle — D3 correct/available
+ * counts come from genuine responses, recomputed after any item exclusions.
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -56,7 +57,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Distinction safeguard"
-      stageIndex={5}
+      stageIndex={8}
       done={5}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
@@ -79,8 +80,8 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
         <div>
           <div className="hf-h1">Distinction safeguard</div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
-            A Distinction is only awarded when a student actually attempted enough of the hardest questions. This runs on
-            the provisional awards from boundaries.
+            A Distinction is only awarded when a student answers correctly a majority of the available hardest (D3) items on
+            each exam. This runs on the candidates whose subject-level pattern qualifies for a {short(model.topAward)}.
           </div>
         </div>
 
@@ -89,23 +90,21 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
           <div style={{ flex: 1 }}>
             <div className="hf-lbl" style={{ color: "rgba(233,237,241,.55)" }}>The rule</div>
             <div style={{ fontSize: 15.5, fontWeight: 700, color: "#fff", marginTop: 6, lineHeight: 1.4 }}>
-              A {short(model.topAward)} needs at least {t} top-difficulty question{t === 1 ? "" : "s"} answered.
+              A {short(model.topAward)} needs a <b style={{ color: "#fff" }}>majority of the available {model.topDifficultyDemand || "D3"} items</b> answered correctly.
             </div>
             <div style={{ fontSize: 12.5, color: "rgba(233,237,241,.82)", marginTop: 6, lineHeight: 1.5 }}>
-              Top-difficulty = <b style={{ color: "#fff" }}>{model.topDifficultyDemand || "—"}</b> demand ·{" "}
-              {model.topDifficultyPool} such question{model.topDifficultyPool === 1 ? "" : "s"} in{" "}
-              {model.scopes.find((s) => s.id === model.scope)?.label}. Fall short and the award caps to{" "}
-              <b style={{ color: "#fff" }}>{short(model.cappedTo)}</b>.
+              {model.scopes.find((s) => s.id === model.scope)?.label} has{" "}
+              <b style={{ color: "#fff" }}>{model.topDifficultyPool}</b> available {model.topDifficultyDemand || "D3"} item
+              {model.topDifficultyPool === 1 ? "" : "s"}, so the majority is{" "}
+              <b style={{ color: "#fff" }}>{t}</b> correct. The threshold is dynamic per exam (recomputed after exclusions).
+              Fall short on any exam and the award caps to <b style={{ color: "#fff" }}>{short(model.cappedTo)}</b>.
             </div>
             <div style={{ fontSize: 11, color: "rgba(233,237,241,.6)", marginTop: 7 }}>{model.attemptedNote}</div>
           </div>
           <div style={{ width: 1, alignSelf: "stretch", background: "rgba(233,237,241,.18)" }} />
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 7, flex: "0 0 auto" }}>
             <span className="hf-mono" style={{ width: 56, height: 56, borderRadius: 14, background: "rgba(255,255,255,.1)", border: "1.5px solid rgba(255,255,255,.25)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26, fontWeight: 700, color: "#fff" }}>{t}</span>
-            <span style={{ fontSize: 10.5, color: "rgba(233,237,241,.7)" }}>threshold</span>
-            <Link href="/settings/config" style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 10.5, color: "#fff", fontWeight: 600, borderBottom: "1px solid rgba(255,255,255,.4)", paddingBottom: 1, textDecoration: "none" }}>
-              Set in Settings<Icon name="arrow" size={11} color="#fff" />
-            </Link>
+            <span style={{ fontSize: 10.5, color: "rgba(233,237,241,.7)" }}>majority · {model.topDifficultyPool} avail.</span>
           </div>
         </div>
 
@@ -114,9 +113,10 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
             <Mark kind="pass" size={18} />
             <span style={{ fontSize: 13 }}>
               <b>No students are currently in line for a {short(model.topAward)}</b> at the present boundaries, so there’s
-              nothing to safeguard. Lower the {short(model.topAward)} boundary on the{" "}
+              nothing to safeguard. A {short(model.topAward)} needs ★★★ Outstanding in ≥3 subjects with the rest at ≥★ Meets;
+              lower the Outstanding performance cut-scores on the{" "}
               <Link href={`/cycles/${cycleId}/boundaries`} style={{ color: H.pink, fontWeight: 600 }}>Boundaries</Link> screen
-              (or load the sample faults) to exercise this step.
+              to bring real candidates in line.
             </span>
           </div>
         ) : nCap === 0 ? (
@@ -143,7 +143,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
               <thead>
                 <tr>
                   <th className="hf-th">Participant</th>
-                  <th className="hf-th">Top-difficulty answered</th>
+                  <th className="hf-th">D3 correct (of available)</th>
                   <th className="hf-th">Meets rule</th>
                   <th className="hf-th">Provisional award</th>
                   <th className="hf-th">Result</th>
@@ -155,7 +155,6 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
                   <CandidateRow
                     key={s.id}
                     s={s}
-                    t={t}
                     topAward={model.topAward}
                     cappedTo={model.cappedTo}
                     short={short}
@@ -188,20 +187,24 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
   );
 }
 
-function Pips({ n, t }: { n: number; t: number }) {
+function Pips({ n, t, avail }: { n: number; t: number; avail: number }) {
   const ok = n >= t;
+  // One pip per available D3 item; filled = correct, ring = the majority bar.
+  const pips = Math.max(avail, t);
   return (
     <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
       <div style={{ display: "flex", gap: 3 }}>
-        {Array.from({ length: t }).map((_, i) => {
-          const filled = i < Math.min(n, t);
+        {Array.from({ length: pips }).map((_, i) => {
+          const filled = i < Math.min(n, pips);
+          const atBar = i === t - 1;
           return (
-            <span key={i} style={{ width: 9, height: 9, borderRadius: 999, flex: "0 0 auto", background: filled ? (ok ? H.good : H.pink) : H.paper, border: `1.5px solid ${filled ? (ok ? H.good : H.pink) : H.line2}` }} />
+            <span key={i} style={{ width: 9, height: 9, borderRadius: 999, flex: "0 0 auto", background: filled ? (ok ? H.good : H.pink) : H.paper, border: `1.5px solid ${atBar ? H.slate : filled ? (ok ? H.good : H.pink) : H.line2}` }} />
           );
         })}
       </div>
       <span className="hf-mono" style={{ fontSize: 12.5, fontWeight: 700, color: ok ? H.good : H.pink }}>
-        {n}<span style={{ color: H.ink3, fontWeight: 500 }}>/{t}</span>
+        {n}<span style={{ color: H.ink3, fontWeight: 500 }}>/{avail}</span>
+        <span style={{ color: H.ink3, fontWeight: 500, fontSize: 10.5 }}> · need {t}</span>
       </span>
     </div>
   );
@@ -220,10 +223,9 @@ function AwardPill({ label, top, dim, strike }: { label: string; top: boolean; d
 }
 
 function CandidateRow({
-  s, t, topAward, cappedTo, short, canOverride, overrideOpen, reason, onReason, onAskOverride, onCancelOverride, onSubmitOverride, onUndo,
+  s, topAward, cappedTo, short, canOverride, overrideOpen, reason, onReason, onAskOverride, onCancelOverride, onSubmitOverride, onUndo,
 }: {
   s: DistinctionCandidate;
-  t: number;
   topAward: string;
   cappedTo: string;
   short: (l: string) => string;
@@ -250,23 +252,28 @@ function CandidateRow({
           </div>
         </div>
       </td>
-      <td className="hf-td"><Pips n={s.topDifficultyAnswered} t={t} /></td>
+      <td className="hf-td"><Pips n={s.topDifficultyCorrect} t={s.majority} avail={s.topDifficultyAvailable} /></td>
       <td className="hf-td">
         {s.meets ? (
           <span style={{ display: "flex", gap: 7, alignItems: "center" }}><Mark kind="pass" size={15} /><span style={{ fontSize: 12, fontWeight: 600, color: H.good }}>Meets rule</span></span>
         ) : (
-          <span style={{ display: "flex", gap: 7, alignItems: "center" }}><Mark kind="fail" size={15} /><span style={{ fontSize: 12, fontWeight: 600, color: H.bad }}>Short by {Math.max(1, t - s.topDifficultyAnswered)}</span></span>
+          <span style={{ display: "flex", gap: 7, alignItems: "center" }}><Mark kind="fail" size={15} /><span style={{ fontSize: 12, fontWeight: 600, color: H.bad }}>Short by {Math.max(1, s.majority - s.topDifficultyCorrect)}</span></span>
         )}
       </td>
       <td className="hf-td"><AwardPill label={short(s.provisionalAward)} top dim /></td>
       <td className="hf-td">
         {pass && <AwardPill label={short(topAward)} top />}
         {capped && (
-          <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-            <AwardPill label={short(topAward)} top strike />
-            <Icon name="arrow" size={13} color={H.warn} />
-            <AwardPill label={short(cappedTo)} top={false} />
-            <Badge tone="warn">Capped</Badge>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+              <AwardPill label={short(topAward)} top strike />
+              <Icon name="arrow" size={13} color={H.warn} />
+              <AwardPill label={short(cappedTo)} top={false} />
+              <Badge tone="warn">Capped</Badge>
+            </div>
+            {s.capReason && (
+              <span className="hf-sub" style={{ fontSize: 10.5, maxWidth: 360, color: H.ink2 }}>{s.capReason}</span>
+            )}
           </div>
         )}
         {over && (

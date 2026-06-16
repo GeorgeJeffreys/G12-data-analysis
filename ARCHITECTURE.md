@@ -207,8 +207,12 @@ and `pct`. `computeScores(responses, excludedItemIds, options?)` takes
 `ScoreOptions` (`essayMarks`, `alterations`, `essayAssessmentIds`, `essayMax`);
 empty defaults score a cycle **exactly as MCQ-only**. Performance-level
 cut-points and the boundaries screen operate on this **summed total and its
-max**; the overall award is derived from the five subject results (the award
-rule is still the `// CONFIRM:` placeholder).
+max**; the overall award is derived from the five subject results by the
+**confirmed Layer-2 rule** (`lib/engine/award.ts` · `deriveAward`): a
+deterministic lookup from the pattern of the five subject performance levels
+(Distinction / Advanced / Secondary / No Award, evaluated highest→lowest), plus
+the per-student **D3-majority cap** (Layer 1b). It is **not** a cut on an
+overall score. See "Award rule & D3 cap" below.
 
 **The previous per-student exclusion model was removed entirely.** Nothing is
 dropped from any student or from cohort statistics; alterations are additive.
@@ -580,22 +584,23 @@ screen.)
   `ProvisionalBanner` when an essay subject has no marks yet or incidents remain
   unreviewed — grades are provisional until those are in, never gated.
 - **Distinction safeguard (`/grades/distinction`, `getDistinctionSafeguard`).**
-  Runs on the **provisional awards from boundaries**: a top award is only kept
-  when the student **attempted at least _threshold_ top-difficulty questions**
-  (default 3; "top-difficulty" = the highest demand level present, configurable
-  in Settings). Shortfalls cap the award to the next level (e.g.
-  Distinction → Advanced); a **Lead** can override with a recorded reason. Caps
-  flow into the grade matrix (`getGrades`), and caps/overrides are audit-logged
-  (`safeguard` type). **`// CONFIRM`:** "answered" is treated as *attempted* (a
-  non-blank response), not "answered correctly" — flagged in `attemptedNote` and
-  isolated in `topDiffAnswered` so it is a one-line change.
+  Runs on the candidates whose **subject-level pattern qualifies for Distinction**
+  (★★★ in ≥3, rest ≥★): the **confirmed D3-majority rule** (Layer 1b) caps a
+  student below Distinction unless they answered **correctly a MAJORITY of the
+  AVAILABLE D3 items on every exam** — strictly more than half, computed
+  dynamically per exam and recomputed after item exclusions (7 → 4, 6 → 4,
+  5 → 3). It is **correct answers, not attempts**, against **available, not
+  attempted** (`d3StatusFor` / `d3CapByParticipant`). The working is surfaced
+  (`capReason`, and `distinctionCap` on the grade row: "3/7 D3 items correct;
+  majority is 4"). A **Lead** can override with a recorded reason. Caps flow into
+  the grade matrix (`getGrades`), and caps/overrides are audit-logged
+  (`safeguard` type).
   - **Honest numbers.** Everything is computed from the real seeded cycle. That
-    cohort's overall scores top out at ~65%, **below** the default 75%
-    Distinction cut, so the safeguard truthfully reports *no candidates in line*
-    by default and renders an explicit empty state. Lowering the Distinction
-    boundary brings real candidates in line, and per-student exclusions of
-    top-difficulty items are the genuine lever that can push one below the
-    threshold — no candidate counts are fabricated.
+    cohort's scores top out below the default Outstanding cut, so no student
+    reaches the Distinction level-pattern by default and the safeguard renders an
+    explicit empty state. Lowering the Outstanding performance cut-scores brings
+    real candidates into the pattern; the genuine, score-based D3 cap still
+    applies — no candidate counts are fabricated.
 
 ### Grade vocabulary (the real named levels)
 
@@ -619,10 +624,44 @@ nothing hardcodes band names or counts:
   vocabulary itself is now sourced from the engine's `DEFAULT_SCORING_CONFIG`
   (see "ScoringConfig" above) — one definition, shared by the engine and the
   grade read-models.
-- **`// CONFIRM:` the overall-award derivation rule is a placeholder** — the real
-  rule isn't in the source files. The default classifies the overall score into
-  the four awards by configurable cut-point; the Settings screen surfaces this as
-  an "Unverified rule" warning. Confirm with the assessment team before go-live.
+### Award rule & D3 cap (confirmed — `lib/engine/award.ts`)
+
+The overall award is the **confirmed deterministic Layer-2 rule**, not a cut on
+an overall score. `deriveAward(subjectLevels, d3Pass)` evaluates the pattern of
+the five subject performance levels **highest → lowest, stop at first match**:
+
+1. **Distinction** — ★★★ Outstanding in ≥3 subjects AND ≥★ Meets in every
+   remaining subject AND the student passes the **D3-majority cap**. A
+   Distinction-pattern student who fails the D3 majority falls through.
+2. **Advanced** — ★★ Exceeds in ≥3 subjects.
+3. **Secondary** — ★ Meets in ≥4 subjects.
+4. **No Award** — otherwise.
+
+The award levels are read positionally from the configured set, so the
+vocabulary stays configurable; the counts are anchored (Outstanding = top,
+Meets-or-better = any starred level). The **per-student D3 cap** is Layer 1b
+(above). `getGradingDefaults().awardRuleUnconfirmed` is now `false`. Named tests:
+`tests/engine.award.test.ts` (every tier, fall-through, D3-denied Distinction,
+dynamic 5/6/7 thresholds) and `tests/grading.distinction.test.ts` (provider
+integration: cap denies Distinction with visible reasoning, Lead override
+restores it). These are all **downstream of item statistics** — parity stays
+183/183.
+
+The cohort-level half of the D3 rule (constraining the Outstanding cut so ≥½ D3
+is implied) and the suggested-cut-score backsolver are **Wave 3b**, out of scope
+here.
+
+### Element / sub-element results & the unofficial report
+
+`getPerformanceReport` reports per-student levels at **major-element AND
+sub-element** granularity (`PerfReportSubject.subElements`,
+`PerfElementResult.subElements`), reading the construct structure from the item
+tags (3–5 major elements per subject, **not** hardcoded). Surfaced in the Grades
+per-student drill-down and the performance-report export (Student Profiles gains
+a Sub-Elements column). The **unofficial report** (`DocKind "unofficial"`,
+`StudentSummary.unofficial`) slots alongside the certificate + performance report
+on the same document path, showing the achieved level at element/sub-element
+granularity, **clearly marked unofficial** (internal/learner diagnostic).
 
 ### What is mocked in the UI (honestly labelled)
 

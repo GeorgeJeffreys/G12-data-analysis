@@ -5,7 +5,14 @@
  * reload — there is no database in this build.
  */
 
-import { getEngine, defaultScoringConfig } from "@/lib/engine";
+import {
+  getEngine,
+  defaultScoringConfig,
+  deriveAward,
+  qualifiesForDistinctionByLevels,
+  d3MajorityThreshold,
+  passesD3Majority,
+} from "@/lib/engine";
 import type {
   Alteration,
   EssayMark,
@@ -72,9 +79,22 @@ import {
   type QualityThresholdRow,
   type RetentionConfig,
   type ReviewModel,
+  type CombinedSplitModel,
+  type DetectedSubject,
+  type RawDataModel,
+  type RawColumnMeta,
+  type RawDataRow,
+  type RawElementBreak,
+  type DataCleaningModel,
+  type CleaningCheck,
+  type NaiveScoresModel,
+  type NaiveElementCol,
+  type NaiveStudentRow,
   type RoleDef,
   type RolesModel,
   type StudentSummary,
+  type UnofficialSubject,
+  type UnofficialElement,
   type DistinctionCandidate,
   type DistinctionSafeguardModel,
   type EssayMarksModel,
@@ -127,6 +147,27 @@ interface BoundaryState {
   suggested?: number[];
   /** Per-cut deliberate guard-rail waiver (value knowingly outside policy bounds). */
   waived?: boolean[];
+}
+
+/** One exam's D3-majority working for a student (Layer 1b). */
+interface D3ExamStatus {
+  assessmentId: string;
+  name: string;
+  shortName: string;
+  /** D3 items the student answered correctly (score > 0). */
+  correct: number;
+  /** D3 items available on the exam (after cohort item exclusions). */
+  available: number;
+  /** Strictly-more-than-half threshold for `available`. */
+  majority: number;
+  pass: boolean;
+}
+/** A student's overall D3 cap result across every exam carrying D3 items. */
+interface D3CapStatus {
+  pass: boolean;
+  exams: D3ExamStatus[];
+  /** The first exam that failed the majority (drives the visible "why"). */
+  failing: D3ExamStatus | null;
 }
 
 // --- small numeric helpers ---------------------------------------------------
@@ -507,6 +548,199 @@ export class InMemoryDataProvider implements DataProvider {
       duplicates: live.duplicates,
       canContinue: live.validation.passed,
       technicalErrors: this.technicalErrorsUpload(cycleId),
+    };
+  }
+
+  // ── front of pipeline: combined upload · raw data · cleaning · naive scores ──
+  /** Distinct participant ids that have at least one response in an assessment. */
+  private participantsIn(a: SeedAssessment): Set<string> {
+    const set = new Set<string>();
+    for (const r of a.responses) set.add(r.p);
+    return set;
+  }
+  /** Distinct major elements in an assessment, in first-appearance order. */
+  private majorsOf(a: SeedAssessment): string[] {
+    const seen: string[] = [];
+    for (const it of a.items) if (it.major && !seen.includes(it.major)) seen.push(it.major);
+    return seen;
+  }
+  private demandCounts(a: SeedAssessment): { D1: number; D2: number; D3: number } {
+    const d = { D1: 0, D2: 0, D3: 0 };
+    for (const it of a.items) if (it.demand === "D1" || it.demand === "D2" || it.demand === "D3") d[it.demand] += 1;
+    return d;
+  }
+  /** Build the raw response matrix (participants × items) for a subject. */
+  private rawMatrix(a: SeedAssessment): { columns: RawColumnMeta[]; rows: RawDataRow[] } {
+    const columns: RawColumnMeta[] = a.items.map((it, i) => ({
+      id: it.id,
+      qLabel: `Q${i + 1}`,
+      major: it.major,
+      sub: it.sub,
+      demand: it.demand,
+    }));
+    const score = new Map<string, number>();
+    for (const r of a.responses) score.set(`${r.p} ${r.i}`, r.s);
+    const present = this.participantsIn(a);
+    const rows: RawDataRow[] = this.seed.liveCycle.participants
+      .filter((p) => present.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        studentId: p.studentId ?? p.id,
+        name: p.label,
+        cells: a.items.map((it) => {
+          const v = score.get(`${p.id} ${it.id}`);
+          return v === undefined ? null : v;
+        }),
+      }));
+    return { columns, rows };
+  }
+
+  getCombinedSplit(cycleId: string): CombinedSplitModel | null {
+    const live = this.seed.liveCycle;
+    if (cycleId !== live.id) return null;
+    const counts = live.assessments.map((a) => this.participantsIn(a).size);
+    const maxParts = Math.max(...counts, 0);
+    const essayIds = new Set(this.essaySubjectIds());
+    const subjects: DetectedSubject[] = live.assessments.map((a) => {
+      const participants = this.participantsIn(a).size;
+      const warn = participants < maxParts;
+      return {
+        id: a.id,
+        name: a.name,
+        shortName: a.shortName,
+        items: a.items.length,
+        participants,
+        elements: this.majorsOf(a),
+        rtl: a.rtl,
+        hasEssay: essayIds.has(a.id),
+        status: warn ? "warn" : "ok",
+        note: warn ? `${maxParts - participants} fewer participant${maxParts - participants > 1 ? "s" : ""} than the largest subject` : null,
+      };
+    });
+    return {
+      cycleId,
+      fileName: live.fileName,
+      fileSizeMB: live.fileSizeMB,
+      uploadedAgo: live.uploadedAgo,
+      totalItems: live.assessments.reduce((n, a) => n + a.items.length, 0),
+      totalParticipants: live.participants.length,
+      subjects,
+    };
+  }
+
+  getRawData(cycleId: string, assessmentId: string): RawDataModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const byElement: RawElementBreak[] = this.majorsOf(a).map((major) => {
+      const items = a.items.filter((it) => it.major === major);
+      const subs: string[] = [];
+      for (const it of items) if (it.sub && !subs.includes(it.sub)) subs.push(it.sub);
+      return { major, subs, items: items.length };
+    });
+    const subElementsCount = byElement.reduce((n, e) => n + e.subs.length, 0);
+    const { columns, rows } = this.rawMatrix(a);
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      participants: this.participantsIn(a).size,
+      items: a.items.length,
+      elementsCount: byElement.length,
+      subElementsCount,
+      demand: this.demandCounts(a),
+      byElement,
+      columns,
+      rows,
+    };
+  }
+
+  getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    // Surface the REAL validation report as cleaning checks; warnings vs must-fix
+    // are distinguished by status. The sample data is clean, so blockers only
+    // appear if a real upload fails validation.
+    const checks: CleaningCheck[] = this.seed.liveCycle.validation.checks.map((c) => ({
+      id: c.id,
+      status: c.status,
+      title: c.label,
+      detail: c.detail || null,
+      count: c.count != null ? String(c.count) : null,
+      action: c.status === "fail" ? "Resolve" : c.status === "warn" ? "Review" : null,
+    }));
+    const counts = {
+      pass: checks.filter((c) => c.status === "pass").length,
+      warn: checks.filter((c) => c.status === "warn").length,
+      fail: checks.filter((c) => c.status === "fail").length,
+    };
+    const { columns, rows } = this.rawMatrix(a);
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      checks,
+      counts,
+      rowsBefore: rows.length,
+      rowsAfter: rows.length,
+      canProceed: counts.fail === 0,
+      columns,
+      rows,
+    };
+  }
+
+  getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const majors = this.majorsOf(a);
+    const elements: NaiveElementCol[] = majors.map((major, i) => ({
+      major,
+      shortId: String.fromCharCode(65 + i), // A, B, C…
+      items: a.items.filter((it) => it.major === major).length,
+    }));
+    // Pre-exclusion raw score = sum of scores over scored (maxScore≥1) items.
+    // NO item exclusions applied — this is the as-submitted view, distinct from
+    // the post-exclusion scoring used downstream (parity untouched).
+    const scoredItems = a.items.filter((it) => (it.maxScore ?? 1) >= 1);
+    const mcqMax = scoredItems.length;
+    const itemsByMajor = new Map<string, Set<string>>();
+    for (const major of majors) itemsByMajor.set(major, new Set(a.items.filter((it) => it.major === major).map((it) => it.id)));
+
+    const present = this.participantsIn(a);
+    const students: NaiveStudentRow[] = this.seed.liveCycle.participants
+      .filter((p) => present.has(p.id))
+      .map((p) => {
+        const myScores = a.responses.filter((r) => r.p === p.id);
+        const byId = new Map(myScores.map((r) => [r.i, r.s]));
+        let raw = 0;
+        for (const it of scoredItems) raw += byId.get(it.id) ?? 0;
+        const perElement: Record<string, number> = {};
+        for (const major of majors) {
+          let got = 0;
+          for (const id of itemsByMajor.get(major)!) got += byId.get(id) ?? 0;
+          perElement[major] = got;
+        }
+        return {
+          id: p.id,
+          studentId: p.studentId ?? p.id,
+          name: p.label,
+          perElement,
+          raw,
+          pct: mcqMax ? Math.round((raw / mcqMax) * 1000) / 10 : 0,
+        };
+      })
+      .sort((x, y) => y.pct - x.pct);
+
+    const cohortAvgPct = students.length ? Math.round((students.reduce((n, s) => n + s.pct, 0) / students.length) * 10) / 10 : 0;
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      hasEssay: new Set(this.essaySubjectIds()).has(a.id),
+      mcqItems: mcqMax,
+      totalItems: a.items.length,
+      cohortAvgPct,
+      elements,
+      students,
     };
   }
 
@@ -996,31 +1230,46 @@ export class InMemoryDataProvider implements DataProvider {
       pctMaps.set(a.id, m);
       cutsByScope.set(a.id, this.boundaryState(cycleId, a.id).cuts);
     }
-    const awardCuts = this.boundaryState(cycleId, "overall").cuts;
     const overallScores = this.overallScoreByParticipant(cycleId);
-    const safeguard = this.distinctionDecisions(cycleId); // studentId -> capped?
+    // Layer 2: the award is the deterministic lookup from the five subject
+    // performance levels (NOT a cut on an overall score), with the per-student D3
+    // cap (Layer 1b) applied to Distinction eligibility.
+    const d3Cap = this.d3CapByParticipant(cycleId);
+    const overrides = this.distinctionOverrides.get(cycleId);
 
     const rows = this.seed.liveCycle.participants.map((p) => {
       const grades: Record<string, { level: string; stars: string }> = {};
+      const subjectLevels: string[] = [];
       for (const a of this.seed.liveCycle.assessments) {
         const pct = pctMaps.get(a.id)?.get(p.id);
         const level = pct === undefined ? "" : classify(pct, perfLevels, cutsByScope.get(a.id)!);
         grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
+        subjectLevels.push(level);
       }
       const score = overallScores.get(p.id);
-      const op = score?.pct;
-      let award = op === undefined ? "" : classify(op, awardLevels, awardCuts);
-      // Distinction safeguard: cap a Distinction that fell short of the rule
-      // (unless a Lead overrode it). awardLevels[1] = Advanced achievement.
-      if (award === awardLevels[0] && safeguard.get(p.id) === "capped") {
-        award = awardLevels[1] ?? award;
-      }
+      const d3 = d3Cap.get(p.id);
+      const overridden = overrides?.has(p.id) ?? false;
+      const outcome = deriveAward(
+        { subjectLevels, d3Pass: (d3?.pass ?? true) || overridden },
+        { performanceLevels: perfLevels, awardLevels },
+      );
+      // Surface the working only where the D3 cap actually denied a Distinction.
+      const distinctionCap =
+        outcome.d3Capped && !overridden && d3?.failing
+          ? {
+              subject: d3.failing.shortName,
+              correct: d3.failing.correct,
+              available: d3.failing.available,
+              majority: d3.failing.majority,
+            }
+          : null;
       return {
         id: p.id,
         studentId: p.studentId ?? p.id,
         label: p.label,
         grades,
-        award,
+        award: outcome.award,
+        distinctionCap,
         overallRaw: round(score?.raw ?? 0, 1),
         overallMax: round(score?.max ?? 0, 1),
         overallPct: round(score?.pct ?? 0, 1),
@@ -1056,22 +1305,35 @@ export class InMemoryDataProvider implements DataProvider {
     if (!grades) return null;
     const perfLevels = this.grading.performanceLevels;
 
-    // subjects with ordered major elements + per-(participant,element) levels
+    // subjects with ordered major elements + sub-elements, and per-participant
+    // levels at both major-element and sub-element granularity. The construct
+    // structure (3–5 major elements per subject, each with sub-elements) is read
+    // from the data, never hardcoded.
     const subjects: PerfReportSubject[] = [];
-    const elementLevelByP = new Map<string, Map<string, Map<string, string>>>(); // assessmentId -> pid -> element -> level
+    const elementLevelByP = new Map<string, Map<string, Map<string, string>>>(); // assessmentId -> pid -> major -> level
+    // assessmentId -> pid -> major -> sub -> level
+    const subLevelByP = new Map<string, Map<string, Map<string, Map<string, string>>>>();
     for (const a of this.seed.liveCycle.assessments) {
       const cuts = this.boundaryState(cycleId, a.id).cuts;
       const itemMajor = new Map<string, string | null>();
+      const itemSub = new Map<string, string | null>();
       const majorOrder: string[] = [];
+      const subOrder: Record<string, string[]> = {};
       for (const it of a.items) {
         itemMajor.set(it.id, it.major);
+        itemSub.set(it.id, it.sub);
         if (it.major && !majorOrder.includes(it.major)) majorOrder.push(it.major);
+        if (it.major && it.sub) {
+          (subOrder[it.major] ??= []);
+          if (!subOrder[it.major]!.includes(it.sub)) subOrder[it.major]!.push(it.sub);
+        }
       }
-      subjects.push({ assessmentId: a.id, name: a.name, majorElements: majorOrder });
+      subjects.push({ assessmentId: a.id, name: a.name, majorElements: majorOrder, subElements: subOrder });
 
       const excluded = this.excludedSet(cycleId, a.id);
-      // accumulate raw/n per (participant, element)
+      // accumulate raw/n per (participant, major) and per (participant, major, sub)
       const acc = new Map<string, Map<string, { raw: number; n: number }>>();
+      const subAcc = new Map<string, Map<string, Map<string, { raw: number; n: number }>>>();
       for (const r of this.responsesOf(a)) {
         if (excluded.has(r.itemId)) continue;
         const el = itemMajor.get(r.itemId);
@@ -1082,6 +1344,18 @@ export class InMemoryDataProvider implements DataProvider {
         cell.raw += r.score;
         cell.n += 1;
         byEl.set(el, cell);
+
+        const sub = itemSub.get(r.itemId);
+        if (sub) {
+          let byMajor = subAcc.get(r.participantId);
+          if (!byMajor) subAcc.set(r.participantId, (byMajor = new Map()));
+          let bySub = byMajor.get(el);
+          if (!bySub) byMajor.set(el, (bySub = new Map()));
+          const sc = bySub.get(sub) ?? { raw: 0, n: 0 };
+          sc.raw += r.score;
+          sc.n += 1;
+          bySub.set(sub, sc);
+        }
       }
       const pMap = new Map<string, Map<string, string>>();
       for (const [pid, byEl] of acc) {
@@ -1093,6 +1367,21 @@ export class InMemoryDataProvider implements DataProvider {
         pMap.set(pid, lvls);
       }
       elementLevelByP.set(a.id, pMap);
+
+      const pSubMap = new Map<string, Map<string, Map<string, string>>>();
+      for (const [pid, byMajor] of subAcc) {
+        const majorMap = new Map<string, Map<string, string>>();
+        for (const [el, bySub] of byMajor) {
+          const subLvls = new Map<string, string>();
+          for (const [sub, cell] of bySub) {
+            const pct = cell.n ? (cell.raw / cell.n) * 100 : 0;
+            subLvls.set(sub, classify(pct, perfLevels, cuts));
+          }
+          majorMap.set(el, subLvls);
+        }
+        pSubMap.set(pid, majorMap);
+      }
+      subLevelByP.set(a.id, pSubMap);
     }
 
     const students: PerfReportStudent[] = grades.rows.map((row) => {
@@ -1102,7 +1391,13 @@ export class InMemoryDataProvider implements DataProvider {
         const elements: Record<string, string> = {};
         const lvls = elementLevelByP.get(a.id)?.get(row.id);
         if (lvls) for (const [el, lv] of lvls) elements[el] = lv;
-        sub[a.id] = { level, elements };
+        const subElements: Record<string, Record<string, string>> = {};
+        const subLvls = subLevelByP.get(a.id)?.get(row.id);
+        if (subLvls) for (const [el, bySub] of subLvls) {
+          subElements[el] = {};
+          for (const [s, lv] of bySub) subElements[el]![s] = lv;
+        }
+        sub[a.id] = { level, elements, subElements };
       }
       return { participantId: row.id, name: row.label, award: row.award, subjects: sub };
     });
@@ -1699,52 +1994,101 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── distinction safeguard (grading stage) ─────────────────────────────────
-  /** Top-difficulty questions a student attempted in one assessment. */
-  private topDiffAnswered(cycleId: string, a: SeedAssessment, studentId: string, demand: string): number {
-    void cycleId;
-    const pool = new Set(a.items.filter((it) => it.demand === demand).map((it) => it.id));
-    let n = 0;
+  /**
+   * D3 status for one student on one assessment: the count of **available** D3
+   * items (top-difficulty, after cohort item exclusions) and how many the student
+   * answered **correctly** (score > 0). This is the corrected metric — correct,
+   * not attempted; available, not attempted.
+   */
+  private d3StatusFor(
+    cycleId: string,
+    a: SeedAssessment,
+    studentId: string,
+    demand: string,
+  ): { correct: number; available: number; majority: number } {
+    const excluded = this.excludedSet(cycleId, a.id);
+    const pool = new Set(a.items.filter((it) => it.demand === demand && !excluded.has(it.id)).map((it) => it.id));
+    let correct = 0;
     for (const r of a.responses) {
       if (r.p !== studentId || !pool.has(r.i)) continue;
-      n += 1;
+      if (r.s > 0) correct += 1;
     }
-    return n;
+    return { correct, available: pool.size, majority: d3MajorityThreshold(pool.size) };
   }
-  /** Participants whose provisional overall award is the top award (before the safeguard). */
+
+  /**
+   * Per-student D3-majority cap (Layer 1b). A student passes only if they cleared
+   * the majority of available D3 items on **every** exam that carries D3 items;
+   * a single exam below its majority caps them below Distinction. Surfaces the
+   * per-exam working and the first failing exam so the cap is explainable.
+   */
+  private d3CapByParticipant(cycleId: string): Map<string, D3CapStatus> {
+    const demand = this.resolveTopDifficulty();
+    const out = new Map<string, D3CapStatus>();
+    for (const p of this.seed.liveCycle.participants) {
+      const exams: D3ExamStatus[] = [];
+      for (const a of this.seed.liveCycle.assessments) {
+        const { correct, available, majority } = this.d3StatusFor(cycleId, a, p.id, demand);
+        if (available <= 0) continue; // no D3 items on this exam — cannot deny anyone
+        exams.push({
+          assessmentId: a.id,
+          name: a.name,
+          shortName: a.shortName,
+          correct,
+          available,
+          majority,
+          pass: passesD3Majority(correct, available),
+        });
+      }
+      const failing = exams.find((e) => !e.pass) ?? null;
+      out.set(p.id, { pass: !failing, exams, failing });
+    }
+    return out;
+  }
+
+  /** Per-participant subject performance levels, in assessment order (Layer 1). */
+  private subjectLevelsByParticipant(cycleId: string): Map<string, string[]> {
+    const perfLevels = this.grading.performanceLevels;
+    const ids = this.seed.liveCycle.participants.map((p) => p.id);
+    const out = new Map<string, string[]>(ids.map((id) => [id, []]));
+    for (const a of this.seed.liveCycle.assessments) {
+      const cuts = this.boundaryState(cycleId, a.id).cuts;
+      const pct = this.pctByParticipant(cycleId, a);
+      for (const id of ids) {
+        const v = pct.get(id);
+        out.get(id)!.push(v === undefined ? "" : classify(v.pct, perfLevels, cuts));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Participants whose **level pattern** qualifies for Distinction (★★★ in ≥3 AND
+   * ≥★ Meets in the rest) — i.e. "in line for Distinction", before the D3 cap.
+   * The award no longer comes from a cut on an overall score (the old placeholder);
+   * it is the deterministic Layer-2 lookup, so candidacy is a level-pattern test.
+   */
   private provisionalDistinctionIds(cycleId: string): string[] {
-    const awardLevels = this.grading.awardLevels;
-    const topAward = awardLevels[0] ?? "";
-    const awardCuts = this.boundaryState(cycleId, "overall").cuts;
-    const overall = this.overallPctByParticipant(cycleId);
+    const perfLevels = this.grading.performanceLevels;
+    const levelsByP = this.subjectLevelsByParticipant(cycleId);
     const ids: string[] = [];
     for (const p of this.seed.liveCycle.participants) {
-      const op = overall.get(p.id);
-      if (op === undefined) continue;
-      if (classify(op, awardLevels, awardCuts) === topAward) ids.push(p.id);
+      const levels = levelsByP.get(p.id) ?? [];
+      if (qualifiesForDistinctionByLevels(levels, perfLevels)) ids.push(p.id);
     }
     return ids;
   }
   /** studentId → safeguard result, for the grade-matrix cap (used by getGrades). */
   private distinctionDecisions(cycleId: string): Map<string, SafeguardResult> {
-    const demand = this.resolveTopDifficulty();
-    const threshold = this.safeguard.distinctionThreshold;
     const overrides = this.distinctionOverrides.get(cycleId);
+    const d3 = this.d3CapByParticipant(cycleId);
     const out = new Map<string, SafeguardResult>();
     for (const sid of this.provisionalDistinctionIds(cycleId)) {
       if (overrides?.has(sid)) {
         out.set(sid, "override");
         continue;
       }
-      let capped = false;
-      for (const a of this.seed.liveCycle.assessments) {
-        const pool = a.items.filter((it) => it.demand === demand).length;
-        if (pool < threshold) continue; // can't require more top-difficulty items than exist
-        if (this.topDiffAnswered(cycleId, a, sid, demand) < threshold) {
-          capped = true;
-          break;
-        }
-      }
-      out.set(sid, capped ? "capped" : "pass");
+      out.set(sid, d3.get(sid)?.pass === false ? "capped" : "pass");
     }
     return out;
   }
@@ -1756,8 +2100,10 @@ export class InMemoryDataProvider implements DataProvider {
     const scopeId = scope && assessments.some((a) => a.id === scope) ? scope : assessments[0]?.id ?? "";
     const a = this.assessment(scopeId);
     const demand = this.resolveTopDifficulty();
-    const threshold = this.safeguard.distinctionThreshold;
-    const pool = a ? a.items.filter((it) => it.demand === demand).length : 0;
+    // Pool = available D3 items on the selected exam (after item exclusions); the
+    // threshold is the DYNAMIC majority of that pool (e.g. 7 → 4), not a fixed N.
+    const pool = a ? a.items.filter((it) => it.demand === demand && !this.excludedSet(cycleId, a.id).has(it.id)).length : 0;
+    const majority = d3MajorityThreshold(pool);
     const awardLevels = this.grading.awardLevels;
     const topAward = awardLevels[0] ?? "";
     const cappedTo = awardLevels[1] ?? topAward;
@@ -1765,30 +2111,42 @@ export class InMemoryDataProvider implements DataProvider {
     const decisions = this.distinctionDecisions(cycleId);
     const overrides = this.distinctionOverrides.get(cycleId);
     const inLineIds = this.provisionalDistinctionIds(cycleId);
+    const d3Cap = this.d3CapByParticipant(cycleId);
     const labelOf = new Map(this.seed.liveCycle.participants.map((p) => [p.id, p.label] as const));
-    const effThreshold = pool > 0 ? Math.min(threshold, pool) : threshold;
 
     const candidates: DistinctionCandidate[] = inLineIds.map((sid) => {
-      const answered = a ? this.topDiffAnswered(cycleId, a, sid, demand) : 0;
+      const scopeStatus = a ? this.d3StatusFor(cycleId, a, sid, demand) : { correct: 0, available: 0, majority: 0 };
+      const result = decisions.get(sid) ?? "pass";
+      const failing = d3Cap.get(sid)?.failing ?? null;
       const ov = overrides?.get(sid);
+      const capReason =
+        result === "capped" && failing
+          ? `Capped below ${topAward} — ${failing.correct}/${failing.available} D3 items correct in ${failing.shortName}; majority is ${failing.majority}`
+          : null;
       return {
         id: sid,
         name: labelOf.get(sid) ?? sid,
-        topDifficultyAnswered: answered,
-        meets: answered >= effThreshold,
+        topDifficultyCorrect: scopeStatus.correct,
+        topDifficultyAvailable: scopeStatus.available,
+        majority: scopeStatus.majority,
+        meets: passesD3Majority(scopeStatus.correct, scopeStatus.available),
         provisionalAward: topAward,
         cappedAward: cappedTo,
-        result: decisions.get(sid) ?? "pass",
+        result,
+        capReason,
         overrideReason: ov?.reason ?? null,
         overrideBy: ov?.by ?? null,
       };
     });
-    candidates.sort((x, y) => x.topDifficultyAnswered - y.topDifficultyAnswered);
+    // Closest to the line first: lowest margin of (correct − majority) on the scope.
+    candidates.sort(
+      (x, y) => (x.topDifficultyCorrect - x.majority) - (y.topDifficultyCorrect - y.majority),
+    );
 
     const vals = [...decisions.values()];
     return {
       cycleId,
-      threshold,
+      threshold: majority,
       topDifficultyDemand: demand,
       topDifficultyPool: pool,
       scope: scopeId,
@@ -1803,9 +2161,8 @@ export class InMemoryDataProvider implements DataProvider {
         overridden: vals.filter((v) => v === "override").length,
       },
       canOverride: this.user.role === "lead_admin",
-      // CONFIRM: "answered" is treated as attempted (a non-blank response), not
-      // "answered correctly". Flip topDiffAnswered to count score>0 to change.
-      attemptedNote: '"Answered" counts an attempted (non-blank) response, not a correct one.',
+      attemptedNote:
+        "Eligibility uses D3 items answered CORRECTLY against the MAJORITY of D3 items AVAILABLE on each exam (dynamic per exam; recomputed after exclusions) — not attempts, and not a fixed count.",
     };
   }
 
@@ -1884,6 +2241,10 @@ export class InMemoryDataProvider implements DataProvider {
     }
 
     const grades = this.getGrades(cycleId)!;
+    // Element/sub-element levels for the UNOFFICIAL diagnostic report (Part 4) —
+    // a richer, internal/learner breakdown than the official certificate/report.
+    const perf = this.getPerformanceReport(cycleId);
+    const starOf = (lvl: string) => starsFor(lvl, this.grading.starMap);
     // DOWNSTREAM: the Student Summary carries each subject's performance `level`
     // + its report `stars`, and the overall `award`, as free strings. Stars come
     // from the configured level→stars map (ScoringConfig), so an added/removed
@@ -1892,21 +2253,48 @@ export class InMemoryDataProvider implements DataProvider {
     // award label. The next prompt (Settings CRUD + certificates) wires the
     // validation that every configured level has a star mapping and every award
     // has a template slot before generation.
-    const students: StudentSummary[] = grades.rows.map((r) => ({
-      participantId: r.id,
-      name: r.label,
-      award: r.award,
-      subjects: slotDefs.map((d) => {
+    const students: StudentSummary[] = grades.rows.map((r) => {
+      const perfStudent = perf?.students.find((s) => s.participantId === r.id);
+      const unofficial: UnofficialSubject[] = slotDefs.map((d) => {
         const ref = resolve(d.re);
         const cell = ref ? r.grades[ref.id] : undefined;
+        const subjectMeta = ref ? perf?.subjects.find((s) => s.assessmentId === ref.id) : undefined;
+        const result = ref ? perfStudent?.subjects[ref.id] : undefined;
+        const elements: UnofficialElement[] = (subjectMeta?.majorElements ?? []).map((major) => ({
+          major,
+          level: result?.elements[major] ?? "",
+          stars: starOf(result?.elements[major] ?? ""),
+          subs: (subjectMeta?.subElements[major] ?? []).map((sub) => ({
+            sub,
+            level: result?.subElements[major]?.[sub] ?? "",
+            stars: starOf(result?.subElements[major]?.[sub] ?? ""),
+          })),
+        }));
         return {
           slot: d.slot,
           assessment: ref?.name ?? d.slot,
           level: cell?.level ?? "",
           stars: cell?.stars ?? "",
+          elements,
         };
-      }),
-    }));
+      });
+      return {
+        participantId: r.id,
+        name: r.label,
+        award: r.award,
+        subjects: slotDefs.map((d) => {
+          const ref = resolve(d.re);
+          const cell = ref ? r.grades[ref.id] : undefined;
+          return {
+            slot: d.slot,
+            assessment: ref?.name ?? d.slot,
+            level: cell?.level ?? "",
+            stars: cell?.stars ?? "",
+          };
+        }),
+        unofficial,
+      };
+    });
 
     return { cycleId, locked, students, settings, subjectOrder };
   }
@@ -1937,8 +2325,9 @@ export class InMemoryDataProvider implements DataProvider {
       awardLevels: this.grading.awardLevels,
       performanceCuts: this.grading.performanceCuts,
       awardCuts: this.grading.awardCuts,
-      // CONFIRM: award derivation is the placeholder rule (see lib/data/grading.ts).
-      awardRuleUnconfirmed: true,
+      // The award is now the confirmed Layer-2 level-combination rule + D3 cap
+      // (lib/engine/award.ts), not the old overall-score-cut placeholder.
+      awardRuleUnconfirmed: false,
     };
   }
 

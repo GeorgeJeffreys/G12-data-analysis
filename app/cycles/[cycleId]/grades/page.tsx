@@ -18,13 +18,14 @@ import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { AWARD_SHORT } from "@/lib/data/grading";
-import type { GradeCell, GradesModel, StudentComposition } from "@/lib/data/types";
+import type { GradeCell, GradesModel, StudentComposition, PerfReportStudent, PerfReportSubject, PerfElementResult } from "@/lib/data/types";
 
 export default function GradesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
   const model = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
   const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
+  const perf = useProviderData((p) => p.getPerformanceReport(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -32,7 +33,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={5}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={8}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this cycle.</div>
       </CycleShell>
     );
@@ -49,7 +50,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Grades & sign-off"
-      stageIndex={5}
+      stageIndex={8}
       actions={
         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
           <Button variant="ghost" onClick={() => { exportCsv(model); provider.recordExport(cycleId, "Grades & awards (CSV)"); }}>
@@ -175,6 +176,15 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                           >
                             {fmtNum(r.overallRaw)} / {fmtNum(r.overallMax)} · {r.overallPct.toFixed(1)}%
                           </span>
+                          {r.distinctionCap && (
+                            <span
+                              title={`Capped below Distinction — ${r.distinctionCap.correct}/${r.distinctionCap.available} D3 items correct in ${r.distinctionCap.subject}; majority is ${r.distinctionCap.majority}`}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10, fontWeight: 700, color: H.warn, background: H.warnSoft, padding: "1px 7px", borderRadius: 999, whiteSpace: "nowrap" }}
+                            >
+                              <Icon name="lock" size={10} color={H.warn} />
+                              D3 cap · {r.distinctionCap.correct}/{r.distinctionCap.available} (need {r.distinctionCap.majority})
+                            </span>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -189,6 +199,9 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             <CompositionPanel
               student={comp?.students.find((s) => s.participantId === selectedId) ?? null}
               award={model.rows.find((r) => r.id === selectedId)?.award ?? ""}
+              perf={perf?.students.find((s) => s.participantId === selectedId) ?? null}
+              perfSubjects={perf?.subjects ?? []}
+              starMap={model.starMap}
               onBack={() => setSelectedId(null)}
             />
           )}
@@ -262,9 +275,16 @@ function subjectHeader(shortName: string): string {
  * MCQ + Essay + Alterations = subject total (out of its max), per subject. Same
  * click-row → right-panel pattern as Review.
  */
-function CompositionPanel({ student, award, onBack }: { student: StudentComposition | null; award: string; onBack: () => void }) {
+function CompositionPanel({ student, award, perf, perfSubjects, starMap, onBack }: {
+  student: StudentComposition | null;
+  award: string;
+  perf: PerfReportStudent | null;
+  perfSubjects: PerfReportSubject[];
+  starMap: Record<string, string>;
+  onBack: () => void;
+}) {
   return (
-    <aside style={{ width: 340, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", overflow: "auto", padding: 18 }}>
+    <aside style={{ width: 360, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", overflow: "auto", padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
         <button onClick={onBack} className="hf-btn ghost" style={{ fontSize: 12, padding: "3px 8px" }}>← Back</button>
         <div style={{ flex: 1 }} />
@@ -291,11 +311,75 @@ function CompositionPanel({ student, award, onBack }: { student: StudentComposit
                 <div>Alterations <span style={{ float: "right", color: c.alterations ? H.pink : H.ink3 }}>{c.alterations >= 0 ? "+" : ""}{c.alterations}</span></div>
                 <div style={{ borderTop: `1px solid ${H.line2}`, marginTop: 4, paddingTop: 4, fontWeight: 700 }}>Total <span style={{ float: "right", color: H.ink }}>{c.total}/{c.max}</span></div>
               </div>
+              <ElementBreakdown
+                subjectMeta={perfSubjects.find((s) => s.assessmentId === c.assessmentId)}
+                result={perf?.subjects[c.assessmentId]}
+                starMap={starMap}
+              />
             </div>
           ))}
         </div>
       )}
     </aside>
+  );
+}
+
+/** Truncate a long sub-element label, keeping the full text in a title tooltip. */
+function Trunc({ text, max = 30 }: { text: string; max?: number }) {
+  const short = text.length > max ? text.slice(0, max - 1) + "…" : text;
+  return <span title={text} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{short}</span>;
+}
+
+/**
+ * Per-subject major-element / sub-element performance for one student — the
+ * finer-grained breakdown beneath the MCQ/Essay/Alterations composition. Reads
+ * the construct structure (major → sub-elements) from the report; sub-element
+ * labels are long, so they wrap/truncate-with-tooltip.
+ */
+function ElementBreakdown({ subjectMeta, result, starMap }: {
+  subjectMeta?: PerfReportSubject;
+  result?: PerfElementResult;
+  starMap: Record<string, string>;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!subjectMeta || !result || subjectMeta.majorElements.length === 0) return null;
+  const stars = (lvl?: string) => (lvl ? starMap[lvl] ?? "" : "");
+  return (
+    <div style={{ marginTop: 8, borderTop: `1px dashed ${H.line2}`, paddingTop: 7 }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="hf-btn ghost"
+        style={{ fontSize: 10.5, padding: "2px 7px", display: "flex", alignItems: "center", gap: 5 }}
+      >
+        <Icon name={open ? "chev" : "arrow"} size={11} color={H.ink3} />
+        {open ? "Hide" : "Show"} element & sub-element levels
+      </button>
+      {open && (
+        <div style={{ marginTop: 7, display: "flex", flexDirection: "column", gap: 6 }}>
+          {subjectMeta.majorElements.map((el) => {
+            const subs = subjectMeta.subElements?.[el] ?? [];
+            const subLevels = result.subElements?.[el] ?? {};
+            return (
+              <div key={el} style={{ fontSize: 11 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 600 }}>
+                  <Trunc text={el} max={28} />
+                  <span style={{ flex: 1 }} />
+                  <span className="hf-mono" style={{ color: H.pink, letterSpacing: 1 }}>{stars(result.elements[el]) || "·"}</span>
+                  <span className="hf-sub" style={{ fontSize: 10 }}>{result.elements[el] ?? "—"}</span>
+                </div>
+                {subs.map((s) => (
+                  <div key={s} style={{ display: "flex", alignItems: "center", gap: 6, paddingLeft: 12, color: H.ink2, marginTop: 2 }}>
+                    <Trunc text={s} max={30} />
+                    <span style={{ flex: 1 }} />
+                    <span className="hf-mono" style={{ color: H.ink3, letterSpacing: 1 }}>{stars(subLevels[s]) || "·"}</span>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -365,7 +449,8 @@ function exportCsv(model: GradesModel) {
   const header = ["Participant ID", "Participant", ...model.assessments.map((a) => a.name), "Overall award"];
   const lines = [header.join(",")];
   for (const r of model.rows) {
-    const cells = [r.id, r.label, ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""), r.award];
+    // Real Student ID (matches what's shown on screen), not the internal key.
+    const cells = [r.studentId, r.label, ...model.assessments.map((a) => r.grades[a.id]?.level ?? ""), r.award];
     lines.push(cells.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","));
   }
   downloadBlob(new Blob([lines.join("\n")], { type: "text/csv" }), "grades_may_2026.csv");

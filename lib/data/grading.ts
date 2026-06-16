@@ -43,10 +43,11 @@ export const AWARD_SHORT: Record<string, string> = {
 export const DEFAULT_PERFORMANCE_CUTS = [...DEFAULT_SCORING_CONFIG.performanceCuts]; // Outstanding / Exceeds / Meets
 export const DEFAULT_PERFORMANCE_TARGETS = [15, 30, 35]; // cohort % for the top three bands
 
-// CONFIRM: the real overall-award derivation rule is NOT in the source files.
-// This default classifies the overall score into the four award levels using
-// configurable cut-points (mirroring per-assessment banding). It is a
-// placeholder rule, not a verified one — confirm with the assessment team.
+// The overall award is now the CONFIRMED Layer-2 rule: a deterministic lookup
+// from the pattern of the five subject performance levels, plus the per-student
+// D3-majority cap (see `lib/engine/award.ts` / `deriveAward`). It is NOT a cut on
+// an overall score. These award cut-points remain only as defaults for the
+// vestigial "overall" boundary scope; they no longer derive the award.
 export const DEFAULT_AWARD_CUTS = [...DEFAULT_SCORING_CONFIG.awardCuts]; // Distinction / Advanced / Secondary
 export const DEFAULT_AWARD_TARGETS = [10, 25, 35];
 
@@ -86,7 +87,11 @@ export function starsFor(level: string, starMap: Record<string, string>): string
   return starMap[level] ?? "";
 }
 
-/** Overall award from an overall score (CONFIRM: placeholder rule — see above). */
+/**
+ * @deprecated The overall award is no longer a cut on an overall score. Use the
+ * engine's `deriveAward` (Layer-2 level-combination rule + D3 cap). Retained only
+ * so the configurable award cut-points still type-check for the boundary scope.
+ */
 export function awardFor(score: number, awardLevels: string[], awardCuts: number[]): string {
   return classify(score, awardLevels, awardCuts);
 }
