@@ -1,22 +1,30 @@
 "use client";
 
 /**
- * Screen 02 — Cycle overview (the pipeline control room). Shows where the cycle
- * sits in the pipeline, a "Do next" card pointing at the next action, and the
- * assessments in this cycle with their item counts and stage.
+ * Screen 02 — Cycle entry. Opening a cycle no longer shows an in-between
+ * "Pipeline Overview" summary (which mislabelled the stepper's current step).
+ * Instead it lands straight on the cycle's current pipeline step — the next
+ * incomplete action (`doNext.href`) — so the stepper's highlighted step always
+ * matches the screen shown. Mock prior cycles (no detailed data) keep a small
+ * informational page rather than bouncing.
  */
-import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
-import { CycleShell } from "@/components/shell/CycleShell";
-import { Button } from "@/components/ui/primitives";
-import { Icon } from "@/components/ui/icons";
-import { Pipeline } from "@/components/shell/Pipeline";
 
-export default function CycleOverview({ params }: { params: { cycleId: string } }) {
+export default function CycleEntry({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
+  const router = useRouter();
   const cycle = useProviderData((p) => p.getCycle(cycleId), [cycleId]);
+
+  // Real cycles redirect to their current pipeline step. Mock priors have no
+  // step to land on (doNext just points home), so we never redirect them.
+  const target = cycle && !cycle.mock ? cycle.doNext.href : null;
+  useEffect(() => {
+    if (target && target !== `/cycles/${cycleId}`) router.replace(target);
+  }, [target, cycleId, router]);
 
   if (!cycle) {
     return (
@@ -26,88 +34,26 @@ export default function CycleOverview({ params }: { params: { cycleId: string } 
     );
   }
 
-  return (
-    <CycleShell
-      cycleId={cycleId}
-      cycleName={cycle.name}
-      stageIndex={cycle.stageIndex}
-      primary={
-        <Link href={cycle.doNext.href}>
-          <Button variant="pri">
-            {cycle.doNext.cta}
-            <Icon name="arrow" color="#fff" />
-          </Button>
-        </Link>
-      }
-    >
-      <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 22, flex: 1 }}>
-        <div>
-          <div className="hf-lbl" style={{ color: H.ink3 }}>Pipeline overview</div>
-          <div className="hf-h1" style={{ marginTop: 4 }}>
-            {cycle.name} cycle
-            {cycle.mock && (
-              <span style={{ fontSize: 9, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "2px 5px", letterSpacing: 0.5, marginLeft: 10, verticalAlign: "middle" }}>
-                MOCK
-              </span>
-            )}
-          </div>
-          <div className="hf-sub" style={{ marginTop: 7 }}>
-            {cycle.participants.toLocaleString()} participants · {cycle.assessmentCount} assessments · started {cycle.startedAt}
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 18, alignItems: "stretch", flexWrap: "wrap" }}>
-          {/* What's next — status panel; the action is the pinned top-right button */}
-          <div style={{ flex: "1 1 300px", minWidth: 280, borderRadius: 12, padding: "22px 24px", background: H.slate, color: H.cream, position: "relative", overflow: "hidden" }}>
-            <div className="hf-lbl" style={{ color: "rgba(233,237,241,.6)" }}>What’s next</div>
-            <div className="hf-h2" style={{ margin: "10px 0 6px", fontSize: 17, color: "#fff" }}>{cycle.doNext.title}</div>
-            <div style={{ fontSize: 12.5, color: "rgba(233,237,241,.8)", lineHeight: 1.5 }}>{cycle.doNext.body}</div>
-          </div>
-
-          {/* Assessments */}
-          <div className="hf-card" style={{ flex: "1 1 420px", minWidth: 300, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <div style={{ display: "flex", alignItems: "center", padding: "13px 20px", borderBottom: `1px solid ${H.line}`, background: H.tint }}>
-              <span className="hf-lbl" style={{ flex: 1 }}>Assessments in this cycle</span>
-              <span className="hf-lbl">Stage</span>
+  // Mock prior cycle — a locked, illustrative record with no detailed data.
+  if (cycle.mock) {
+    return (
+      <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}>
+        <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 14, flex: 1 }}>
+          <div>
+            <div className="hf-lbl" style={{ color: H.ink3 }}>Locked cycle</div>
+            <div className="hf-h1" style={{ marginTop: 4 }}>{cycle.name} cycle</div>
+            <div className="hf-sub" style={{ marginTop: 7 }}>
+              {cycle.participants.toLocaleString()} participants · {cycle.assessmentCount} assessments · started {cycle.startedAt}
             </div>
-            {cycle.assessments.length === 0 ? (
-              <div className="hf-sub" style={{ padding: "18px 20px" }}>
-                This is a mock prior cycle — no detailed assessment data in this build.
-              </div>
-            ) : (
-              cycle.assessments.map((a, i) => (
-                <Link
-                  key={a.id}
-                  href={`/cycles/${cycleId}/review/${encodeURIComponent(a.id)}`}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    padding: "12px 20px",
-                    borderBottom: i < cycle.assessments.length - 1 ? `1px solid ${H.line}` : "none",
-                    gap: 12,
-                    textDecoration: "none",
-                    color: "inherit",
-                  }}
-                >
-                  <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>
-                    {a.name}
-                    {a.rtl && (
-                      <span className="hf-mono" style={{ fontSize: 9, color: H.ink3, marginLeft: 8, border: `1px solid ${H.line2}`, padding: "1px 5px", borderRadius: 4 }}>
-                        RTL
-                      </span>
-                    )}
-                    {a.excludedCount > 0 && (
-                      <span className="hf-sub" style={{ fontSize: 11, marginLeft: 8 }}>· {a.excludedCount} excluded</span>
-                    )}
-                  </span>
-                  <span className="hf-mono" style={{ fontSize: 11, color: H.ink3, width: 62, textAlign: "right" }}>{a.itemCount} items</span>
-                  <Pipeline active={a.stageIndex} done={a.stageIndex} compact />
-                </Link>
-              ))
-            )}
+          </div>
+          <div className="hf-card" style={{ padding: "18px 20px", maxWidth: 560 }}>
+            <div className="hf-sub">{cycle.doNext.body}</div>
           </div>
         </div>
-      </div>
-    </CycleShell>
-  );
+      </Shell>
+    );
+  }
+
+  // Real cycle — redirecting to the current step; render nothing meanwhile.
+  return null;
 }

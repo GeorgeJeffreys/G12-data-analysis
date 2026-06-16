@@ -146,13 +146,11 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                       style={{ cursor: "pointer", background: on ? H.pinkSoft2 : "transparent", boxShadow: on ? `inset 3px 0 0 ${H.pink}` : "none" }}
                     >
                       <td className="hf-td">
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span className="hf-mono" style={{ fontSize: 11, color: H.ink3 }} title="Student ID">{r.studentId}</span>
-                          <div style={{ minWidth: 0 }}>
-                            <span style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</span>
-                            {/* always-visible, quiet composition; click the row to maximise */}
-                            <InlineComposition cs={compById.get(r.id)} />
-                          </div>
+                        {/* one clean identity column: name (or email) on top,
+                            Student ID as a quiet secondary line beneath it */}
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.label}>{r.label}</div>
+                          <div className="hf-mono" style={{ fontSize: 10.5, color: H.ink3, marginTop: 1 }} title="Student ID">{r.studentId}</div>
                         </div>
                       </td>
                       {model.assessments.map((a) => {
@@ -173,6 +171,9 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                           >
                             {fmtNum(r.overallRaw)} / {fmtNum(r.overallMax)} · {r.overallPct.toFixed(1)}%
                           </span>
+                          {/* score composition (MCQ + Essay + Alt → total) belongs with the
+                              overall score, not under the identifier; click the row for detail */}
+                          <InlineComposition cs={compById.get(r.id)} />
                           {r.distinctionCap && (
                             <span
                               title={`Capped below Distinction — ${r.distinctionCap.correct}/${r.distinctionCap.available} D3 items correct in ${r.distinctionCap.subject}; majority is ${r.distinctionCap.majority}`}
@@ -232,8 +233,9 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 }
 
 /**
- * Discrete, always-visible composition on a grades row — MCQ + Essay + Alterations
- * → total (summed over the student's subjects). Clicking the row maximises this
+ * Discrete, always-visible composition for a grades row — MCQ + Essay + Alterations
+ * → total (summed over the student's subjects). Shown with the Overall score (its
+ * logical home), not under the student identifier. Clicking the row maximises this
  * into the full per-subject right panel (CompositionPanel).
  */
 function InlineComposition({ cs }: { cs?: StudentComposition }) {
@@ -243,7 +245,7 @@ function InlineComposition({ cs }: { cs?: StudentComposition }) {
   const essay = r1(cs.subjects.reduce((t, s) => t + s.essay, 0));
   const alt = r1(cs.subjects.reduce((t, s) => t + s.alterations, 0));
   return (
-    <div className="hf-mono" style={{ fontSize: 10, color: H.ink3, marginTop: 2, display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+    <div className="hf-mono" style={{ fontSize: 10, color: H.ink3, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
       <span>MCQ {mcq}</span>
       <span>+ Essay {essay}</span>
       <span style={{ color: alt ? H.pink : H.ink3 }}>{alt >= 0 ? "+" : "−"} Alt {Math.abs(alt)}</span>
