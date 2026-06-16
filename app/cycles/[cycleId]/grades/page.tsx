@@ -149,7 +149,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                     >
                       <td className="hf-td">
                         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <span className="hf-mono" style={{ fontSize: 11, color: H.ink3 }}>{r.id}</span>
+                          <span className="hf-mono" style={{ fontSize: 11, color: H.ink3 }} title="Student ID">{r.studentId}</span>
                           <div style={{ minWidth: 0 }}>
                             <span style={{ fontWeight: 600, fontSize: 13 }}>{r.label}</span>
                             {/* always-visible, quiet composition; click the row to maximise */}

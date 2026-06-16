@@ -200,7 +200,14 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const itemAssessment = new Map(items.map((it) => [it.id, it.assessment_id]));
 
   const seedParticipants: SeedParticipant[] = participants
-    .map((p, i) => ({ id: p.id, label: p.pseudonym_id || `Student ${String(i + 1).padStart(2, "0")}` }))
+    .map((p, i) => ({
+      id: p.id,
+      // Real full name when present (RLS gates who can read it); fall back to the
+      // pseudonym, then a positional placeholder, so the column is never blank.
+      label: p.full_name || p.pseudonym_id || `Student ${String(i + 1).padStart(2, "0")}`,
+      // Real Student ID (qm_participant_id) for display; the row UUID stays the key.
+      studentId: p.qm_participant_id || p.pseudonym_id || p.id,
+    }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
   const respByAssessment = new Map<string, ResponseRow[]>();

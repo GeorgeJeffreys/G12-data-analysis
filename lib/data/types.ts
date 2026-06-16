@@ -350,7 +350,10 @@ export interface GradeCell {
 }
 
 export interface GradeMatrixRow {
+  /** Stable internal key. */
   id: string;
+  /** Human Student ID for display (the real ID on live data; pseudonym in the demo). */
+  studentId: string;
   label: string;
   /** Per-assessment performance level + stars, keyed by assessment id. */
   grades: Record<string, GradeCell>;

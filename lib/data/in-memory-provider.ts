@@ -865,6 +865,7 @@ export class InMemoryDataProvider implements DataProvider {
       }
       return {
         id: p.id,
+        studentId: p.studentId ?? p.id,
         label: p.label,
         grades,
         award,
