@@ -20,6 +20,7 @@ import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
+import { InfoTip } from "@/components/ui/infotip";
 
 // MOCK: there is no prior cycle. Cross-cycle comparison is driven by these
 // labelled fixtures and gated by SHOW_CROSS_CYCLE so it's trivial to switch to
@@ -116,9 +117,10 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                 : "Type the share of students you want in each level. We solve for the nearest cut-points that achieve it."}
             </div>
           </div>
-          <div style={{ display: "flex", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 380, flex: "0 0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 400, flex: "0 0 auto" }}>
             {seg("cuts", "Fix boundaries", "Set scores → see counts")}
             {seg("pct", "Fix cohort %", "Set shares → solve scores")}
+            <span style={{ flex: "0 0 auto", paddingRight: 4 }}><CohortPctInfo /></span>
           </div>
         </div>
 
@@ -278,6 +280,31 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
         />
       </div>
     </CycleShell>
+  );
+}
+
+/**
+ * Inline plain-language definition of "Fix cohort %", reusing the shared InfoTip
+ * popover (the same affordance introduced for the Item Quality definition).
+ * Accurate to what the mode does post-Wave-3b: it backsolves cut-scores from a
+ * target distribution — it is NOT a manual percentage cut.
+ */
+function CohortPctInfo() {
+  return (
+    <InfoTip label="What does Fix cohort % do?" width={300}>
+      <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
+        <div style={{ fontWeight: 700, color: H.ink, fontSize: 12, marginBottom: 4 }}>Fix cohort %</div>
+        <p style={{ margin: "0 0 7px" }}>
+          Set the target proportion of students you expect in each performance level. The app then{" "}
+          <b style={{ color: H.ink }}>backsolves the raw cut-scores</b> that would produce that distribution — a
+          starting point you can adjust.
+        </p>
+        <p style={{ margin: 0, color: H.ink3, fontSize: 10.5 }}>
+          At this cohort size exact percentages aren’t always achievable, so it shows the nearest achievable result
+          next to your target.
+        </p>
+      </div>
+    </InfoTip>
   );
 }
 

@@ -462,7 +462,10 @@ function ItemRowView({
     >
       <td style={{ ...td, verticalAlign: "top", maxWidth: 360 }}>
         <div style={{ display: "flex", gap: 8, alignItems: expanded ? "flex-start" : "center" }}>
-          <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>{qLabel}</span>
+          <span style={{ display: "flex", flexDirection: "column", flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>
+            <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, lineHeight: 1.1 }}>{qLabel}</span>
+            <span className="hf-mono hf-sub" style={{ fontSize: 9.5, lineHeight: 1.2 }} title="Question ID (from the Questionmark export)">{it.id}</span>
+          </span>
           <span style={{ flex: 1, minWidth: 0, fontSize: FONT, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
             {expanded ? (it.wording ?? "—") : firstLine(it.wording)}
           </span>
@@ -547,6 +550,7 @@ function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel;
       {/* header — statistics only, no question wording */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span className="hf-mono" style={{ fontWeight: 700, fontSize: 15 }}>{detail.qLabel}</span>
+        <span className="hf-mono hf-sub" style={{ fontSize: 11 }} title="Question ID (from the Questionmark export)">ID {detail.id}</span>
         {detail.demand && <Pill>{detail.demand}</Pill>}
         {detail.major && <span className="hf-sub" style={{ fontSize: 11 }}>{detail.major}</span>}
         <div style={{ flex: 1 }} />

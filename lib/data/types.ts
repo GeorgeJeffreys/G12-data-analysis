@@ -358,6 +358,17 @@ export interface ReliabilityModel {
 }
 
 // --- Mark composition (MCQ + Essay + Alterations = subject total) ------------
+/**
+ * A student's MCQ score on the items carrying one demand tag (D1/D2/D3), out of
+ * that group's max. A rollup of the already-computed item scores by demand tag —
+ * additive reporting only, no change to scoring. Mirrors the "Overall Scores by
+ * Demand Level" sheet of the MCQ_Overall_Score_Analysis export.
+ */
+export interface DemandScore {
+  demand: string;
+  score: number;
+  max: number;
+}
 export interface SubjectComposition {
   assessmentId: string;
   name: string;
@@ -368,6 +379,8 @@ export interface SubjectComposition {
   total: number;
   max: number;
   pct: number;
+  /** Retained-MCQ score split by demand level (D1/D2/D3), in fixed order. */
+  byDemand: DemandScore[];
 }
 export interface StudentComposition {
   participantId: string;

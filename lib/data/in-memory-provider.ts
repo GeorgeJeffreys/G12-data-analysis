@@ -110,6 +110,7 @@ import {
   type CompositionModel,
   type StudentComposition,
   type SubjectComposition,
+  type DemandScore,
   type IncidentDecision,
   type SafeguardConfig,
   type SafeguardResult,
@@ -2011,7 +2012,32 @@ export class InMemoryDataProvider implements DataProvider {
     // participant -> assessment -> ParticipantScore
     const byP = new Map<string, SubjectComposition[]>();
     for (const a of this.seed.liveCycle.assessments) {
+      // Per-demand rollup over the SAME retained MCQ items the engine scores
+      // (cohort-excluded items dropped). Fixed demand levels D1/D2/D3, only those
+      // present as items. Additive reporting — no change to scoring.
+      const excluded = this.excludedSet(cycleId, a.id);
+      const demandLevels = ["D1", "D2", "D3"] as const;
+      const demandItems = new Map<string, { ids: Set<string>; max: number }>();
+      for (const it of a.items) {
+        if ((it.maxScore ?? 1) < 1 || excluded.has(it.id)) continue;
+        if (it.demand !== "D1" && it.demand !== "D2" && it.demand !== "D3") continue;
+        let g = demandItems.get(it.demand);
+        if (!g) demandItems.set(it.demand, (g = { ids: new Set(), max: 0 }));
+        g.ids.add(it.id);
+        g.max += it.maxScore ?? 1;
+      }
+      const scoreByPI = new Map<string, number>(); // `${pid}␟${itemId}` -> score
+      for (const r of a.responses) scoreByPI.set(`${r.p}␟${r.i}`, r.s);
+
       for (const [pid, s] of this.pctByParticipant(cycleId, a)) {
+        const byDemand: DemandScore[] = demandLevels
+          .filter((d) => demandItems.has(d))
+          .map((d) => {
+            const g = demandItems.get(d)!;
+            let score = 0;
+            for (const id of g.ids) score += scoreByPI.get(`${pid}␟${id}`) ?? 0;
+            return { demand: d, score: round(score, 2), max: g.max };
+          });
         const list = byP.get(pid) ?? [];
         list.push({
           assessmentId: a.id,
@@ -2023,6 +2049,7 @@ export class InMemoryDataProvider implements DataProvider {
           total: s.raw,
           max: s.max,
           pct: s.pct,
+          byDemand,
         });
         byP.set(pid, list);
       }

@@ -18,7 +18,7 @@ import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { AWARD_SHORT } from "@/lib/data/grading";
-import type { GradeCell, GradesModel, StudentComposition, PerfReportStudent, PerfReportSubject, PerfElementResult } from "@/lib/data/types";
+import type { GradeCell, GradesModel, StudentComposition, PerfReportStudent, PerfReportSubject, PerfElementResult, DemandScore } from "@/lib/data/types";
 
 export default function GradesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -311,6 +311,7 @@ function CompositionPanel({ student, award, perf, perfSubjects, starMap, onBack 
                 <div>Alterations <span style={{ float: "right", color: c.alterations ? H.pink : H.ink3 }}>{c.alterations >= 0 ? "+" : ""}{c.alterations}</span></div>
                 <div style={{ borderTop: `1px solid ${H.line2}`, marginTop: 4, paddingTop: 4, fontWeight: 700 }}>Total <span style={{ float: "right", color: H.ink }}>{c.total}/{c.max}</span></div>
               </div>
+              <DemandBreakdown rows={c.byDemand} />
               <ElementBreakdown
                 subjectMeta={perfSubjects.find((s) => s.assessmentId === c.assessmentId)}
                 result={perf?.subjects[c.assessmentId]}
@@ -321,6 +322,33 @@ function CompositionPanel({ student, award, perf, perfSubjects, starMap, onBack 
         </div>
       )}
     </aside>
+  );
+}
+
+/**
+ * Per-subject MCQ score split by demand level (D1/D2/D3) for one student — a
+ * rollup of the already-computed item scores by demand tag (additive reporting,
+ * no scoring change), mirroring the "Overall Scores by Demand Level" export. Sits
+ * with the score composition since demand scores are MCQ marks, not levels.
+ */
+function DemandBreakdown({ rows }: { rows: DemandScore[] }) {
+  if (!rows || rows.length === 0) return null;
+  return (
+    <div style={{ marginTop: 8, borderTop: `1px dashed ${H.line2}`, paddingTop: 7 }}>
+      <div className="hf-lbl" style={{ fontSize: 10, marginBottom: 5 }}>By demand level</div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {rows.map((d) => (
+          <span
+            key={d.demand}
+            title={`${d.demand}: ${d.score} of ${d.max} marks`}
+            style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 11, background: H.tint, border: `1px solid ${H.line}`, borderRadius: 6, padding: "2px 8px" }}
+          >
+            <span className="hf-mono" style={{ fontWeight: 700, color: H.ink2 }}>{d.demand}</span>
+            <span className="hf-mono" style={{ color: H.ink }}>{d.score}<span style={{ color: H.ink3 }}>/{d.max}</span></span>
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
