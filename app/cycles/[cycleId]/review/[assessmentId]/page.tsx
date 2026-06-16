@@ -125,7 +125,10 @@ export default function ReviewPage({
   // Selection drives the dual-mode right panel; zoom scales the whole table.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [panelWidth, setPanelWidth] = useState(322);
+  const [panelWidth, setPanelWidth] = useState(352);
+  // The distribution panel is collapsible so the item table — the priority —
+  // can take the full width. Selecting an item always reveals the deep-dive.
+  const [panelOpen, setPanelOpen] = useState(true);
   const { zoom, setZoom, scrollRef: tableScrollRef, zoomWrapStyle } = useTableZoom();
 
   const detail = useProviderData(
@@ -184,7 +187,12 @@ export default function ReviewPage({
     setReasonFor(null);
   };
   const restore = (itemId: string) => provider.setItemExcluded(cycleId, assessmentId, itemId, false);
-  const select = (itemId: string) => setSelectedId((cur) => (cur === itemId ? null : itemId));
+  const select = (itemId: string) =>
+    setSelectedId((cur) => {
+      const next = cur === itemId ? null : itemId;
+      if (next) setPanelOpen(true); // selecting a row reveals its deep-dive
+      return next;
+    });
 
   const Num = ({ v }: { v: number | null }) => (
     <span className="hf-mono" style={{ fontSize: 12.5, color: v !== null && v < 0.2 ? H.bad : H.ink }}>
@@ -305,10 +313,13 @@ export default function ReviewPage({
           </div>
         </div>
 
-        {/* right panel — dual-mode: cohort summary by default, deep-dive when a row is selected */}
+        {/* right panel — dual-mode (cohort summary ⇄ item deep-dive), collapsible
+            so the item table can use the full width when it's closed */}
         <RightPanel
           width={panelWidth}
           onResize={setPanelWidth}
+          open={panelOpen}
+          onToggle={() => setPanelOpen((v) => !v)}
           selected={!!selectedId}
           onBack={() => setSelectedId(null)}
           detail={detail}
@@ -321,10 +332,12 @@ export default function ReviewPage({
   );
 }
 
-// ── right panel: dual-mode (cohort summary ⇄ item deep-dive) ────────────────
+// ── right panel: dual-mode (cohort summary ⇄ item deep-dive), collapsible ────
 function RightPanel({
   width,
   onResize,
+  open,
+  onToggle,
   selected,
   onBack,
   detail,
@@ -334,6 +347,8 @@ function RightPanel({
 }: {
   width: number;
   onResize: (w: number) => void;
+  open: boolean;
+  onToggle: () => void;
   selected: boolean;
   onBack: () => void;
   detail: ItemDetailModel | null | undefined;
@@ -345,7 +360,7 @@ function RightPanel({
     e.preventDefault();
     const startX = e.clientX;
     const startW = width;
-    const move = (ev: PointerEvent) => onResize(Math.max(280, Math.min(560, startW + (startX - ev.clientX))));
+    const move = (ev: PointerEvent) => onResize(Math.max(300, Math.min(600, startW + (startX - ev.clientX))));
     const up = () => {
       document.removeEventListener("pointermove", move);
       document.removeEventListener("pointerup", up);
@@ -353,39 +368,86 @@ function RightPanel({
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", up);
   };
+
+  // Collapsed — a thin rail that gives the table full width; click to reopen.
+  if (!open) {
+    return (
+      <aside style={{ width: 38, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, display: "flex", flexDirection: "column", alignItems: "center" }}>
+        <button
+          onClick={onToggle}
+          title="Show score distribution"
+          aria-label="Show score distribution"
+          aria-expanded={false}
+          style={{ marginTop: 12, border: `1px solid ${H.line2}`, background: H.paper, borderRadius: 7, cursor: "pointer", padding: "8px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
+        >
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="2" y="8" width="3" height="6" rx="1" fill={H.bar} />
+            <rect x="6.5" y="4" width="3" height="10" rx="1" fill={H.bar} />
+            <rect x="11" y="6" width="3" height="8" rx="1" fill={H.bar} />
+          </svg>
+          <span style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 10.5, fontWeight: 700, color: H.ink2, letterSpacing: 0.5, textTransform: "uppercase" }}>
+            Distribution
+          </span>
+        </button>
+      </aside>
+    );
+  }
+
   return (
     <aside style={{ width, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", display: "flex", position: "relative", minWidth: 0 }}>
       <div onPointerDown={startResize} title="Drag to resize" style={{ position: "absolute", left: -3, top: 0, bottom: 0, width: 6, cursor: "ew-resize", zIndex: 2 }} />
       <div style={{ flex: 1, overflow: "auto", padding: 20, minWidth: 0 }}>
         {selected ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <button onClick={onBack} className="hf-btn ghost" style={{ alignSelf: "flex-start", fontSize: 12 }}>
-              ← Back to cohort
-            </button>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <button onClick={onBack} className="hf-btn ghost" style={{ fontSize: 12 }}>
+                ← Back to cohort
+              </button>
+              <div style={{ flex: 1 }} />
+              <CollapseButton onToggle={onToggle} />
+            </div>
             {detail ? <DetailBody detail={detail} onExclude={onExclude} onRestore={onRestore} /> : (
               <div className="hf-sub" style={{ padding: 20 }}>Loading…</div>
             )}
           </div>
         ) : (
-          <CohortPanel model={model} />
+          <CohortPanel model={model} onCollapse={onToggle} />
         )}
       </div>
     </aside>
   );
 }
 
+/** Hide the right panel so the item table takes the full width. */
+function CollapseButton({ onToggle }: { onToggle: () => void }) {
+  return (
+    <button
+      onClick={onToggle}
+      className="hf-btn ghost"
+      title="Hide panel — give the item table full width"
+      aria-label="Hide score distribution panel"
+      aria-expanded
+      style={{ fontSize: 11.5, padding: "3px 8px" }}
+    >
+      Hide ⟩
+    </button>
+  );
+}
+
 /** The default right-panel content: the cohort summary (the original right rail). */
-function CohortPanel({ model }: { model: ReviewModel }) {
+function CohortPanel({ model, onCollapse }: { model: ReviewModel; onCollapse?: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
       <div>
-        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 11 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
           <span className="hf-lbl">Score distribution</span>
           <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: H.pink, fontWeight: 700 }}>
             <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} /> LIVE
           </span>
+          <div style={{ flex: 1 }} />
+          {onCollapse && <CollapseButton onToggle={onCollapse} />}
         </div>
-        <Histogram data={model.distribution} height={94} />
+        <Histogram data={model.distribution} height={120} />
         <div className="hf-sub" style={{ marginTop: 7 }}>Cohort mean {model.cohortMean}% · σ {model.cohortSd}</div>
       </div>
       <div>
