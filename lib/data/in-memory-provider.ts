@@ -5,7 +5,14 @@
  * reload — there is no database in this build.
  */
 
-import { getEngine, defaultScoringConfig } from "@/lib/engine";
+import {
+  getEngine,
+  defaultScoringConfig,
+  deriveAward,
+  qualifiesForDistinctionByLevels,
+  d3MajorityThreshold,
+  passesD3Majority,
+} from "@/lib/engine";
 import type {
   Alteration,
   EssayMark,
@@ -117,6 +124,27 @@ interface BoundaryState {
   mode: BoundaryMode;
   cuts: number[];
   targets: number[];
+}
+
+/** One exam's D3-majority working for a student (Layer 1b). */
+interface D3ExamStatus {
+  assessmentId: string;
+  name: string;
+  shortName: string;
+  /** D3 items the student answered correctly (score > 0). */
+  correct: number;
+  /** D3 items available on the exam (after cohort item exclusions). */
+  available: number;
+  /** Strictly-more-than-half threshold for `available`. */
+  majority: number;
+  pass: boolean;
+}
+/** A student's overall D3 cap result across every exam carrying D3 items. */
+interface D3CapStatus {
+  pass: boolean;
+  exams: D3ExamStatus[];
+  /** The first exam that failed the majority (drives the visible "why"). */
+  failing: D3ExamStatus | null;
 }
 
 // --- small numeric helpers ---------------------------------------------------
@@ -846,31 +874,46 @@ export class InMemoryDataProvider implements DataProvider {
       pctMaps.set(a.id, m);
       cutsByScope.set(a.id, this.boundaryState(cycleId, a.id).cuts);
     }
-    const awardCuts = this.boundaryState(cycleId, "overall").cuts;
     const overallScores = this.overallScoreByParticipant(cycleId);
-    const safeguard = this.distinctionDecisions(cycleId); // studentId -> capped?
+    // Layer 2: the award is the deterministic lookup from the five subject
+    // performance levels (NOT a cut on an overall score), with the per-student D3
+    // cap (Layer 1b) applied to Distinction eligibility.
+    const d3Cap = this.d3CapByParticipant(cycleId);
+    const overrides = this.distinctionOverrides.get(cycleId);
 
     const rows = this.seed.liveCycle.participants.map((p) => {
       const grades: Record<string, { level: string; stars: string }> = {};
+      const subjectLevels: string[] = [];
       for (const a of this.seed.liveCycle.assessments) {
         const pct = pctMaps.get(a.id)?.get(p.id);
         const level = pct === undefined ? "" : classify(pct, perfLevels, cutsByScope.get(a.id)!);
         grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
+        subjectLevels.push(level);
       }
       const score = overallScores.get(p.id);
-      const op = score?.pct;
-      let award = op === undefined ? "" : classify(op, awardLevels, awardCuts);
-      // Distinction safeguard: cap a Distinction that fell short of the rule
-      // (unless a Lead overrode it). awardLevels[1] = Advanced achievement.
-      if (award === awardLevels[0] && safeguard.get(p.id) === "capped") {
-        award = awardLevels[1] ?? award;
-      }
+      const d3 = d3Cap.get(p.id);
+      const overridden = overrides?.has(p.id) ?? false;
+      const outcome = deriveAward(
+        { subjectLevels, d3Pass: (d3?.pass ?? true) || overridden },
+        { performanceLevels: perfLevels, awardLevels },
+      );
+      // Surface the working only where the D3 cap actually denied a Distinction.
+      const distinctionCap =
+        outcome.d3Capped && !overridden && d3?.failing
+          ? {
+              subject: d3.failing.shortName,
+              correct: d3.failing.correct,
+              available: d3.failing.available,
+              majority: d3.failing.majority,
+            }
+          : null;
       return {
         id: p.id,
         studentId: p.studentId ?? p.id,
         label: p.label,
         grades,
-        award,
+        award: outcome.award,
+        distinctionCap,
         overallRaw: round(score?.raw ?? 0, 1),
         overallMax: round(score?.max ?? 0, 1),
         overallPct: round(score?.pct ?? 0, 1),
@@ -1560,41 +1603,101 @@ export class InMemoryDataProvider implements DataProvider {
     }
     return n;
   }
-  /** Participants whose provisional overall award is the top award (before the safeguard). */
+  /**
+   * D3 status for one student on one assessment: the count of **available** D3
+   * items (top-difficulty, after cohort item exclusions) and how many the student
+   * answered **correctly** (score > 0). This is the corrected metric — correct,
+   * not attempted; available, not attempted.
+   */
+  private d3StatusFor(
+    cycleId: string,
+    a: SeedAssessment,
+    studentId: string,
+    demand: string,
+  ): { correct: number; available: number; majority: number } {
+    const excluded = this.excludedSet(cycleId, a.id);
+    const pool = new Set(a.items.filter((it) => it.demand === demand && !excluded.has(it.id)).map((it) => it.id));
+    let correct = 0;
+    for (const r of a.responses) {
+      if (r.p !== studentId || !pool.has(r.i)) continue;
+      if (r.s > 0) correct += 1;
+    }
+    return { correct, available: pool.size, majority: d3MajorityThreshold(pool.size) };
+  }
+
+  /**
+   * Per-student D3-majority cap (Layer 1b). A student passes only if they cleared
+   * the majority of available D3 items on **every** exam that carries D3 items;
+   * a single exam below its majority caps them below Distinction. Surfaces the
+   * per-exam working and the first failing exam so the cap is explainable.
+   */
+  private d3CapByParticipant(cycleId: string): Map<string, D3CapStatus> {
+    const demand = this.resolveTopDifficulty();
+    const out = new Map<string, D3CapStatus>();
+    for (const p of this.seed.liveCycle.participants) {
+      const exams: D3ExamStatus[] = [];
+      for (const a of this.seed.liveCycle.assessments) {
+        const { correct, available, majority } = this.d3StatusFor(cycleId, a, p.id, demand);
+        if (available <= 0) continue; // no D3 items on this exam — cannot deny anyone
+        exams.push({
+          assessmentId: a.id,
+          name: a.name,
+          shortName: a.shortName,
+          correct,
+          available,
+          majority,
+          pass: passesD3Majority(correct, available),
+        });
+      }
+      const failing = exams.find((e) => !e.pass) ?? null;
+      out.set(p.id, { pass: !failing, exams, failing });
+    }
+    return out;
+  }
+
+  /** Per-participant subject performance levels, in assessment order (Layer 1). */
+  private subjectLevelsByParticipant(cycleId: string): Map<string, string[]> {
+    const perfLevels = this.grading.performanceLevels;
+    const ids = this.seed.liveCycle.participants.map((p) => p.id);
+    const out = new Map<string, string[]>(ids.map((id) => [id, []]));
+    for (const a of this.seed.liveCycle.assessments) {
+      const cuts = this.boundaryState(cycleId, a.id).cuts;
+      const pct = this.pctByParticipant(cycleId, a);
+      for (const id of ids) {
+        const v = pct.get(id);
+        out.get(id)!.push(v === undefined ? "" : classify(v.pct, perfLevels, cuts));
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Participants whose **level pattern** qualifies for Distinction (★★★ in ≥3 AND
+   * ≥★ Meets in the rest) — i.e. "in line for Distinction", before the D3 cap.
+   * The award no longer comes from a cut on an overall score (the old placeholder);
+   * it is the deterministic Layer-2 lookup, so candidacy is a level-pattern test.
+   */
   private provisionalDistinctionIds(cycleId: string): string[] {
-    const awardLevels = this.grading.awardLevels;
-    const topAward = awardLevels[0] ?? "";
-    const awardCuts = this.boundaryState(cycleId, "overall").cuts;
-    const overall = this.overallPctByParticipant(cycleId);
+    const perfLevels = this.grading.performanceLevels;
+    const levelsByP = this.subjectLevelsByParticipant(cycleId);
     const ids: string[] = [];
     for (const p of this.seed.liveCycle.participants) {
-      const op = overall.get(p.id);
-      if (op === undefined) continue;
-      if (classify(op, awardLevels, awardCuts) === topAward) ids.push(p.id);
+      const levels = levelsByP.get(p.id) ?? [];
+      if (qualifiesForDistinctionByLevels(levels, perfLevels)) ids.push(p.id);
     }
     return ids;
   }
   /** studentId → safeguard result, for the grade-matrix cap (used by getGrades). */
   private distinctionDecisions(cycleId: string): Map<string, SafeguardResult> {
-    const demand = this.resolveTopDifficulty();
-    const threshold = this.safeguard.distinctionThreshold;
     const overrides = this.distinctionOverrides.get(cycleId);
+    const d3 = this.d3CapByParticipant(cycleId);
     const out = new Map<string, SafeguardResult>();
     for (const sid of this.provisionalDistinctionIds(cycleId)) {
       if (overrides?.has(sid)) {
         out.set(sid, "override");
         continue;
       }
-      let capped = false;
-      for (const a of this.seed.liveCycle.assessments) {
-        const pool = a.items.filter((it) => it.demand === demand).length;
-        if (pool < threshold) continue; // can't require more top-difficulty items than exist
-        if (this.topDiffAnswered(cycleId, a, sid, demand) < threshold) {
-          capped = true;
-          break;
-        }
-      }
-      out.set(sid, capped ? "capped" : "pass");
+      out.set(sid, d3.get(sid)?.pass === false ? "capped" : "pass");
     }
     return out;
   }
@@ -1787,8 +1890,9 @@ export class InMemoryDataProvider implements DataProvider {
       awardLevels: this.grading.awardLevels,
       performanceCuts: this.grading.performanceCuts,
       awardCuts: this.grading.awardCuts,
-      // CONFIRM: award derivation is the placeholder rule (see lib/data/grading.ts).
-      awardRuleUnconfirmed: true,
+      // The award is now the confirmed Layer-2 level-combination rule + D3 cap
+      // (lib/engine/award.ts), not the old overall-score-cut placeholder.
+      awardRuleUnconfirmed: false,
     };
   }
 

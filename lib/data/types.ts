@@ -359,6 +359,21 @@ export interface GradeMatrixRow {
   grades: Record<string, GradeCell>;
   /** Overall award level. */
   award: string;
+  /**
+   * Present only when the student's level pattern qualified for Distinction but
+   * the D3-majority cap denied it — the visible "why" (e.g. 3/7 correct, majority
+   * 4 in the named subject). Null/absent otherwise.
+   */
+  distinctionCap?: {
+    /** Short subject name of the exam that failed the majority. */
+    subject: string;
+    /** D3 items answered correctly on that exam. */
+    correct: number;
+    /** D3 items available on that exam. */
+    available: number;
+    /** The majority threshold (strictly more than half of available). */
+    majority: number;
+  } | null;
   /** Overall raw score across all subjects (MCQ + essay + alterations). */
   overallRaw: number;
   /** Maximum attainable overall score. */
