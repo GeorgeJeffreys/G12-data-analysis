@@ -5,6 +5,7 @@
  */
 
 import type { QualityRating } from "@/lib/engine";
+import type { PerCutSuggestion } from "@/lib/engine/cut-scores";
 import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { SeedPreview } from "./seed-types";
@@ -323,6 +324,39 @@ export interface BoundaryScopeRef {
   label: string;
 }
 
+/**
+ * Cohort-level ½-D3 sanity check on the Outstanding cut (Wave 3b Part 3).
+ * A WARNING, not a hard clamp — and the precise "cut implies ½-D3" rule is
+ * flagged as a methodology nuance for human confirmation (see cut-scores.ts).
+ */
+export interface D3HalfWarning {
+  /** False when the subject has no D3 items or no Outstanding-band students. */
+  applicable: boolean;
+  /** True when no Outstanding student cleared the cut without ≥ ½ D3 correct. */
+  consistent: boolean;
+  d3Total: number;
+  halfThreshold: number;
+  outstandingCount: number;
+  belowHalf: number;
+  /** Human copy describing the (confirmation-pending) interpretation. */
+  note: string;
+}
+
+/**
+ * The backsolved suggestion derived from the current target distribution — the
+ * "what the targets imply" working, shown honestly with target-vs-achieved.
+ */
+export interface BoundarySuggestion {
+  /** Suggested cuts after guard-rails, length L−1. */
+  cuts: number[];
+  /** Per-cut working (distribution value, clamp, tie, target-vs-achieved). */
+  perCut: PerCutSuggestion[];
+  /** Targets the suggestion was solved from. */
+  targets: number[];
+  /** ½-D3 sanity check against the suggested Outstanding cut. */
+  d3: D3HalfWarning;
+}
+
 export interface BoundaryModel {
   cycleId: string;
   scope: string;
@@ -342,6 +376,20 @@ export interface BoundaryModel {
   stats: { mean: number; median: number; sd: number; itemsScored: number; excluded: number };
   n: number;
   locked: boolean;
+  /** Policy hard bounds (percent of subject max). */
+  guardrails: { floorPct: number; ceilingPct: number };
+  /** Subject total max (raw marks) — lets the UI show raw cut alongside %. */
+  maxRaw: number;
+  /** Backsolved suggestion from the CURRENT targets (recomputed every read). */
+  suggestion: BoundarySuggestion;
+  /**
+   * Committed suggestion snapshot, per cut. When a cut equals its snapshot it is
+   * "suggested"; when it differs the user has "edited" it. null until a
+   * suggestion has been adopted as the editable starting point.
+   */
+  suggestedCuts: number[] | null;
+  /** ½-D3 warning evaluated against the EFFECTIVE (current) Outstanding cut. */
+  d3Warning: D3HalfWarning;
 }
 
 export interface GradeCell {

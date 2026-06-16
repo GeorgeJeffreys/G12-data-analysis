@@ -17,6 +17,11 @@ import type {
   ResponseRecord,
   ScoringConfig,
 } from "@/lib/engine";
+import {
+  backsolveCuts,
+  checkOutstandingHalfD3,
+  POLICY_GUARDRAILS,
+} from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
 import type { Seed, SeedAssessment, SeedItem } from "./seed-types";
 import type {
@@ -39,6 +44,7 @@ import {
   type AuditType,
   type BoundaryMode,
   type BoundaryModel,
+  type D3HalfWarning,
   type BrandingConfig,
   type ConfigModel,
   type CompareColumn,
@@ -117,6 +123,10 @@ interface BoundaryState {
   mode: BoundaryMode;
   cuts: number[];
   targets: number[];
+  /** Committed backsolve snapshot — the suggested starting point, per cut. */
+  suggested?: number[];
+  /** Per-cut deliberate guard-rail waiver (value knowingly outside policy bounds). */
+  waived?: boolean[];
 }
 
 // --- small numeric helpers ---------------------------------------------------
@@ -700,6 +710,122 @@ export class InMemoryDataProvider implements DataProvider {
     return [...this.pctByParticipant(cycleId, a).values()].map((v) => v.pct);
   }
 
+  /** Subject total max (raw marks) for a scope, so the UI can show raw alongside %. */
+  private scopeMaxRaw(cycleId: string, scope: string): number {
+    if (scope === "overall") {
+      let max = 0;
+      for (const a of this.seed.liveCycle.assessments) {
+        const vals = [...this.pctByParticipant(cycleId, a).values()].map((v) => v.max);
+        max += vals.length ? Math.max(...vals) : 0;
+      }
+      return max;
+    }
+    const a = this.assessment(scope);
+    if (!a) return 0;
+    const vals = [...this.pctByParticipant(cycleId, a).values()].map((v) => v.max);
+    return vals.length ? Math.max(...vals) : 0;
+  }
+
+  /**
+   * studentId → number of D3 (top-difficulty) items answered CORRECTLY, for a
+   * scope. Read-only; the cut-score lane uses this for the cohort-level ½-D3
+   * sanity check on the Outstanding cut.
+   *
+   * LANE NOTE (Wave 3b): Wave 3a may add related per-student D3 logic (its
+   * per-student Distinction cap). This helper is deliberately small and isolated
+   * so the two can be reconciled / de-duplicated trivially at merge — do not
+   * fold award or per-student-cap logic in here.
+   *
+   * CONFIRM — "correct" is interpreted as FULL MARKS on the item
+   * (score ≥ item maxScore). The existing safeguard counts "attempted" (any
+   * non-blank response); this helper counts correct on purpose. Flip the
+   * predicate if the methodology says otherwise.
+   */
+  private computeD3CorrectByStudent(cycleId: string, scope: string): Map<string, number> {
+    void cycleId;
+    const demand = this.resolveTopDifficulty();
+    const out = new Map<string, number>();
+    const asms =
+      scope === "overall"
+        ? this.seed.liveCycle.assessments
+        : this.seed.liveCycle.assessments.filter((a) => a.id === scope);
+    for (const a of asms) {
+      const pool = new Map(a.items.filter((it) => it.demand === demand).map((it) => [it.id, it.maxScore]));
+      for (const r of a.responses) {
+        if (!pool.has(r.i)) continue;
+        const maxScore = pool.get(r.i)!;
+        const correct = maxScore > 0 ? r.s >= maxScore : r.s > 0;
+        if (correct) out.set(r.p, (out.get(r.p) ?? 0) + 1);
+        else if (!out.has(r.p)) out.set(r.p, out.get(r.p) ?? 0);
+      }
+    }
+    return out;
+  }
+
+  /** Count of D3 (top-difficulty) items in a scope. */
+  private scopeD3Total(scope: string): number {
+    const demand = this.resolveTopDifficulty();
+    const asms =
+      scope === "overall"
+        ? this.seed.liveCycle.assessments
+        : this.seed.liveCycle.assessments.filter((a) => a.id === scope);
+    let total = 0;
+    for (const a of asms) total += a.items.filter((it) => it.demand === demand).length;
+    return total;
+  }
+
+  /**
+   * ½-D3 cohort sanity check for an Outstanding cut (percent). Looks at the
+   * students who clear the cut and asks whether they all reached ≥ ½ of D3 items
+   * correct. Warning only — never a clamp. See cut-scores.ts for the flagged
+   * interpretation.
+   */
+  private d3WarningForCut(cycleId: string, scope: string, outstandingCutPct: number): D3HalfWarning {
+    const d3Total = this.scopeD3Total(scope);
+    const d3Correct = this.computeD3CorrectByStudent(cycleId, scope);
+    const max = this.scopeMaxRaw(cycleId, scope);
+    // Students at/above the Outstanding cut, by percent of subject max.
+    const pctMap = this.scopePctByStudent(cycleId, scope);
+    const cleared: number[] = [];
+    for (const [pid, pct] of pctMap) {
+      if (pct >= outstandingCutPct) cleared.push(d3Correct.get(pid) ?? 0);
+    }
+    void max;
+    const r = checkOutstandingHalfD3(cleared, d3Total);
+    return {
+      applicable: d3Total > 0 && r.outstandingCount > 0,
+      consistent: r.consistent,
+      d3Total: r.d3Total,
+      halfThreshold: r.halfThreshold,
+      outstandingCount: r.outstandingCount,
+      belowHalf: r.belowHalf,
+      note: r.note,
+    };
+  }
+
+  /** studentId → percent of subject max for a scope (mirrors scopePcts, keyed). */
+  private scopePctByStudent(cycleId: string, scope: string): Map<string, number> {
+    if (scope === "overall") {
+      const totals = new Map<string, { raw: number; max: number }>();
+      for (const a of this.seed.liveCycle.assessments) {
+        for (const [pid, v] of this.pctByParticipant(cycleId, a)) {
+          const t = totals.get(pid) ?? { raw: 0, max: 0 };
+          t.raw += v.raw;
+          t.max += v.max;
+          totals.set(pid, t);
+        }
+      }
+      const out = new Map<string, number>();
+      for (const [pid, t] of totals) if (t.max > 0) out.set(pid, (t.raw / t.max) * 100);
+      return out;
+    }
+    const a = this.assessment(scope);
+    const out = new Map<string, number>();
+    if (!a) return out;
+    for (const [pid, v] of this.pctByParticipant(cycleId, a)) out.set(pid, v.pct);
+    return out;
+  }
+
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null {
     if (cycleId !== this.seed.liveCycle.id) return null;
     const scopes = [
@@ -725,26 +851,17 @@ export class InMemoryDataProvider implements DataProvider {
     for (let s = 100; s >= 0; s--) atAbove[s] = atAbove[s + 1]! + counts[s]!;
     const atOrAbove = (cut: number) => atAbove[Math.max(0, Math.min(100, Math.round(cut)))]!;
 
-    // Solve cut-points from cumulative-from-top cohort-% targets.
-    const cutsFromTargets = (t: number[]): number[] => {
-      let cum = 0;
-      return t.map((share) => {
-        cum += Number(share) || 0;
-        const want = (cum / 100) * n;
-        let best = 0;
-        let bd = Infinity;
-        for (let s = 0; s <= 100; s++) {
-          const d = Math.abs(atOrAbove(s) - want);
-          if (d < bd) {
-            bd = d;
-            best = s;
-          }
-        }
-        return best;
-      });
-    };
+    // Backsolve the suggestion from the current targets via the cut-score engine
+    // (Wave 3b): nearest-achievable snapping + the 25%/90% guard-rails. The award
+    // scope keeps its own cumulative banding; the guard-rails are a per-subject
+    // performance-cut policy, so we only apply them to non-award scopes.
+    const backsolve = scheme.isAward
+      ? backsolveCuts(pcts, st.targets, { floorPct: 0, ceilingPct: 100 })
+      : backsolveCuts(pcts, st.targets, POLICY_GUARDRAILS);
 
-    const effCuts = st.mode === "cuts" ? st.cuts : cutsFromTargets(st.targets);
+    // In "pct" mode the effective cuts ARE the backsolved suggestion; in "cuts"
+    // mode the user's committed cuts win.
+    const effCuts = st.mode === "cuts" ? st.cuts : backsolve.cuts;
     const last = levels.length - 1;
     // Students per band, top → bottom; the lowest band is the remainder.
     const bands: GradeBandRow[] = levels.map((level, i) => {
@@ -784,6 +901,27 @@ export class InMemoryDataProvider implements DataProvider {
       excludedCount = ex.size;
     }
 
+    const maxRaw = this.scopeMaxRaw(cycleId, scope);
+    const notApplicableD3: D3HalfWarning = {
+      applicable: false,
+      consistent: true,
+      d3Total: this.scopeD3Total(scope),
+      halfThreshold: Math.ceil(this.scopeD3Total(scope) / 2),
+      outstandingCount: 0,
+      belowHalf: 0,
+      note: scheme.isAward
+        ? "The ½-D3 check applies to the per-subject Outstanding cut, not the overall award."
+        : "No Outstanding-band students — ½-D3 check not applicable.",
+    };
+    // ½-D3 warnings: the suggestion's against its own Outstanding cut; the live
+    // one against the EFFECTIVE Outstanding cut (so an edit re-evaluates it).
+    const suggestionD3 = scheme.isAward
+      ? notApplicableD3
+      : this.d3WarningForCut(cycleId, scope, backsolve.cuts[0] ?? 100);
+    const d3Warning = scheme.isAward
+      ? notApplicableD3
+      : this.d3WarningForCut(cycleId, scope, effCuts[0] ?? 100);
+
     return {
       cycleId,
       scope,
@@ -805,6 +943,18 @@ export class InMemoryDataProvider implements DataProvider {
       },
       n,
       locked: this.locked.has(cycleId),
+      guardrails: scheme.isAward
+        ? { floorPct: 0, ceilingPct: 100 }
+        : { floorPct: POLICY_GUARDRAILS.floorPct, ceilingPct: POLICY_GUARDRAILS.ceilingPct },
+      maxRaw,
+      suggestion: {
+        cuts: backsolve.cuts,
+        perCut: backsolve.perCut,
+        targets: [...st.targets],
+        d3: suggestionD3,
+      },
+      suggestedCuts: st.suggested ? [...st.suggested] : null,
+      d3Warning,
     };
   }
 
@@ -1822,13 +1972,48 @@ export class InMemoryDataProvider implements DataProvider {
     if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${scope}`;
     const cur = this.boundaryState(cycleId, scope);
+    const isAward = scope === "overall";
+    const scopeName = isAward ? "Overall award" : this.assessment(scope)?.name ?? scope;
 
-    const cuts = input.cuts ? [...input.cuts] : [...cur.cuts];
-    if (input.cutIndex != null && input.cutValue != null) cuts[input.cutIndex] = input.cutValue;
+    let cuts = input.cuts ? [...input.cuts] : [...cur.cuts];
     const targets = input.targets ? [...input.targets] : [...cur.targets];
     if (input.targetIndex != null && input.targetValue != null) targets[input.targetIndex] = input.targetValue;
 
+    let mode: BoundaryMode = input.mode ?? cur.mode;
+    let suggested = cur.suggested ? [...cur.suggested] : undefined;
+    let waived = cur.waived ? [...cur.waived] : undefined;
+
+    // ── re-suggest: backsolve cuts from the current targets, adopt them as the
+    //    editable starting point + snapshot, and switch to editable "cuts" mode.
+    if (input.suggest) {
+      const bounds = isAward ? { floorPct: 0, ceilingPct: 100 } : POLICY_GUARDRAILS;
+      const solved = backsolveCuts(this.scopePcts(cycleId, scope), targets, bounds);
+      cuts = [...solved.cuts];
+      suggested = [...solved.cuts];
+      waived = new Array(cuts.length).fill(false);
+      mode = "cuts";
+      this.audit("boundary", "Suggested boundaries", `${scopeName} — backsolved cuts from target distribution`, cycleId);
+    }
+
+    // ── reset to the stored suggestion (all cuts, or a single one).
+    if (input.resetToSuggestion && suggested) {
+      cuts = [...suggested];
+      if (waived) waived = new Array(cuts.length).fill(false);
+      this.audit("boundary", "Reset to suggestion", `${scopeName} — all cuts reset to the suggested values`, cycleId);
+    }
+    if (input.resetCutIndex != null && suggested && suggested[input.resetCutIndex] != null) {
+      cuts[input.resetCutIndex] = suggested[input.resetCutIndex]!;
+      if (waived) waived[input.resetCutIndex] = false;
+    }
+
+    // ── single-cut edit (drag / type).
+    if (input.cutIndex != null && input.cutValue != null) cuts[input.cutIndex] = input.cutValue;
+
     // Keep cut-points strictly descending (cuts[0] highest) within [1, 99].
+    // NOTE: this is the STRUCTURAL ordering guard, not the policy 25%/90%
+    // guard-rail. The policy bounds are surfaced (and clampable) in the read
+    // model; a user may deliberately WAIVE them (waiveGuardrail) and keep a value
+    // outside [25, 90] — that is recorded, not silently re-clamped here.
     for (let i = 0; i < cuts.length; i++) {
       const v = Math.max(0, Math.min(100, Math.round(cuts[i] ?? 0)));
       const hi = i > 0 ? (cuts[i - 1] ?? 100) - 1 : 99;
@@ -1836,14 +2021,25 @@ export class InMemoryDataProvider implements DataProvider {
       cuts[i] = Math.max(lo, Math.min(hi, v));
     }
 
+    // Record a deliberate guard-rail waiver (value knowingly outside policy bounds).
+    if (input.waiveGuardrail && input.cutIndex != null) {
+      waived = waived ?? new Array(cuts.length).fill(false);
+      waived[input.cutIndex] = true;
+      this.audit(
+        "boundary",
+        "Waived cut guard-rail",
+        `${scopeName} — cut ${input.cutIndex + 1} kept at ${cuts[input.cutIndex]}% (outside policy bounds, waived)`,
+        cycleId,
+      );
+    }
+
     // Audit only deliberate cut/target edits (not every drag tick): when a
     // single cut value is committed via the table input.
-    if (input.cutIndex != null && input.cutValue != null) {
-      const scopeName = scope === "overall" ? "Overall award" : this.assessment(scope)?.name ?? scope;
+    if (input.cutIndex != null && input.cutValue != null && !input.waiveGuardrail) {
       this.audit("boundary", "Changed boundary", `${scopeName} — cut ${input.cutIndex + 1} set to ${cuts[input.cutIndex]}%`, cycleId);
     }
 
-    this.boundaries.set(key, { mode: input.mode ?? cur.mode, cuts, targets });
+    this.boundaries.set(key, { mode, cuts, targets, suggested, waived });
     this.bump();
   }
 
