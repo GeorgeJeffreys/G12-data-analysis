@@ -8,7 +8,7 @@
  * the four-band award classification. All counts come from the provider/engine
  * over the real cohort. The cross-cycle comparison is a clearly-labelled mock.
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { BoundaryModel } from "@/lib/data/types";
@@ -39,6 +39,17 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const [scope, setScope] = useState<string>("overall");
   const model = useProviderData((p) => p.getBoundaries(cycleId, scope), [cycleId, scope]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+
+  // Pre-fill the draggable cut-score sliders from the Wave 3b backsolved
+  // suggestion as the starting point — the suggestion IS the initial slider
+  // position, not a separate uneditable list. Runs once per scope (until a
+  // suggestion has been adopted); the user can then drag/type to change any cut,
+  // re-suggest, or reset to the suggestion. No backsolve/guard-rail change — it
+  // just adopts the existing suggestion as the editable starting point.
+  const needsSuggestion = !!model && !model.locked && model.suggestedCuts == null;
+  useEffect(() => {
+    if (needsSuggestion) provider.setBoundary(cycleId, scope, { suggest: true });
+  }, [needsSuggestion, provider, cycleId, scope]);
 
   if (!model) {
     return (
@@ -139,7 +150,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                 ? "Classify each student's overall score into an award level. "
                 : ""}
               {model.mode === "cuts"
-                ? "Drag a cut-point on the curve, or type a score. Student counts update as you move."
+                ? "Sliders start at the backsolved suggestion. Drag a cut-point on the curve, or type a score — student counts update as you move."
                 : "Type the share of students you want in each level. We solve for the nearest cut-points that achieve it."}
             </div>
           </div>
@@ -364,15 +375,16 @@ function SuggestionPanel({
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <div>
           <div className="hf-lbl" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            Suggested cut-scores
+            Suggested cut-scores · the working behind the sliders
             <span style={{ fontSize: 8, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>
               BACKSOLVED
             </span>
           </div>
           <div className="hf-sub" style={{ fontSize: 11, marginTop: 3, maxWidth: 620 }}>
+            The sliders above are pre-filled from this suggestion — drag or type to change any cut.{" "}
             {isAward
               ? "Backsolved from the target award distribution. The 25%/90% subject guard-rails and the ½-D3 check apply to per-subject performance cuts, not the overall award."
-              : `Backsolved from the target distribution, then held inside the policy guard-rails (≥ ${guardrails.floorPct}% floor, ≤ ${guardrails.ceilingPct}% ceiling). Cut = minimum raw score to be IN the level. Suggestions are a starting point — edit them for this year's item statistics, prior-sitting baseline, or incident reports.`}
+              : `Backsolved from the target distribution, then held inside the policy guard-rails (≥ ${guardrails.floorPct}% floor, ≤ ${guardrails.ceilingPct}% ceiling). Cut = minimum raw score to be IN the level.`}
           </div>
         </div>
         {!locked && (
