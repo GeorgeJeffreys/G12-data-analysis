@@ -73,6 +73,7 @@ import type {
   AdjustmentsModel,
   CompositionModel,
   DiagnosticsModel,
+  ReliabilityModel,
   IncidentDecision,
 } from "./types";
 
@@ -266,6 +267,7 @@ export class SupabaseDataProvider implements DataProvider {
   getAdjustments(cycleId: string): AdjustmentsModel | null { return this.inner.getAdjustments(cycleId); }
   getComposition(cycleId: string): CompositionModel | null { return this.inner.getComposition(cycleId); }
   getDiagnostics(cycleId: string): DiagnosticsModel | null { return this.inner.getDiagnostics(cycleId); }
+  getReliability(cycleId: string): ReliabilityModel | null { return this.inner.getReliability(cycleId); }
 
   // ── writes (optimistic local + SECURITY DEFINER RPC) ────────────────────
   setItemExcluded(cycleId: string, assessmentId: string, itemId: string, excluded: boolean, reason?: string | null): void {

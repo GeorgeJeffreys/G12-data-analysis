@@ -313,6 +313,49 @@ export interface DiagnosticsModel {
   assessments: DiagnosticsAssessment[];
 }
 
+// --- Reliability (Cronbach's Alpha) — read-only, additive --------------------
+export type ReliabilityLevelKey =
+  | "overall"
+  | "subject"
+  | "majorElement"
+  | "subElement"
+  | "demandLevel"
+  | "context";
+
+export interface ReliabilityRow {
+  level: ReliabilityLevelKey;
+  /** Subject this group belongs to (null for the overall-exam group). */
+  assessmentId: string | null;
+  assessmentName: string | null;
+  key: string;
+  /** Display label (subject name for the subject level; tag value otherwise). */
+  label: string;
+  /** Items in the group. */
+  k: number;
+  /** Complete-case participant count used for α. */
+  n: number;
+  /** Cronbach's α, or null when n/a (k<2 / n<2 / no variance). */
+  alpha: number | null;
+  /** Why α is n/a, when it is. */
+  note: string | null;
+  /** k below the low-items threshold — α is fragile. */
+  lowItems: boolean;
+  /** n below the small-sample threshold — α is unstable. */
+  smallSample: boolean;
+}
+
+export interface ReliabilityModel {
+  cycleId: string;
+  engineVersion: string;
+  participants: number;
+  lowItemsThreshold: number;
+  smallSampleThreshold: number;
+  /** The overall-exam α (all usable items across subjects). */
+  overall: ReliabilityRow;
+  /** Every α group (including overall); pages filter by level / assessmentId. */
+  rows: ReliabilityRow[];
+}
+
 // --- Mark composition (MCQ + Essay + Alterations = subject total) ------------
 export interface SubjectComposition {
   assessmentId: string;

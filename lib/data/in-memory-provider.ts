@@ -5,7 +5,7 @@
  * reload — there is no database in this build.
  */
 
-import { getEngine, defaultScoringConfig } from "@/lib/engine";
+import { getEngine, defaultScoringConfig, LOW_ITEMS_THRESHOLD, SMALL_SAMPLE_THRESHOLD } from "@/lib/engine";
 import type {
   Alteration,
   EssayMark,
@@ -88,6 +88,8 @@ import {
   type AdjustmentsModel,
   type AdjustmentIncident,
   type DiagnosticsModel,
+  type ReliabilityModel,
+  type ReliabilityRow,
   type CompositionModel,
   type StudentComposition,
   type SubjectComposition,
@@ -1678,6 +1680,68 @@ export class InMemoryDataProvider implements DataProvider {
       subjects,
       counts: { incidents: incidents.length, decided, awaiting: incidents.length - decided, alterations },
       netBySubject,
+    };
+  }
+
+  /**
+   * Usable (post-exclusion) responses + item metadata across every subject —
+   * the same item set scoring uses (cohort-excluded items dropped). Feeds the
+   * additive Cronbach's-α reliability output.
+   */
+  private usableResponsesAndItems(cycleId: string): { responses: ResponseRecord[]; items: ItemMeta[] } {
+    const responses: ResponseRecord[] = [];
+    const items: ItemMeta[] = [];
+    for (const a of this.seed.liveCycle.assessments) {
+      const excluded = this.excludedSet(cycleId, a.id);
+      for (const r of a.responses) {
+        if (excluded.has(r.i)) continue;
+        responses.push({ participantId: r.p, itemId: r.i, assessmentId: a.id, score: r.s });
+      }
+      for (const it of a.items) {
+        if (excluded.has(it.id)) continue;
+        items.push({
+          itemId: it.id,
+          assessmentId: a.id,
+          majorElement: it.major,
+          subElement: it.sub,
+          demandLevel: it.demand,
+          maxScore: it.maxScore,
+        });
+      }
+    }
+    return { responses, items };
+  }
+
+  /** Cronbach's-α reliability for the cycle, at every construct grouping (read-only). */
+  getReliability(cycleId: string): ReliabilityModel | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const { responses, items } = this.usableResponsesAndItems(cycleId);
+    const result = engine.computeReliability({ responses, items });
+    const nameById = new Map(this.seed.liveCycle.assessments.map((a) => [a.id, a.name]));
+
+    const rows: ReliabilityRow[] = result.groups.map((g) => ({
+      level: g.level,
+      assessmentId: g.assessmentId,
+      assessmentName: g.assessmentId ? nameById.get(g.assessmentId) ?? g.assessmentId : null,
+      key: g.key,
+      // the subject group's raw label is the assessment id; show the real name.
+      label: g.level === "subject" && g.assessmentId ? nameById.get(g.assessmentId) ?? g.label : g.label,
+      k: g.k,
+      n: g.n,
+      alpha: g.alpha,
+      note: g.note,
+      lowItems: g.lowItems,
+      smallSample: g.smallSample,
+    }));
+    const overall = rows.find((r) => r.level === "overall")!;
+    return {
+      cycleId,
+      engineVersion: result.engineVersion,
+      participants: this.seed.liveCycle.participants.length,
+      lowItemsThreshold: LOW_ITEMS_THRESHOLD,
+      smallSampleThreshold: SMALL_SAMPLE_THRESHOLD,
+      overall,
+      rows,
     };
   }
 
