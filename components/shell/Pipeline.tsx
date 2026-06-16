@@ -11,25 +11,30 @@ import type { ReactNode } from "react";
 import { H, PIPELINE_STAGES } from "@/lib/ui/tokens";
 
 /**
- * Map a pipeline stage index to its route. Several stages share a screen:
- * Ingest+Validate live on the ingest screen, and Score+Boundaries on the
- * boundaries screen, so those steps navigate to the shared page.
+ * Map a pipeline stage index to its route (10-stage pipeline). Score+Boundaries
+ * share the boundaries screen, so both navigate there.
  */
 export function stageHref(cycleId: string, index: number): string {
   const base = `/cycles/${cycleId}`;
   switch (index) {
-    case 0: // Data import
+    case 0: // Upload
       return `${base}/import`;
-    case 1: // Review
+    case 1: // Raw data
+      return `${base}/raw-data`;
+    case 2: // Clean
+      return `${base}/clean`;
+    case 3: // Raw scores
+      return `${base}/raw-scores`;
+    case 4: // Review
       return `${base}/review`;
-    case 2: // Adjustments
+    case 5: // Adjustments
       return `${base}/adjustments`;
-    case 3: // Score
-    case 4: // Boundaries
+    case 6: // Score
+    case 7: // Boundaries
       return `${base}/boundaries`;
-    case 5: // Grades
+    case 8: // Grades
       return `${base}/grades`;
-    case 6: // Export
+    case 9: // Export
       return `${base}/documents`;
     default:
       return base;
@@ -56,15 +61,18 @@ export function Pipeline({
   const clickable = !!cycleId && !compact;
 
   return (
-    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", rowGap: 6 }}>
+    // Single line — never wraps. The 10 steps + connectors are tightened so the
+    // whole stepper (plus the row's primary action) sits on one row; on a narrow
+    // viewport it scrolls horizontally inside its own region rather than wrapping.
+    <div style={{ display: "flex", alignItems: "center", flexWrap: "nowrap", minWidth: 0 }}>
       {PIPELINE_STAGES.map((s, i) => {
         const state = isDone(i) ? "done" : isNow(i) ? "now" : "next";
         const stepInner = (
-          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
             <span
               style={{
-                width: 21,
-                height: 21,
+                width: 19,
+                height: 19,
                 borderRadius: 999,
                 flex: "0 0 auto",
                 border: `1.5px solid ${state === "done" ? H.slate : state === "now" ? H.pink : H.line2}`,
@@ -73,7 +81,7 @@ export function Pipeline({
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
-                fontSize: 10,
+                fontSize: 9.5,
                 fontWeight: 700,
               }}
               className="hf-mono"
@@ -89,7 +97,7 @@ export function Pipeline({
             {!compact && (
               <span
                 style={{
-                  fontSize: 12,
+                  fontSize: 11.5,
                   fontWeight: state === "now" ? 700 : 500,
                   color: state === "next" ? H.ink3 : H.ink,
                   whiteSpace: "nowrap",
@@ -107,7 +115,7 @@ export function Pipeline({
             title={`Go to ${s}`}
             aria-label={`Go to ${s}`}
             className="hf-step"
-            style={{ textDecoration: "none", color: "inherit", borderRadius: 8, padding: "3px 5px", margin: "-3px -5px" }}
+            style={{ textDecoration: "none", color: "inherit", borderRadius: 7, padding: "3px 4px", margin: "-3px -4px", flex: "0 0 auto" }}
           >
             {stepInner}
           </Link>
@@ -116,15 +124,15 @@ export function Pipeline({
         );
 
         return (
-          <div key={s} style={{ display: "flex", alignItems: "center" }}>
+          <div key={s} style={{ display: "flex", alignItems: "center", flex: "0 0 auto" }}>
             {step}
             {i < PIPELINE_STAGES.length - 1 && (
               <div
                 style={{
-                  width: compact ? 16 : 26,
+                  width: compact ? 16 : 13,
                   height: 2,
                   background: isDone(i) ? H.slate : range && i >= range[0] && i < range[1] ? H.pink : H.line2,
-                  margin: "0 9px",
+                  margin: compact ? "0 9px" : "0 5px",
                   flex: "0 0 auto",
                 }}
               />
