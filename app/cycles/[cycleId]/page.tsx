@@ -7,8 +7,17 @@
  * incomplete action (`doNext.href`) — so the stepper's highlighted step always
  * matches the screen shown. Mock prior cycles (no detailed data) keep a small
  * informational page rather than bouncing.
+ *
+ * Hydration safety: SSR renders with the in-memory provider, while the browser
+ * may mount the Supabase one, so the cycle data — and therefore which branch we
+ * render — can differ between the server HTML and the client's first render.
+ * We therefore render ONE stable placeholder on the server and on the first
+ * client render, and only read the cycle to decide (redirect / mock / not-found)
+ * AFTER mount. The "land on current step" decision stays a post-mount client
+ * effect, never divergent render logic — so server and client always agree on
+ * the initial output and hydration is clean for an empty or populated cycle.
  */
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
@@ -19,12 +28,22 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
   const router = useRouter();
   const cycle = useProviderData((p) => p.getCycle(cycleId), [cycleId]);
 
+  // Gate every cycle-data-dependent branch behind mount, so the server and the
+  // first client render produce byte-identical output (the placeholder below).
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   // Real cycles redirect to their current pipeline step. Mock priors have no
-  // step to land on (doNext just points home), so we never redirect them.
-  const target = cycle && !cycle.mock ? cycle.doNext.href : null;
+  // step to land on (doNext just points home), so we never redirect them. The
+  // decision runs only after mount, as a client-side effect.
+  const target = mounted && cycle && !cycle.mock ? cycle.doNext.href : null;
   useEffect(() => {
     if (target && target !== `/cycles/${cycleId}`) router.replace(target);
   }, [target, cycleId, router]);
+
+  // First paint (server + hydration): a stable placeholder identical on both
+  // sides. Real cycles also keep it on screen while the redirect effect runs.
+  if (!mounted) return <Landing />;
 
   if (!cycle) {
     return (
@@ -54,6 +73,18 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
     );
   }
 
-  // Real cycle — redirecting to the current step; render nothing meanwhile.
-  return null;
+  // Real cycle — redirecting to the current step; keep the placeholder meanwhile.
+  return <Landing />;
+}
+
+/** Stable, provider-independent placeholder shown during SSR/hydration and while
+ *  the redirect to the current step is in flight. */
+function Landing() {
+  return (
+    <div
+      style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", color: H.ink3, fontSize: 13 }}
+    >
+      Opening cycle…
+    </div>
+  );
 }

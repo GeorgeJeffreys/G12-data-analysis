@@ -59,9 +59,17 @@ export function useAccessStatus(): AccessStatus {
   const isSupabase = provider instanceof SupabaseDataProvider;
   const subscribe = useMemo(() => provider.subscribe.bind(provider), [provider]);
   const get = () => (isSupabase ? (provider as SupabaseDataProvider).getAccessStatus() : "ok");
-  // Server render: the in-memory demo is always "ok" (no auth); only the Supabase
-  // provider is genuinely "loading" until it hydrates on the client.
-  const serverSnapshot = (): AccessStatus => (isSupabase ? "loading" : "ok");
+  // The server-render snapshot MUST be identical on the server and on the client's
+  // first (hydration) render, or the two trees disagree and React tears the route
+  // down (hydration errors #418/#423/#425). It can't key off the live provider
+  // instance: SSR always uses the in-memory provider (it has no `window`), while
+  // the browser may mount the Supabase one — so `isSupabase` differs across the
+  // boundary. Key off the build-time env flag instead, which is inlined the same
+  // on both sides: in the in-memory demo the gate is "ok" (server renders real
+  // content, no flash); with Supabase it's "loading" on both server and first
+  // client render, then the store fills in the real status after hydration.
+  const useSupabaseEnv = process.env.NEXT_PUBLIC_DATA_PROVIDER === "supabase";
+  const serverSnapshot = (): AccessStatus => (useSupabaseEnv ? "loading" : "ok");
   return useSyncExternalStore(subscribe, get, serverSnapshot);
 }
 
