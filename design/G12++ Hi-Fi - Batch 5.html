@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>G12++ Exam Processing Suite — Hi-Fi (Batch 5 · front of pipeline: upload, raw data, cleaning, raw scores)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700;800&family=Yellowtail&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; }
+  * { -webkit-font-smoothing: antialiased; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="hf.jsx"></script>
+<script type="text/babel" src="hfData2.jsx"></script>
+<script type="text/babel" src="hfFront.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="upload" title="1 · Combined upload — one file, split by subject"
+        subtitle="The new front of the pipeline. Users have one combined export with every subject in it; the app detects each subject and splits it. A second mode merges several files/sheets into one dataset first. Keeps the existing 3-card import idea (raw required; essay + incident optional).">
+        <DCArtboard id="u1" label="A · One combined file — detected & split into 5 subjects" width={1200} height={1020}><HFCombinedUpload mode="detected" /></DCArtboard>
+        <DCArtboard id="u2" label="B · Merge several files / sheets into one dataset" width={1200} height={1090}><HFCombinedUpload mode="merge" /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="raw" title="2 · Raw data view — read-first ‘show me my data’"
+        subtitle="The very first thing a user sees for a cycle: their data as data, before any analysis. A slim summary strip (participants · items · elements · D1/D2/D3 · items excluded), then the dataset as a calm spreadsheet with sticky headers and sticky participant columns. Per-subject chip row drives it.">
+        <DCArtboard id="r2" label="Raw data — slim summary strip, spreadsheet dominates" width={1200} height={900}><HFRawView dense={true} /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="clean" title="3 · Data cleaning — dedicated clean-only step"
+        subtitle="No view/clean toggle — viewing is already Screen 2 (Raw data), so this screen is purely cleaning. Select columns/rows you don’t need and remove them, watch the before→after row/column count, and resolve the validation report beside the data: must-fix blockers (red) hold up the pipeline, warnings are your call.">
+        <DCArtboard id="cl1" label="Clean data — selection toolbar + validation report" width={1200} height={900}><HFCleanSeparate /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="scores" title="4 · Raw scores — as submitted, before item review"
+        subtitle="Plain scores computed straight from the raw responses, with no items excluded — so untrained users can sanity-check before psychometric filtering. A clear ‘before any item review’ banner keeps it from being mistaken for final scores. Per-subject (chip row), with per-element subscores and a drill into the existing Review step. Essay subjects show MCQ-only with a note.">
+        <DCArtboard id="s1" label="A · Applicable Maths — raw score + % per student" width={1200} height={880}><HFNaiveScores subjKey="math" /></DCArtboard>
+        <DCArtboard id="s2" label="B · English — essay element held out, MCQ-only scored" width={1200} height={924}><HFNaiveScores subjKey="eng" /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

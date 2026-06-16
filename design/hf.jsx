@@ -160,31 +160,41 @@ function HQuality({ v, width = 80, showLabel }) {
 }
 
 const HSTAGES = ['Ingest', 'Validate', 'Review', 'Students', 'Score', 'Boundaries', 'Grades', 'Export'];
-const HOPT = 3; // "Students" — optional / skippable step in the pipeline
-function HPipeline({ active = 2, done = 1, compact, range }) {
+// New scoring model: the optional "Students" review becomes a core "Adjustments" stage.
+const HSTAGES2 = ['Ingest', 'Validate', 'Review', 'Adjustments', 'Score', 'Boundaries', 'Grades', 'Export'];
+const HOPT = 3; // legacy "Students" — optional / skippable step in the pipeline
+function HPipeline({ active = 2, done = 1, compact, tight, range, stages, optIndex }) {
+  const ST = stages || HSTAGES;
+  const OPT = optIndex === undefined ? HOPT : optIndex; // pass optIndex={-1} to disable the dashed optional step
   const isDone = (i) => range ? i < range[0] : i < done;
   const isNow = (i) => range ? (i >= range[0] && i <= range[1]) : i === active;
+  // tight = full labels but condensed sizing, for longer (9-10 stage) pipelines
+  const circle = tight ? 18 : 20;
+  const lblFont = tight ? 10.5 : 11.5;
+  const stepGap = tight ? 5 : 6;
+  const connW = tight ? 12 : (compact ? 13 : 20);
+  const connM = tight ? 5 : (compact ? 6 : 7);
   return (
     <div className="hf-row" style={{ flexWrap: 'nowrap' }}>
-      {HSTAGES.map((s, i) => {
+      {ST.map((s, i) => {
         const state = isDone(i) ? 'done' : isNow(i) ? 'now' : 'next';
-        const opt = i === HOPT;
+        const opt = i === OPT;
         const ring = state === 'done' ? H.slate : state === 'now' ? H.pink : H.line2;
         return (
           <React.Fragment key={s}>
-            <div className="hf-row" style={{ gap: 6 }} title={opt ? `${s} · optional step` : s}>
-              <span style={{ width: 20, height: 20, borderRadius: 999, flex: '0 0 auto',
+            <div className="hf-row" style={{ gap: stepGap }} title={opt ? `${s} · optional step` : s}>
+              <span style={{ width: circle, height: circle, borderRadius: 999, flex: '0 0 auto',
                 border: `1.5px ${opt ? 'dashed' : 'solid'} ${ring}`,
                 background: state === 'done' && !opt ? H.slate : state === 'now' ? H.pinkSoft : H.paper,
                 color: state === 'done' ? (opt ? H.slate : '#fff') : state === 'now' ? H.pink : H.ink3,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5, fontWeight: 700 }}>
                 {state === 'done' && !opt ? <svg width="10" height="10" viewBox="0 0 12 12"><path d="M2.5 6.2l2.2 2.2L9.5 3.5" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"/></svg> : i + 1}
               </span>
-              {!compact && <span style={{ fontSize: 11.5, fontWeight: state === 'now' ? 700 : 500, color: state === 'next' ? H.ink3 : H.ink, fontStyle: opt ? 'italic' : 'normal' }}>{s}</span>}
+              {!compact && <span style={{ fontSize: lblFont, fontWeight: state === 'now' ? 700 : 500, color: state === 'next' ? H.ink3 : H.ink, fontStyle: opt ? 'italic' : 'normal', whiteSpace: 'nowrap' }}>{s}</span>}
             </div>
-            {i < HSTAGES.length - 1 && (() => {
-              const dash = (i === HOPT - 1 || i === HOPT);
-              return <div style={{ width: compact ? 13 : 20, margin: compact ? '0 6px' : '0 7px',
+            {i < ST.length - 1 && (() => {
+              const dash = (i === OPT - 1 || i === OPT);
+              return <div style={{ width: connW, margin: `0 ${connM}px`,
                 height: dash ? 0 : 2, borderTop: dash ? `2px dashed ${H.line2}` : 'none',
                 background: dash ? 'transparent' : (isDone(i) ? H.slate : (range && i >= range[0] && i < range[1]) ? H.pink : H.line2) }} />;
             })()}
@@ -236,7 +246,7 @@ function HSubnav({ items }) {
   );
 }
 
-function HShell({ active = 'Cycles', crumb, actions, subnav, stage, done, range, stageAction, children }) {
+function HShell({ active = 'Cycles', crumb, actions, subnav, stage, done, range, stages, optIndex, tight, stageAction, children }) {
   return (
     <div className="hf hf-row" style={{ alignItems: 'stretch' }}>
       <HRail active={active} />
@@ -250,7 +260,7 @@ function HShell({ active = 'Cycles', crumb, actions, subnav, stage, done, range,
         {subnav && <HSubnav items={subnav} />}
         {stage != null && (
           <div className="hf-row" style={{ flex: '0 0 auto', borderBottom: `1px solid ${H.line}`, padding: '9px 24px', background: H.canvas, gap: 16, minHeight: 56 }}>
-            <HPipeline active={stage} done={done != null ? done : stage} range={range} />
+            <HPipeline active={stage} done={done != null ? done : stage} range={range} stages={stages} optIndex={optIndex} tight={tight} />
             <div style={{ flex: 1 }} />
             {stageAction}
           </div>
@@ -291,4 +301,4 @@ function HProgress({ pct, w = '100%', tone }) {
   return <div style={{ width: w, height: 7, background: H.tint2, borderRadius: 5 }}><div style={{ width: `${pct}%`, height: '100%', background: tone === 'good' ? H.good : H.pink, borderRadius: 5, transition: '.2s' }} /></div>;
 }
 
-Object.assign(window, { H, HMark, HIco, HBtn, HChip, HStat, HHatch, HDist, HBreakBars, hfQColor, HQuality, HPipeline, HRail, HSubnav, HShell, HSTAGES, HOPT, HBadge, HToggle, HCheck, HAvatar, HProgress });
+Object.assign(window, { H, HMark, HIco, HBtn, HChip, HStat, HHatch, HDist, HBreakBars, hfQColor, HQuality, HPipeline, HRail, HSubnav, HShell, HSTAGES, HSTAGES2, HOPT, HBadge, HToggle, HCheck, HAvatar, HProgress });

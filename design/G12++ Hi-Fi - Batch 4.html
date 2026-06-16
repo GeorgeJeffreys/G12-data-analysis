@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>G12++ Exam Processing Suite — Hi-Fi (Batch 4 · Adjustments, essays, incident triage, diagnostics)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600;700;800&family=Yellowtail&display=swap" rel="stylesheet" />
+<style>
+  html, body { margin: 0; padding: 0; background: #f0eee9; }
+  * { -webkit-font-smoothing: antialiased; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="design-canvas.jsx"></script>
+<script type="text/babel" src="hf.jsx"></script>
+<script type="text/babel" src="hfAdjust.jsx"></script>
+<script type="text/babel" src="hfDiag.jsx"></script>
+
+<script type="text/babel">
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="ingest" title="Ingest & validate — three equal inputs"
+        subtitle="The raw exam export, essay marks, and incident log read as three equal options. Click any one to expand it into its own upload zone and validation report; collapse it and all three return to the same size. Single-open, so only the exam export is required to continue.">
+        <DCArtboard id="i1" label="Ingest & validate · exam export open" width={1200} height={1044}><HFIngestTriad /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="adjust" title="Adjustments — new pipeline stage (after Review, before Score)"
+        subtitle="Replaces the old ‘Student review’. Two tabs: an incident-triage queue (the core), and an essay-marks & composition view. The triage queue is the dominant element — one slim stats row, one filter row, then the queue. Decisions turn messy free-text incidents into per-student or per-subject mark alterations.">
+        <DCArtboard id="a1" label="A · Incident triage — working (one row open for triage)" width={1200} height={1140}><HFAdjustTriage state="working" stream="incidents" /></DCArtboard>
+        <DCArtboard id="a2" label="B · Incident triage — all resolved" width={1200} height={1040}><HFAdjustTriage state="resolved" stream="incidents" /></DCArtboard>
+        <DCArtboard id="a3" label="C · Student complaints — same triage, separate stream" width={1200} height={900}><HFAdjustTriage state="working" stream="complaints" /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="compose" title="Adjustments → Essay marks & composition"
+        subtitle="The audit-facing half of the stage. Essay marks loaded for English and Arabic sit in a narrow supporting rail; the per-student composition table is primary — MCQ + Essay + Alterations = Subject total, out of a max that includes the essay.">
+        <DCArtboard id="c1" label="English · composition (one essay unmatched)" width={1200} height={720}><HFAdjustEssay subj="English 2nd Lang" /></DCArtboard>
+        <DCArtboard id="c2" label="Arabic · composition (RTL)" width={1200} height={650}><HFAdjustEssay subj="Arabic 1st Lang" /></DCArtboard>
+      </DCSection>
+
+      <DCSection id="diag" title="Diagnostics — new tab in Analytics (review, not grading)"
+        subtitle="Placed in the existing Analytics section. Two metric tables — speededness/omission/completion and timing/performance — each at whole-assessment and major-element level. Tables are primary; status badges reuse the Good / Review / Flag item-quality colours. Clearly marked review-only.">
+        <DCArtboard id="d1" label="Diagnostics · Applicable Math" width={1200} height={980}><HFDiagnostics /></DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
