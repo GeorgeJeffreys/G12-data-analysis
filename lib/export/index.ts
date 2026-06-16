@@ -43,5 +43,6 @@ export {
   ALTERATION_HEADERS,
   ALTERATIONS_SHEET_NAME,
 } from "./alterations";
+export { buildCompareCyclesWorkbook, COMPARE_CYCLES_SHEETS } from "./compare-cycles";
 export { workbookToBuffer, sanitizeSheetName, RATING_STYLES, PERFORMANCE_STYLES } from "./sheet-utils";
 export type * from "./types";
