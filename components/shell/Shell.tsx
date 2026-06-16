@@ -87,42 +87,34 @@ export function Shell({
               </span>
             ))}
           </nav>
+          {/* section tabs — compact text buttons, top-right (was a separate row) */}
+          {subnav && (
+            <nav aria-label="Section" style={{ display: "flex", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
+              {subnav.map((it) => (
+                <Link
+                  key={it.href}
+                  href={it.href}
+                  aria-current={it.on ? "page" : undefined}
+                  style={{
+                    padding: "5px 10px",
+                    borderRadius: 7,
+                    fontSize: 12.5,
+                    fontWeight: it.on ? 700 : 500,
+                    color: it.on ? H.pink : H.ink2,
+                    background: it.on ? H.pinkSoft : "transparent",
+                    textDecoration: "none",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {it.label}
+                </Link>
+              ))}
+            </nav>
+          )}
+          {subnav && (status || actions) && <span style={{ width: 1, height: 20, background: H.line2 }} />}
           {status}
           {actions}
         </div>
-
-        {/* secondary tab bar */}
-        {subnav && (
-          <nav
-            aria-label="Section"
-            style={{
-              display: "flex",
-              flex: "0 0 auto",
-              borderBottom: `1px solid ${H.line}`,
-              padding: "0 24px",
-              gap: 2,
-              background: H.paper,
-            }}
-          >
-            {subnav.map((it) => (
-              <Link
-                key={it.href}
-                href={it.href}
-                aria-current={it.on ? "page" : undefined}
-                style={{
-                  padding: "12px 15px",
-                  fontSize: 13,
-                  fontWeight: it.on ? 700 : 500,
-                  color: it.on ? H.pink : H.ink2,
-                  borderBottom: `3px solid ${it.on ? H.pink : "transparent"}`,
-                  textDecoration: "none",
-                }}
-              >
-                {it.label}
-              </Link>
-            ))}
-          </nav>
-        )}
 
         {/* pipeline row */}
         {stageIndex != null && (
@@ -138,9 +130,12 @@ export function Shell({
               minHeight: 56,
             }}
           >
-            <Pipeline active={stageIndex} done={done} range={range} cycleId={cycleId} />
-            <div style={{ flex: 1 }} />
-            {stageAction}
+            {/* stepper scrolls within its own region on narrow viewports so it
+                never wraps and never pushes the primary action off-screen */}
+            <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", display: "flex", alignItems: "center" }}>
+              <Pipeline active={stageIndex} done={done} range={range} cycleId={cycleId} />
+            </div>
+            {stageAction && <div style={{ flex: "0 0 auto" }}>{stageAction}</div>}
           </div>
         )}
 
