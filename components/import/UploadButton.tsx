@@ -16,17 +16,20 @@ export function UploadButton({
   label,
   variant,
   onClick,
+  busyLabel = "Uploading…",
 }: {
   busy: boolean;
   label: string;
   variant: "pri" | "ghost";
   onClick?: () => void;
+  /** Label shown while busy — lets the caller name the active stage. */
+  busyLabel?: string;
 }) {
   const tint = variant === "pri" ? "#fff" : undefined;
   return (
     <Button variant={variant} onClick={onClick} disabled={busy} aria-busy={busy}>
       {busy ? <Spinner size={13} color={tint} /> : <Icon name="upload" size={13} color={tint} />}
-      {busy ? "Uploading…" : label}
+      {busy ? busyLabel : label}
     </Button>
   );
 }
