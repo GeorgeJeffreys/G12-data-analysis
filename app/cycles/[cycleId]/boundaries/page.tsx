@@ -3,10 +3,19 @@
 /**
  * Screen 05 — Scoring & grade boundaries (human gate 2). Interactive dual mode:
  * "Fix boundaries" (drag/type cut-points → live student counts) and
- * "Fix cohort %" (type target shares → solve cut-points). Per assessment the
+ * "Fix cohort %" (type target shares → backsolve cut-points). Per assessment the
  * bands are the four performance levels (three cut-points); the Overall scope is
  * the four-band award classification. All counts come from the provider/engine
  * over the real cohort. The cross-cycle comparison is a clearly-labelled mock.
+ *
+ * LAYOUT — a single per-subject screen with the dual-mode toggle top-right and a
+ * two-panel working area: the score distribution + draggable cut handles dominate
+ * the LEFT (the hero); the cut-score table, the cross-cycle comparison, and the
+ * guard-rail / D3 / sanity warning strip sit on the RIGHT. The Wave 3b backsolve
+ * is NOT a separate always-on panel — it lives entirely inside "Fix cohort %"
+ * mode, swapping only the right-panel interaction. Switching modes never changes
+ * the two-panel layout. When the cycle has no scored data the left card shows a
+ * clean placeholder and the right rows are quiet — never bare backsolve controls.
  */
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -14,8 +23,8 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import type { BoundaryModel } from "@/lib/data/types";
 import { H } from "@/lib/ui/tokens";
 import { AWARD_SHORT } from "@/lib/data/grading";
-import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
+import { Shell } from "@/components/shell/Shell";
 import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
@@ -43,10 +52,11 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   // Pre-fill the draggable cut-score sliders from the Wave 3b backsolved
   // suggestion as the starting point — the suggestion IS the initial slider
   // position, not a separate uneditable list. Runs once per scope (until a
-  // suggestion has been adopted); the user can then drag/type to change any cut,
-  // re-suggest, or reset to the suggestion. No backsolve/guard-rail change — it
-  // just adopts the existing suggestion as the editable starting point.
-  const needsSuggestion = !!model && !model.locked && model.suggestedCuts == null;
+  // suggestion has been adopted) and only when there is scored data to backsolve;
+  // the user can then drag/type to change any cut, re-suggest, or reset to the
+  // suggestion. No backsolve/guard-rail change — it just adopts the existing
+  // suggestion as the editable starting point.
+  const needsSuggestion = !!model && !model.locked && model.n > 0 && model.suggestedCuts == null;
   useEffect(() => {
     if (needsSuggestion) provider.setBoundary(cycleId, scope, { suggest: true });
   }, [needsSuggestion, provider, cycleId, scope]);
@@ -59,15 +69,19 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
     );
   }
 
+  // Empty cycle: scores haven't been computed yet. Show a clean placeholder where
+  // the histogram goes and quiet band rows on the right — NOT bare backsolve
+  // scaffolding (empty target inputs, guard-rail cards) as the main content.
+  const isEmpty = model.n === 0;
+
   const setCut = (index: number, v: number) =>
     provider.setBoundary(cycleId, scope, { cutIndex: index, cutValue: v });
   const setMode = (mode: "cuts" | "pct") => provider.setBoundary(cycleId, scope, { mode });
   const setTarget = (index: number, v: number) =>
     provider.setBoundary(cycleId, scope, { targetIndex: index, targetValue: v });
-  // Wave 3b — suggestion actions.
+  // Wave 3b — suggestion actions (live only inside "Fix cohort %").
   const suggest = () => provider.setBoundary(cycleId, scope, { suggest: true });
   const resetAll = () => provider.setBoundary(cycleId, scope, { resetToSuggestion: true });
-  const resetCut = (index: number) => provider.setBoundary(cycleId, scope, { resetCutIndex: index });
 
   // Export every scope's cut-scores (raw + %) and band distribution.
   const gatherScopes = () =>
@@ -142,181 +156,215 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
           <div>
             <div className="hf-h1">{model.isAward ? "Set overall award boundaries" : "Set grade boundaries"}</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 560 }}>
-              {model.isAward
-                ? "Classify each student's overall score into an award level. "
-                : ""}
-              {model.mode === "cuts"
-                ? "Sliders start at the backsolved suggestion. Drag a cut-point on the curve, or type a score — student counts update as you move."
-                : "Type the share of students you want in each level. We solve for the nearest cut-points that achieve it."}
+              {isEmpty
+                ? "No scored data yet — complete the Score step to set boundaries."
+                : model.mode === "cuts"
+                  ? `${model.isAward ? "Classify each student's overall score into an award level. " : ""}Drag a cut-point on the curve, or type a score — student counts update as you move.`
+                  : "Type the share of students you want in each level. We backsolve the nearest cut-points that achieve it."}
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 400, flex: "0 0 auto" }}>
-            {seg("cuts", "Fix boundaries", "Set scores → see counts")}
-            {seg("pct", "Fix cohort %", "Set shares → solve scores")}
-            <span style={{ flex: "0 0 auto", paddingRight: 4 }}><CohortPctInfo /></span>
-          </div>
+          {/* Dual-mode toggle — only meaningful once there is scored data to work with. */}
+          {!isEmpty && (
+            <div style={{ display: "flex", alignItems: "center", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 400, flex: "0 0 auto" }}>
+              {seg("cuts", "Fix boundaries", "Set scores → see counts")}
+              {seg("pct", "Fix cohort %", "Set shares → solve scores")}
+              <span style={{ flex: "0 0 auto", paddingRight: 4 }}><CohortPctInfo /></span>
+            </div>
+          )}
         </div>
 
         <div className="hf-split" style={{ flex: 1, minHeight: 0 }}>
-          {/* chart card — the dominant instrument (~two-thirds) */}
-          <div className="hf-card" style={{ flex: "2 1 0%", padding: "20px 24px 14px", minWidth: 320, minHeight: 0, display: "flex", flexDirection: "column" }}>
+          {/* chart card — the dominant instrument (the hero, ~58%) */}
+          <div className="hf-card" style={{ flex: "1.45 1 0%", padding: "20px 24px 14px", minWidth: 320, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span className="hf-lbl">Score distribution · {model.n} students</span>
-              <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: model.mode === "cuts" ? H.pink : H.ink3, fontWeight: 600 }}>
-                {model.mode === "cuts" ? (
-                  <>
-                    <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} />
-                    Handles draggable
-                  </>
-                ) : (
-                  "Handles computed from targets"
-                )}
-              </span>
+              {!isEmpty && (
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: model.mode === "cuts" ? H.pink : H.ink3, fontWeight: 600 }}>
+                  {model.mode === "cuts" ? (
+                    <>
+                      <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} />
+                      Handles draggable
+                    </>
+                  ) : (
+                    "Handles computed from targets"
+                  )}
+                </span>
+              )}
             </div>
-            <BoundaryChart
-              histogram={model.histogram}
-              cuts={model.cuts}
-              bands={model.bands}
-              isAward={model.isAward}
-              draggable={model.mode === "cuts"}
-              onDrag={setCut}
-            />
-            {/* summary stats — its own non-shrinking strip below the plot, so it is
-                always fully visible and never overlaps the chart */}
-            <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 16, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
-              <MiniStat n={`${model.stats.mean}%`} label="cohort mean" />
-              <MiniStat n={String(model.stats.median)} label="median" />
-              <MiniStat n={String(model.stats.sd)} label="σ" />
-              <MiniStat n={String(model.stats.itemsScored)} label="items scored" sub={`${model.stats.excluded} excluded`} />
-            </div>
+            {isEmpty ? (
+              <ChartPlaceholder />
+            ) : (
+              <>
+                <BoundaryChart
+                  histogram={model.histogram}
+                  cuts={model.cuts}
+                  bands={model.bands}
+                  isAward={model.isAward}
+                  draggable={model.mode === "cuts"}
+                  onDrag={setCut}
+                />
+                {/* summary stats — its own non-shrinking strip below the plot, so it is
+                    always fully visible and never overlaps the chart */}
+                <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 16, marginTop: 14, paddingTop: 12, borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
+                  <MiniStat n={`${model.stats.mean}%`} label="cohort mean" />
+                  <MiniStat n={String(model.stats.median)} label="median" />
+                  <MiniStat n={String(model.stats.sd)} label="σ" />
+                  <MiniStat n={String(model.stats.itemsScored)} label="items scored" sub={`${model.stats.excluded} excluded`} />
+                </div>
+                <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 8, marginTop: 10, color: H.ink3, fontSize: 11.5 }}>
+                  <Icon name="arrow" />
+                  <span>Drag a dashed handle or edit a score on the right — everything recomputes instantly.</span>
+                </div>
+              </>
+            )}
           </div>
 
-          {/* table card — the compact companion (~one-third). Bounded to the
-              viewport height: the award table + comparison scroll within their own
-              region so every award level (Distinction → No Award) and the
-              comparison strip are reachable without scrolling the whole page. */}
-          <div className="hf-card" style={{ flex: "1 1 320px", minWidth: 300, maxWidth: 440, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+          {/* table card — the compact companion (~40%). The cut-score table, the
+              cross-cycle comparison and the warning strip live here; the backsolve
+              interaction swaps in only inside "Fix cohort %" mode. Bounded to the
+              viewport height so every level + the comparison stay reachable. */}
+          <div className="hf-card" style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 460, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
-            <table className="hf-rows-compact" style={{ width: "100%", borderCollapse: "collapse" }}>
-              <thead>
-                <tr>
-                  <th className="hf-th">{model.isAward ? "Award level" : "Performance level"}</th>
-                  <th className="hf-th" style={{ textAlign: "right" }}>
-                    Cut ≥{model.mode === "pct" && <span style={{ color: H.pink, marginLeft: 5 }}>auto</span>}
-                  </th>
-                  <th className="hf-th" style={{ textAlign: "right" }}>Students</th>
-                  <th className="hf-th" style={{ textAlign: "right" }}>
-                    % of cohort{model.mode === "cuts" && <span style={{ color: H.pink, marginLeft: 5 }}>auto</span>}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {model.bands.map((b, i) => {
-                  const isLowest = b.cut === null;
-                  return (
-                    <tr key={b.level}>
-                      <td className="hf-td">
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          {b.stars !== null && (
-                            <span className="hf-mono" style={{ fontSize: 12, color: H.pink, fontWeight: 700, width: 24, letterSpacing: 1 }}>
-                              {b.stars || "·"}
+              <table className="hf-rows-compact" style={{ width: "100%", borderCollapse: "collapse" }}>
+                <thead>
+                  <tr>
+                    <th className="hf-th">{model.isAward ? "Award level" : "Band"}</th>
+                    <th className="hf-th" style={{ textAlign: "right" }}>
+                      Cut-point ≥{!isEmpty && model.mode === "pct" && <span style={{ color: H.pink, marginLeft: 5 }}>auto</span>}
+                    </th>
+                    <th className="hf-th" style={{ textAlign: "right" }}>Students</th>
+                    <th className="hf-th" style={{ textAlign: "right" }}>
+                      % of cohort{!isEmpty && model.mode === "cuts" && <span style={{ color: H.pink, marginLeft: 5 }}>auto</span>}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody style={isEmpty ? { opacity: 0.55 } : undefined}>
+                  {model.bands.map((b, i) => {
+                    const isLowest = b.cut === null;
+                    return (
+                      <tr key={b.level}>
+                        <td className="hf-td">
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            {b.stars !== null && (
+                              <span className="hf-mono" style={{ fontSize: 12, color: H.pink, fontWeight: 700, width: 24, letterSpacing: 1 }}>
+                                {b.stars || "·"}
+                              </span>
+                            )}
+                            <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.15 }}>
+                              {model.isAward ? AWARD_SHORT[b.level] ?? b.level : b.level}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="hf-td" style={{ textAlign: "right" }}>
+                          {isEmpty ? (
+                            <span className="hf-sub hf-mono">—</span>
+                          ) : isLowest ? (
+                            <span className="hf-sub hf-mono">remainder</span>
+                          ) : model.mode === "cuts" ? (
+                            <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
+                              <CutInput value={b.cut ?? 0} onCommit={(v) => setCut(i, v)} />
+                              <span className="hf-sub">%</span>
+                              {rawOf(b.cut ?? 0) != null && (
+                                <span className="hf-sub" style={{ fontSize: 10 }}>≥{rawOf(b.cut ?? 0)}</span>
+                              )}
+                            </span>
+                          ) : (
+                            <span className="hf-mono" style={{ fontWeight: 600 }}>
+                              {b.cut}%
+                              {rawOf(b.cut ?? 0) != null && (
+                                <span className="hf-sub" style={{ fontSize: 10, marginLeft: 4 }}>≥{rawOf(b.cut ?? 0)}</span>
+                              )}
                             </span>
                           )}
-                          <span style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.15 }}>
-                            {model.isAward ? AWARD_SHORT[b.level] ?? b.level : b.level}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="hf-td" style={{ textAlign: "right" }}>
-                        {isLowest ? (
-                          <span className="hf-sub hf-mono">remainder</span>
-                        ) : model.mode === "cuts" ? (
-                          <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
-                            <CutInput value={b.cut ?? 0} onCommit={(v) => setCut(i, v)} />
-                            <span className="hf-sub">%</span>
-                            {rawOf(b.cut ?? 0) != null && (
-                              <span className="hf-sub" style={{ fontSize: 10 }}>≥{rawOf(b.cut ?? 0)}</span>
-                            )}
-                          </span>
-                        ) : (
-                          <span className="hf-mono" style={{ fontWeight: 600 }}>
-                            {b.cut}%
-                            {rawOf(b.cut ?? 0) != null && (
-                              <span className="hf-sub" style={{ fontSize: 10, marginLeft: 4 }}>≥{rawOf(b.cut ?? 0)}</span>
-                            )}
-                          </span>
-                        )}
-                      </td>
-                      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13.5, fontWeight: 600 }}>
-                        {Math.round(b.students).toLocaleString()}
-                      </td>
-                      <td className="hf-td" style={{ textAlign: "right" }}>
-                        {model.mode === "pct" && !isLowest ? (
-                          <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                            <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
-                              <CutInput value={model.targets[i] ?? 0} width={58} onCommit={(v) => setTarget(i, v)} />
-                              <span className="hf-sub">%</span>
+                        </td>
+                        <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13.5, fontWeight: 600 }}>
+                          {isEmpty ? "—" : Math.round(b.students).toLocaleString()}
+                        </td>
+                        <td className="hf-td" style={{ textAlign: "right" }}>
+                          {isEmpty ? (
+                            <span className="hf-sub hf-mono">—</span>
+                          ) : model.mode === "pct" && !isLowest ? (
+                            <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                              <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
+                                <CutInput value={model.targets[i] ?? 0} width={58} onCommit={(v) => setTarget(i, v)} />
+                                <span className="hf-sub">%</span>
+                              </span>
+                              {/* honest: nearest achievable vs the target above */}
+                              <span className="hf-sub" style={{ fontSize: 10, color: b.pct.toFixed(0) === String(model.targets[i]) ? H.ink3 : H.pink }}>
+                                ≈ {b.pct.toFixed(1)}% actual
+                              </span>
                             </span>
-                            {/* honest: nearest achievable vs the target above */}
-                            <span className="hf-sub" style={{ fontSize: 10, color: b.pct.toFixed(0) === String(model.targets[i]) ? H.ink3 : H.pink }}>
-                              ≈ {b.pct.toFixed(1)}% actual
-                            </span>
-                          </span>
-                        ) : (
-                          <span className="hf-mono" style={{ color: H.ink2 }}>{b.pct.toFixed(1)}%</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          ) : (
+                            <span className="hf-mono" style={{ color: H.ink2 }}>{b.pct.toFixed(1)}%</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
 
-            {/* cross-cycle comparison — compact, under the award table (mock) */}
-            {SHOW_CROSS_CYCLE && (
-              <MixComparison isAward={model.isAward} bands={model.bands} mockMix={mockMix} priorName={MOCK_PRIOR_NAME} />
-            )}
+              {/* Wave 3b — backsolve controls. Live ONLY inside "Fix cohort %"
+                  (re-suggest) and when an adopted suggestion has been edited in
+                  "Fix boundaries" (reset). Never a permanent block; a single slim
+                  row that swaps with the mode. */}
+              {!isEmpty && !model.locked && <BacksolveBar model={model} onSuggest={suggest} onResetAll={resetAll} />}
+
+              {/* cross-cycle comparison — compact, collapsible, secondary (mock) */}
+              {!isEmpty && SHOW_CROSS_CYCLE && (
+                <MixComparison isAward={model.isAward} bands={model.bands} mockMix={mockMix} priorName={MOCK_PRIOR_NAME} />
+              )}
             </div>
 
-            {/* pinned footer note — always visible at the bottom of the bounded column */}
-            <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "11px 14px", gap: 9, borderTop: `1px solid ${H.line}`, background: H.tint }}>
-              {model.mode === "pct" ? (
-                remainder < 0 ? (
-                  <>
-                    <Mark kind="fail" size={15} />
-                    <span style={{ fontSize: 11.5, color: H.bad }}>Targets exceed 100%. Reduce a band — the lowest is currently {remainder}%.</span>
-                  </>
-                ) : (
-                  <>
-                    <Mark kind="warn" size={15} />
-                    <span className="hf-sub" style={{ fontSize: 11.5 }}>The lowest band takes the remainder ({remainder}%). Scores are discrete, so achieved % can differ slightly from target.</span>
-                  </>
-                )
-              ) : (
-                <>
+            {/* pinned warning strip — guard-rail / D3 / sanity notices, always at
+                the bottom of the bounded column */}
+            <div style={{ flex: "0 0 auto", borderTop: `1px solid ${H.line}`, background: H.tint }}>
+              {isEmpty ? (
+                <div style={{ display: "flex", alignItems: "center", padding: "11px 14px", gap: 9 }}>
                   <Mark kind="warn" size={15} />
-                  <span className="hf-sub" style={{ fontSize: 11.5 }}>
-                    Top cut is {(model.cuts[0] ?? 0) - MOCK_PRIOR_TOP_CUT >= 0 ? "+" : ""}{(model.cuts[0] ?? 0) - MOCK_PRIOR_TOP_CUT} pts vs {MOCK_PRIOR_NAME} (mock) — confirm intended before continuing.
-                  </span>
-                </>
+                  <span className="hf-sub" style={{ fontSize: 11.5 }}>Boundaries become editable once scores are in.</span>
+                </div>
+              ) : (
+                <WarningStrip model={model} remainder={remainder} priorName={MOCK_PRIOR_NAME} priorTopCut={MOCK_PRIOR_TOP_CUT} />
               )}
             </div>
           </div>
         </div>
-
-        {/* Wave 3b — suggested cut-scores: backsolve working, guard-rails, ½-D3. */}
-        <SuggestionPanel
-          model={model}
-          onSuggest={suggest}
-          onResetAll={resetAll}
-          onResetCut={resetCut}
-        />
       </div>
     </CycleShell>
+  );
+}
+
+/** Empty-state placeholder where the histogram would go — clean, never a broken chart. */
+function ChartPlaceholder() {
+  return (
+    <div
+      style={{
+        flex: 1,
+        minHeight: 160,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        textAlign: "center",
+        border: `1px dashed ${H.line2}`,
+        borderRadius: 10,
+        background: H.canvas,
+        color: H.ink3,
+        padding: 24,
+      }}
+    >
+      <div className="hf-mono" style={{ fontSize: 22, color: H.ink3, opacity: 0.6 }}>·····</div>
+      <div style={{ fontSize: 13, fontWeight: 600, color: H.ink2 }}>No scored data yet</div>
+      <div className="hf-sub" style={{ fontSize: 11.5, maxWidth: 320 }}>
+        Complete the Score step to set boundaries — the distribution and cut handles appear here once scores are in.
+      </div>
+    </div>
   );
 }
 
@@ -346,173 +394,160 @@ function CohortPctInfo() {
 }
 
 /**
- * Suggested cut-scores panel (Wave 3b). Shows, per cut: the backsolved
- * suggestion in RAW marks + %, the target vs nearest-achievable % (honest about
- * the gap at small cohorts), any guard-rail clamp or tie that moved the value,
- * and whether the live cut is still the suggestion or has been edited. Offers
- * re-suggest and reset-to-suggestion, and surfaces the cohort-level ½-D3 warning
- * on the Outstanding cut. Suggestions are a starting point — always editable.
+ * Slim backsolve control row inside the right panel. Reuses the existing
+ * suggest / reset-to-suggestion provider actions — no new maths. In "Fix
+ * cohort %" it offers re-suggest (re-run the backsolve from the current target
+ * shares and adopt the solved cuts); in "Fix boundaries" it offers reset only
+ * when the adopted suggestion has actually been edited. It is never a permanent
+ * block — one quiet row that swaps with the mode.
  */
-function SuggestionPanel({
+function BacksolveBar({
   model,
   onSuggest,
   onResetAll,
-  onResetCut,
 }: {
   model: BoundaryModel;
   onSuggest: () => void;
   onResetAll: () => void;
-  onResetCut: (index: number) => void;
 }) {
-  const { suggestion, suggestedCuts, cuts, guardrails, maxRaw, d3Warning, isAward, locked } = model;
-  const rawOf = (pct: number) => (maxRaw > 0 ? Math.round((pct / 100) * maxRaw) : null);
-  const cutLevels = model.levels.slice(0, model.cuts.length); // non-lowest bands
+  const { mode, suggestedCuts, cuts } = model;
   const anyEdited =
     suggestedCuts != null && cuts.some((c, i) => suggestedCuts[i] != null && c !== suggestedCuts[i]);
-
+  const showReset = mode === "cuts" && anyEdited;
+  const caption =
+    mode === "pct"
+      ? "Cut-points solved from your target shares — adopt them to fine-tune by hand."
+      : anyEdited
+        ? "Edited from the backsolved suggestion."
+        : "Showing the backsolved suggestion.";
   return (
-    <div className="hf-card" style={{ flex: "0 0 auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div>
-          <div className="hf-lbl" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            Suggested cut-scores · the working behind the sliders
-            <span style={{ fontSize: 8, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>
-              BACKSOLVED
-            </span>
-          </div>
-          <div className="hf-sub" style={{ fontSize: 11, marginTop: 3, maxWidth: 620 }}>
-            The sliders above are pre-filled from this suggestion — drag or type to change any cut.{" "}
-            {isAward
-              ? "Backsolved from the target award distribution. The 25%/90% subject guard-rails and the ½-D3 check apply to per-subject performance cuts, not the overall award."
-              : `Backsolved from the target distribution, then held inside the policy guard-rails (≥ ${guardrails.floorPct}% floor, ≤ ${guardrails.ceilingPct}% ceiling). Cut = minimum raw score to be IN the level.`}
-          </div>
-        </div>
-        {!locked && (
-          <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 10,
+        flexWrap: "wrap",
+        padding: "10px 14px",
+        borderTop: `1px solid ${H.line}`,
+        background: H.canvas,
+      }}
+    >
+      <span className="hf-sub" style={{ fontSize: 11, display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ fontSize: 8, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>BACKSOLVED</span>
+        {caption}
+      </span>
+      {mode === "pct" || showReset ? (
+        <div style={{ display: "flex", gap: 8, flex: "0 0 auto" }}>
+          {mode === "pct" && (
             <Button variant="ghost" onClick={onSuggest}>
               <Icon name="arrow" />
               {suggestedCuts ? "Re-suggest" : "Use as boundaries"}
             </Button>
-            {anyEdited && (
-              <Button variant="ghost" onClick={onResetAll}>
-                Reset all to suggestion
-              </Button>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* per-cut working */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {cutLevels.map((level, i) => {
-          const pc = suggestion.perCut[i];
-          if (!pc) return null;
-          const liveCut = cuts[i] ?? 0;
-          const snap = suggestedCuts?.[i] ?? null;
-          const edited = snap != null && liveCut !== snap;
-          const sRaw = rawOf(pc.cut);
-          const liveRaw = rawOf(liveCut);
-          const outsideBounds = liveCut < guardrails.floorPct || liveCut > guardrails.ceilingPct;
-          return (
-            <div
-              key={level}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                flexWrap: "wrap",
-                padding: "8px 10px",
-                borderRadius: 8,
-                background: H.tint,
-                border: `1px solid ${H.line}`,
-              }}
-            >
-              <span style={{ fontSize: 12, fontWeight: 700, minWidth: 132 }}>
-                {isAward ? AWARD_SHORT[level] ?? level : level}
-                {model.bands[i]?.stars ? (
-                  <span className="hf-mono" style={{ color: H.pink, marginLeft: 6, letterSpacing: 1 }}>{model.bands[i]!.stars}</span>
-                ) : null}
-              </span>
-
-              {/* suggested raw cut + % */}
-              <span className="hf-mono" style={{ fontSize: 12.5, fontWeight: 700, minWidth: 120 }}>
-                suggest ≥ {sRaw != null ? `${sRaw} ` : ""}<span style={{ color: H.ink3, fontWeight: 600 }}>({pc.cut}%)</span>
-              </span>
-
-              {/* target vs nearest-achievable — honest about the gap */}
-              <span className="hf-sub" style={{ fontSize: 11, minWidth: 220 }}>
-                target {pc.targetPct}% · nearest achievable {pc.achievedPct.toFixed(1)}% = {pc.achievedCount} student{pc.achievedCount === 1 ? "" : "s"}
-              </span>
-
-              {/* guard-rail clamp badge */}
-              {pc.clamp && (
-                <span title="Guard-rail moved the distribution result" style={{ fontSize: 10.5, fontWeight: 700, color: H.bad, background: "#fbe9ef", border: `1px solid ${H.pink}`, borderRadius: 5, padding: "2px 6px" }}>
-                  {pc.clamp.bound === "floor"
-                    ? `distribution suggested ${pc.clamp.from}% → raised to ${pc.clamp.to}% (policy floor)`
-                    : pc.clamp.bound === "ceiling"
-                      ? `distribution suggested ${pc.clamp.from}% → lowered to ${pc.clamp.to}% (policy ceiling)`
-                      : `adjusted to ${pc.clamp.to}% to keep levels ordered`}
-                </span>
-              )}
-
-              {/* tie badge */}
-              {pc.tie && (
-                <span title="Several students share this score — a cut can't split them" style={{ fontSize: 10.5, fontWeight: 700, color: H.ink2, background: H.tint2, border: `1px solid ${H.line2}`, borderRadius: 5, padding: "2px 6px" }}>
-                  tie: {pc.tie.count} students at {pc.tie.atScore}% — band forced off target
-                </span>
-              )}
-
-              {/* edited vs suggested chip + reset */}
-              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
-                {snap != null &&
-                  (edited ? (
-                    <>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: H.ink2 }}>
-                        edited → {liveRaw != null ? `${liveRaw} ` : ""}({liveCut}%)
-                      </span>
-                      {!locked && (
-                        <button onClick={() => onResetCut(i)} className="hf-sub" style={{ fontSize: 10.5, color: H.pink, background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline" }}>
-                          reset
-                        </button>
-                      )}
-                    </>
-                  ) : (
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: H.good }}>suggested</span>
-                  ))}
-                {outsideBounds && (
-                  <span title="Set outside policy bounds — recorded as a waiver" style={{ fontSize: 10.5, fontWeight: 700, color: H.bad }}>
-                    ⚑ outside {guardrails.floorPct}–{guardrails.ceilingPct}% (waived)
-                  </span>
-                )}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ½-D3 cohort sanity check on the Outstanding cut */}
-      {!isAward && d3Warning.applicable && (
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 9, padding: "10px 12px", borderRadius: 8, background: d3Warning.consistent ? H.tint : "#fbe9ef", border: `1px solid ${d3Warning.consistent ? H.line : H.pink}` }}>
-          <Mark kind={d3Warning.consistent ? "pass" : "warn"} size={15} />
-          <span className="hf-sub" style={{ fontSize: 11.5 }}>
-            <strong style={{ color: d3Warning.consistent ? H.ink2 : H.bad }}>
-              ½-D3 check on the Outstanding cut:{" "}
-            </strong>
-            {d3Warning.consistent
-              ? `all ${d3Warning.outstandingCount} student(s) clearing the cut reached ≥ ${d3Warning.halfThreshold}/${d3Warning.d3Total} D3 items correct.`
-              : `${d3Warning.belowHalf} of ${d3Warning.outstandingCount} student(s) clear the cut WITHOUT ≥ ${d3Warning.halfThreshold}/${d3Warning.d3Total} D3 items correct.`}{" "}
-            <span style={{ color: H.ink3 }}>{d3Warning.note}</span>
-          </span>
+          )}
+          {showReset && (
+            <Button variant="ghost" onClick={onResetAll}>
+              Reset to suggestion
+            </Button>
+          )}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
 /**
- * Compact cross-cycle comparison (mock) sitting UNDER the award table on the
- * right — matching design/hfBoundaries.jsx ("Grade mix vs Jan 2026"). Now/prior
- * mini bars per band with the Δ above. Clearly labelled MOCK.
+ * Bottom warning strip on the right panel — guard-rail / D3 / sanity notices,
+ * stacked. Mode-aware: "Fix cohort %" surfaces the remainder note and any
+ * guard-rail clamp the backsolver applied; "Fix boundaries" surfaces the
+ * cross-cycle sanity check and any cut deliberately set outside the policy band.
+ * The ½-D3 cohort check is shown in both modes against the effective Outstanding
+ * cut. No new maths — every notice reads from the existing model.
+ */
+function WarningStrip({
+  model,
+  remainder,
+  priorName,
+  priorTopCut,
+}: {
+  model: BoundaryModel;
+  remainder: number;
+  priorName: string;
+  priorTopCut: number;
+}) {
+  const { mode, isAward, levels, guardrails } = model;
+  const levelLabel = (i: number) => {
+    const lvl = levels[i] ?? `Cut ${i + 1}`;
+    return isAward ? AWARD_SHORT[lvl] ?? lvl : lvl;
+  };
+  const notices: { kind: "pass" | "warn" | "fail"; text: string }[] = [];
+
+  if (mode === "pct") {
+    if (remainder < 0) {
+      notices.push({ kind: "fail", text: `Targets exceed 100%. Reduce a band — the lowest is currently ${remainder}%.` });
+    } else {
+      notices.push({ kind: "warn", text: `The lowest band takes the remainder (${remainder}%). Scores are discrete, so achieved % can differ slightly from target.` });
+    }
+    // Guard-rail clamps applied by the backsolver to the solved cuts.
+    for (const pc of model.suggestion.perCut) {
+      if (!pc.clamp) continue;
+      const lbl = levelLabel(pc.index);
+      notices.push({
+        kind: "warn",
+        text:
+          pc.clamp.bound === "floor"
+            ? `${lbl}: solved ${pc.clamp.from}% raised to ${pc.clamp.to}% (policy floor).`
+            : pc.clamp.bound === "ceiling"
+              ? `${lbl}: solved ${pc.clamp.from}% lowered to ${pc.clamp.to}% (policy ceiling).`
+              : `${lbl}: adjusted to ${pc.clamp.to}% to keep levels ordered.`,
+      });
+    }
+  } else {
+    const topCut = model.cuts[0] ?? 0;
+    const delta = topCut - priorTopCut;
+    notices.push({
+      kind: "warn",
+      text: `Top cut is ${delta >= 0 ? "+" : ""}${delta} pts vs ${priorName} (mock) — confirm intended before continuing.`,
+    });
+    if (!isAward) {
+      const outside = model.cuts.some((c) => c < guardrails.floorPct || c > guardrails.ceilingPct);
+      if (outside) {
+        notices.push({
+          kind: "warn",
+          text: `A cut sits outside the ${guardrails.floorPct}–${guardrails.ceilingPct}% policy band — recorded as a waiver.`,
+        });
+      }
+    }
+  }
+
+  // ½-D3 cohort sanity check on the effective Outstanding cut (both modes).
+  if (!isAward && model.d3Warning.applicable) {
+    const d = model.d3Warning;
+    notices.push({
+      kind: d.consistent ? "pass" : "warn",
+      text: d.consistent
+        ? `½-D3 check: all ${d.outstandingCount} student(s) above the Outstanding cut reached ≥ ${d.halfThreshold}/${d.d3Total} D3 items.`
+        : `½-D3 check: ${d.belowHalf} of ${d.outstandingCount} student(s) clear the Outstanding cut without ≥ ${d.halfThreshold}/${d.d3Total} D3 items.`,
+    });
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {notices.map((nt, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "flex-start", padding: "10px 14px", gap: 9, borderTop: i === 0 ? "none" : `1px solid ${H.line}` }}>
+          <Mark kind={nt.kind} size={15} />
+          <span className="hf-sub" style={{ fontSize: 11.5, color: nt.kind === "fail" ? H.bad : undefined }}>{nt.text}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Compact, collapsible cross-cycle comparison (mock) sitting UNDER the cut-score
+ * table on the right — matching design/hfBoundaries.jsx ("Grade mix vs Jan
+ * 2026"). Now/prior mini bars per band with the Δ above. Secondary, so it can be
+ * collapsed out of the way. Clearly labelled MOCK.
  */
 function MixComparison({
   isAward,
@@ -525,36 +560,46 @@ function MixComparison({
   mockMix: number[];
   priorName: string;
 }) {
+  const [open, setOpen] = useState(true);
   const mixMax = Math.max(5, ...bands.map((b) => b.pct), ...mockMix);
   const PLOT = 46;
   return (
-    <div style={{ padding: "14px 16px 10px", borderTop: `1px solid ${H.line}` }}>
-      <div className="hf-lbl" style={{ marginBottom: 14, display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap" }}>
+    <div style={{ padding: "10px 16px", borderTop: `1px solid ${H.line}` }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="hf-lbl"
+        style={{ display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap", width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: "inherit" }}
+      >
+        <span style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform .12s", color: H.ink3 }}>▸</span>
         {isAward ? "Award" : "Grade"} mix vs {priorName}
         <span style={{ fontSize: 8, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.5 }}>MOCK</span>
-      </div>
-      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: 70 }}>
-        {bands.map((b, i) => {
-          const nowPct = b.pct;
-          const last = mockMix[i] ?? 0;
-          const delta = nowPct - last;
-          const label = isAward ? AWARD_SHORT[b.level] ?? b.level : b.stars || b.level;
-          return (
-            <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }} title={b.level}>
-              <span className="hf-mono" style={{ fontSize: 9.5, color: Math.abs(delta) < 0.5 ? H.ink3 : delta >= 0 ? H.good : H.bad }}>{delta >= 0 ? "+" : ""}{delta.toFixed(1)}</span>
-              <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: PLOT }}>
-                <div style={{ width: 11, height: Math.max(3, (nowPct / mixMax) * PLOT), background: H.ink2, borderRadius: "2px 2px 0 0" }} />
-                <div style={{ width: 11, height: Math.max(3, (last / mixMax) * PLOT), border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
-              </div>
-              <span className="hf-mono" style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3, maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 11, fontSize: 10.5, color: H.ink3 }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />Now</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{priorName} (mock)</span>
-      </div>
+      </button>
+      {open && (
+        <>
+          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: 70, marginTop: 12 }}>
+            {bands.map((b, i) => {
+              const nowPct = b.pct;
+              const last = mockMix[i] ?? 0;
+              const delta = nowPct - last;
+              const label = isAward ? AWARD_SHORT[b.level] ?? b.level : b.stars || b.level;
+              return (
+                <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }} title={b.level}>
+                  <span className="hf-mono" style={{ fontSize: 9.5, color: Math.abs(delta) < 0.5 ? H.ink3 : delta >= 0 ? H.good : H.bad }}>{delta >= 0 ? "+" : ""}{delta.toFixed(1)}</span>
+                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: PLOT }}>
+                    <div style={{ width: 11, height: Math.max(3, (nowPct / mixMax) * PLOT), background: H.ink2, borderRadius: "2px 2px 0 0" }} />
+                    <div style={{ width: 11, height: Math.max(3, (last / mixMax) * PLOT), border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
+                  </div>
+                  <span className="hf-mono" style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3, maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 11, fontSize: 10.5, color: H.ink3 }}>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />Now</span>
+            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{priorName} (mock)</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
