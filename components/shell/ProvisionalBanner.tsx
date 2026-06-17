@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { Mark } from "@/components/ui/icons";
+import { Alert } from "@/components/shell/CycleShell";
 
 export function ProvisionalBanner({ cycleId }: { cycleId: string }) {
   const provider = useProvider();
@@ -23,30 +23,31 @@ export function ProvisionalBanner({ cycleId }: { cycleId: string }) {
   const awaiting = adj?.counts.awaiting ?? 0;
   if (missingEssay.length === 0 && awaiting === 0) return null;
 
+  // Render through the shared Alert so this folds into the single compact alerts
+  // area. Outstanding input is needed before sign-off → must-act (warn) tone.
   return (
-    <div
-      role="status"
-      style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 28px", background: H.warnSoft, borderBottom: `1px solid ${H.warn}55`, flexWrap: "wrap" }}
+    <Alert
+      tone="warn"
+      action={
+        <span style={{ display: "inline-flex", gap: 12, alignItems: "center" }}>
+          {missingEssay.length > 0 && (
+            <Link href={`/cycles/${cycleId}/import`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
+              Load essay marks →
+            </Link>
+          )}
+          {awaiting > 0 && (
+            <Link href={`/cycles/${cycleId}/adjustments`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
+              Triage incidents →
+            </Link>
+          )}
+        </span>
+      }
     >
-      <Mark kind="warn" size={15} />
-      <span style={{ fontSize: 12, color: H.ink }}>
-        <b>Grades are provisional.</b>{" "}
-        {missingEssay.length > 0 && (
-          <>No essay marks loaded for {missingEssay.join(" & ")} — those subjects score on MCQ only so far. </>
-        )}
-        {awaiting > 0 && <>{awaiting} incident{awaiting === 1 ? "" : "s"} still awaiting triage. </>}
-      </span>
-      {/* route to where the outstanding input is actually handled */}
+      <b>Grades are provisional.</b>{" "}
       {missingEssay.length > 0 && (
-        <Link href={`/cycles/${cycleId}/import`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
-          Load essay marks →
-        </Link>
+        <>No essay marks loaded for {missingEssay.join(" & ")} — those subjects score on MCQ only so far. </>
       )}
-      {awaiting > 0 && (
-        <Link href={`/cycles/${cycleId}/adjustments`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
-          Triage incidents →
-        </Link>
-      )}
-    </div>
+      {awaiting > 0 && <>{awaiting} incident{awaiting === 1 ? "" : "s"} still awaiting triage.</>}
+    </Alert>
   );
 }
