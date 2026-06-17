@@ -1,23 +1,26 @@
 "use client";
 
 /**
- * Screen 04 — Item review & scoring (the hero). Human gate 1: review item
- * quality and decide exclusions; the KPIs, score distribution and breakdowns
- * recompute live (through the provider → engine) on every exclusion.
+ * Screen 04 — Question review & scoring (the hero). Human gate 1: review item
+ * quality and decide exclusions; the KPIs recompute live (through the provider →
+ * engine) on every exclusion.
  *
- * Layout (realigned to the original design proportions):
- *  - the table is the full-height dominant element under a single slim control
- *    band (compact stats + filters + search + zoom);
- *  - the compact right panel is DUAL-MODE — the cohort summary (distribution /
- *    by-element / by-demand) by default, switching to the selected item's compact
- *    statistics deep-dive (with "← Back to cohort") when a row is clicked;
+ * Layout:
+ *  - the question table is the full-width dominant element under a single slim
+ *    control band (compact stats + filters + search + zoom);
+ *  - each question row is expandable — clicking a row reveals its per-question
+ *    deep-dive (compact statistics, discrimination groups, response outcome)
+ *    inline beneath the row; clicking again collapses it. One row at a time.
  *  - true whole-table zoom: − / + (and trackpad pinch) scale the entire table —
  *    columns, text and rows together — so zooming out genuinely fits more rows.
+ *
+ * The cohort-level summary (overall score distribution / by-element rollup) is
+ * deliberately absent here — it lives on the Diagnostics tab.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import type { ItemRow, ItemDetailModel, ReviewModel } from "@/lib/data/types";
+import type { ItemRow, ItemDetailModel } from "@/lib/data/types";
 import { H, ratingColor } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
@@ -28,7 +31,6 @@ import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import type { DataProvider } from "@/lib/data/provider";
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
-import { Histogram, BreakdownBars } from "@/components/ui/charts";
 import { ReliabilityPanel } from "@/components/ui/reliability";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
@@ -122,13 +124,10 @@ export default function ReviewPage({
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "discrimination", dir: 1 });
   const [reasonFor, setReasonFor] = useState<string | null>(null);
 
-  // Selection drives the dual-mode right panel; zoom scales the whole table.
+  // Selection drives the inline per-question deep-dive (one row at a time);
+  // zoom scales the whole table.
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [panelWidth, setPanelWidth] = useState(352);
-  // The distribution panel is collapsible so the item table — the priority —
-  // can take the full width. Selecting an item always reveals the deep-dive.
-  const [panelOpen, setPanelOpen] = useState(true);
   const { zoom, setZoom, scrollRef: tableScrollRef, zoomWrapStyle } = useTableZoom();
 
   const detail = useProviderData(
@@ -187,12 +186,8 @@ export default function ReviewPage({
     setReasonFor(null);
   };
   const restore = (itemId: string) => provider.setItemExcluded(cycleId, assessmentId, itemId, false);
-  const select = (itemId: string) =>
-    setSelectedId((cur) => {
-      const next = cur === itemId ? null : itemId;
-      if (next) setPanelOpen(true); // selecting a row reveals its deep-dive
-      return next;
-    });
+  // Clicking a row toggles its inline deep-dive; one row expanded at a time.
+  const select = (itemId: string) => setSelectedId((cur) => (cur === itemId ? null : itemId));
 
   const Num = ({ v }: { v: number | null }) => (
     <span className="hf-mono" style={{ fontSize: 12.5, color: v !== null && v < 0.2 ? H.bad : H.ink }}>
@@ -212,7 +207,7 @@ export default function ReviewPage({
     <CycleShell
       cycleId={cycleId}
       cycleName={cycleName}
-      page="Item review & scoring"
+      page="Question review & scoring"
       stageIndex={4}
       actions={
         <ExportButtons
@@ -262,7 +257,7 @@ export default function ReviewPage({
         <ZoomControl zoom={zoom} onZoom={setZoom} />
       </div>
 
-      {/* table + deep-dive */}
+      {/* full-width question table; rows expand inline to their deep-dive */}
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
         <div ref={tableScrollRef} style={{ flex: 1, overflow: "auto", background: H.paper, minWidth: 0 }}>
           {/* whole-table zoom: scale the table (columns + text + rows) together */}
@@ -270,7 +265,7 @@ export default function ReviewPage({
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <SortableTh label="Item" k="q" align="left" />
+                  <SortableTh label="Question" k="q" align="left" />
                   <th className="hf-th">Curriculum</th>
                   <th className="hf-th">Demand</th>
                   <SortableTh label="Quality" k="quality" align="left" info={<QualityInfo />} />
@@ -283,28 +278,42 @@ export default function ReviewPage({
               </thead>
               <tbody>
                 {view.map((it) => (
-                  <ItemRowView
-                    key={it.id}
-                    it={it}
-                    qLabel={qIndex.get(it.id) ?? ""}
-                    selected={selectedId === it.id}
-                    expanded={expanded.has(it.id)}
-                    onSelect={() => select(it.id)}
-                    onToggleExpand={() => toggleExpand(it.id)}
-                    reasonOpen={reasonFor === it.id}
-                    onAskReason={() => setReasonFor(it.id)}
-                    onCancelReason={() => setReasonFor(null)}
-                    onExclude={(reason) => exclude(it.id, reason)}
-                    onRestore={() => restore(it.id)}
-                    Num={Num}
-                  />
+                  <Fragment key={it.id}>
+                    <ItemRowView
+                      it={it}
+                      qLabel={qIndex.get(it.id) ?? ""}
+                      selected={selectedId === it.id}
+                      expanded={expanded.has(it.id)}
+                      onSelect={() => select(it.id)}
+                      onToggleExpand={() => toggleExpand(it.id)}
+                      reasonOpen={reasonFor === it.id}
+                      onAskReason={() => setReasonFor(it.id)}
+                      onCancelReason={() => setReasonFor(null)}
+                      onExclude={(reason) => exclude(it.id, reason)}
+                      onRestore={() => restore(it.id)}
+                      Num={Num}
+                    />
+                    {selectedId === it.id && (
+                      <tr>
+                        <td colSpan={9} style={{ padding: 0, background: H.pinkSoft2, borderBottom: `1px solid ${H.line}`, boxShadow: `inset 3px 0 0 ${H.pink}` }}>
+                          <div style={{ padding: "18px 24px 22px", maxWidth: 760 }}>
+                            {detail ? (
+                              <DetailBody detail={detail} onExclude={exclude} onRestore={restore} />
+                            ) : (
+                              <div className="hf-sub" style={{ padding: 8 }}>Loading…</div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
             <div className="hf-sub" style={{ padding: "13px 26px" }}>
-              Showing {view.length} of {model.items.length} items · click a row for its deep-dive
+              Showing {view.length} of {model.items.length} questions · click a row to expand its deep-dive
             </div>
-            {/* read-only Cronbach's α (reliability) for this subject + breakdowns */}
+            {/* read-only Cronbach's α (reliability) for this subject */}
             {reliability && (
               <div style={{ padding: "0 26px 28px" }}>
                 <ReliabilityPanel model={reliability} assessmentId={assessmentId} />
@@ -312,153 +321,8 @@ export default function ReviewPage({
             )}
           </div>
         </div>
-
-        {/* right panel — dual-mode (cohort summary ⇄ item deep-dive), collapsible
-            so the item table can use the full width when it's closed */}
-        <RightPanel
-          width={panelWidth}
-          onResize={setPanelWidth}
-          open={panelOpen}
-          onToggle={() => setPanelOpen((v) => !v)}
-          selected={!!selectedId}
-          onBack={() => setSelectedId(null)}
-          detail={detail}
-          model={model}
-          onExclude={exclude}
-          onRestore={restore}
-        />
       </div>
     </CycleShell>
-  );
-}
-
-// ── right panel: dual-mode (cohort summary ⇄ item deep-dive), collapsible ────
-function RightPanel({
-  width,
-  onResize,
-  open,
-  onToggle,
-  selected,
-  onBack,
-  detail,
-  model,
-  onExclude,
-  onRestore,
-}: {
-  width: number;
-  onResize: (w: number) => void;
-  open: boolean;
-  onToggle: () => void;
-  selected: boolean;
-  onBack: () => void;
-  detail: ItemDetailModel | null | undefined;
-  model: ReviewModel;
-  onExclude: (itemId: string, reason: string) => void;
-  onRestore: (itemId: string) => void;
-}) {
-  const startResize = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = width;
-    const move = (ev: PointerEvent) => onResize(Math.max(300, Math.min(600, startW + (startX - ev.clientX))));
-    const up = () => {
-      document.removeEventListener("pointermove", move);
-      document.removeEventListener("pointerup", up);
-    };
-    document.addEventListener("pointermove", move);
-    document.addEventListener("pointerup", up);
-  };
-
-  // Collapsed — a thin rail that gives the table full width; click to reopen.
-  if (!open) {
-    return (
-      <aside style={{ width: 38, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, display: "flex", flexDirection: "column", alignItems: "center" }}>
-        <button
-          onClick={onToggle}
-          title="Show score distribution"
-          aria-label="Show score distribution"
-          aria-expanded={false}
-          style={{ marginTop: 12, border: `1px solid ${H.line2}`, background: H.paper, borderRadius: 7, cursor: "pointer", padding: "8px 6px", display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}
-        >
-          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-            <rect x="2" y="8" width="3" height="6" rx="1" fill={H.bar} />
-            <rect x="6.5" y="4" width="3" height="10" rx="1" fill={H.bar} />
-            <rect x="11" y="6" width="3" height="8" rx="1" fill={H.bar} />
-          </svg>
-          <span style={{ writingMode: "vertical-rl", transform: "rotate(180deg)", fontSize: 10.5, fontWeight: 700, color: H.ink2, letterSpacing: 0.5, textTransform: "uppercase" }}>
-            Distribution
-          </span>
-        </button>
-      </aside>
-    );
-  }
-
-  return (
-    <aside style={{ width, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, boxShadow: "-12px 0 28px -18px rgba(31,42,49,.20)", display: "flex", position: "relative", minWidth: 0 }}>
-      <div onPointerDown={startResize} title="Drag to resize" style={{ position: "absolute", left: -3, top: 0, bottom: 0, width: 6, cursor: "ew-resize", zIndex: 2 }} />
-      <div style={{ flex: 1, overflow: "auto", padding: 20, minWidth: 0 }}>
-        {selected ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <button onClick={onBack} className="hf-btn ghost" style={{ fontSize: 12 }}>
-                ← Back to cohort
-              </button>
-              <div style={{ flex: 1 }} />
-              <CollapseButton onToggle={onToggle} />
-            </div>
-            {detail ? <DetailBody detail={detail} onExclude={onExclude} onRestore={onRestore} /> : (
-              <div className="hf-sub" style={{ padding: 20 }}>Loading…</div>
-            )}
-          </div>
-        ) : (
-          <CohortPanel model={model} onCollapse={onToggle} />
-        )}
-      </div>
-    </aside>
-  );
-}
-
-/** Hide the right panel so the item table takes the full width. */
-function CollapseButton({ onToggle }: { onToggle: () => void }) {
-  return (
-    <button
-      onClick={onToggle}
-      className="hf-btn ghost"
-      title="Hide panel — give the item table full width"
-      aria-label="Hide score distribution panel"
-      aria-expanded
-      style={{ fontSize: 11.5, padding: "3px 8px" }}
-    >
-      Hide ⟩
-    </button>
-  );
-}
-
-/** The default right-panel content: the cohort summary (the original right rail). */
-function CohortPanel({ model, onCollapse }: { model: ReviewModel; onCollapse?: () => void }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 11 }}>
-          <span className="hf-lbl">Score distribution</span>
-          <span style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 10, color: H.pink, fontWeight: 700 }}>
-            <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} /> LIVE
-          </span>
-          <div style={{ flex: 1 }} />
-          {onCollapse && <CollapseButton onToggle={onCollapse} />}
-        </div>
-        <Histogram data={model.distribution} height={120} />
-        <div className="hf-sub" style={{ marginTop: 7 }}>Cohort mean {model.cohortMean}% · σ {model.cohortSd}</div>
-      </div>
-      <div>
-        <div className="hf-lbl" style={{ marginBottom: 11 }}>By curriculum element</div>
-        <BreakdownBars items={model.byElement} />
-      </div>
-      <div>
-        <div className="hf-lbl" style={{ marginBottom: 11 }}>By demand level</div>
-        <BreakdownBars items={model.byDemand} />
-      </div>
-    </div>
   );
 }
 

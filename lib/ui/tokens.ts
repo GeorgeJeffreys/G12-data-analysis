@@ -52,7 +52,7 @@ export const PIPELINE_STAGES = [
   "Raw data",
   "Clean",
   "Raw scores",
-  "Review",
+  "Question review",
   "Adjustments",
   "Score",
   "Boundaries",
