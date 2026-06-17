@@ -2537,6 +2537,31 @@ export class InMemoryDataProvider implements DataProvider {
     const targets = input.targets ? [...input.targets] : [...cur.targets];
     if (input.targetIndex != null && input.targetValue != null) targets[input.targetIndex] = input.targetValue;
 
+    // Drag a handle in "Set distribution" mode: translate the dragged score-axis
+    // position into the implied target share for that band, then let the read
+    // model re-solve via the existing Wave 3b backsolver so the handle settles at
+    // the nearest achievable cut. The cohort share at-or-above the dragged score
+    // equals the combined share of every band above this cut, so this band's
+    // target is that cumulative share minus the bands above it. Same underlying
+    // value as the table's % column — drag and type stay in two-way sync.
+    if (input.dragTargetIndex != null && input.dragScoreValue != null) {
+      const idx = input.dragTargetIndex;
+      if (idx >= 0 && idx < targets.length) {
+        const pcts = this.scopePcts(cycleId, scope);
+        const n = pcts.length;
+        if (n > 0) {
+          const v = Math.max(0, Math.min(100, Math.round(input.dragScoreValue)));
+          const atOrAbove = pcts.reduce((c, p) => c + (Math.round(p) >= v ? 1 : 0), 0);
+          const cumPct = (atOrAbove / n) * 100;
+          const precedeSum = targets.slice(0, idx).reduce((a, b) => a + (Number(b) || 0), 0);
+          const otherSum = targets.reduce((a, b, j) => (j === idx ? a : a + (Number(b) || 0)), 0);
+          // Clamp so the band stays non-negative and the lowest band (remainder)
+          // never goes below zero.
+          targets[idx] = Math.max(0, Math.min(100 - otherSum, Math.round(cumPct - precedeSum)));
+        }
+      }
+    }
+
     let mode: BoundaryMode = input.mode ?? cur.mode;
     let suggested = cur.suggested ? [...cur.suggested] : undefined;
     let waived = cur.waived ? [...cur.waived] : undefined;

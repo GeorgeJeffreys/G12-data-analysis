@@ -4,10 +4,10 @@
  * Smoke-renders the real page with the live provider via renderToStaticMarkup to
  * lock the restored two-panel design: the score distribution + draggable handles
  * on the LEFT, the cut-score table + comparison + warning strip on the RIGHT, and
- * the Wave 3b backsolve interaction living ENTIRELY inside "Fix cohort %" mode —
- * never as an always-on panel. Also covers the empty-cycle placeholder (no bare
- * backsolve scaffolding). Consumes the model only; engine parity is unaffected
- * (covered by engine.parity.test.ts).
+ * the Wave 3b backsolve interaction living ENTIRELY inside "Set distribution" mode
+ * — never as an always-on panel. Handles are draggable in BOTH modes. Also covers
+ * the empty-cycle placeholder (no bare backsolve scaffolding). Consumes the model
+ * only; engine parity is unaffected (covered by engine.parity.test.ts).
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement as e } from "react";
@@ -74,16 +74,16 @@ async function renderPage(cycleId: string): Promise<string> {
 }
 
 describe("Boundaries page — two-panel dual-mode layout", () => {
-  it("Fix boundaries (manual) is the default: draggable handles + an output % column", async () => {
+  it("Set cut-points (manual) is the default: draggable handles + an output % column", async () => {
     activeProvider = live;
     live.setBoundary(liveId, "overall", { mode: "cuts" });
     const html = await renderPage(liveId);
     // Dual-mode toggle present, top-right of the working area.
-    expect(html).toContain("Fix boundaries");
-    expect(html).toContain("Fix cohort %");
-    // LEFT: the distribution is the hero, handles are draggable in manual mode.
+    expect(html).toContain("Set cut-points");
+    expect(html).toContain("Set distribution");
+    // LEFT: the distribution is the hero, handles drag to set the raw cut score.
     expect(html).toContain("Score distribution");
-    expect(html).toContain("Handles draggable");
+    expect(html).toContain("Drag to set cut score");
     // RIGHT: the cut-score table columns.
     expect(html).toContain("Cut-point ≥");
     expect(html).toContain("% of cohort");
@@ -92,12 +92,12 @@ describe("Boundaries page — two-panel dual-mode layout", () => {
     expect(html).not.toContain("% actual");
   });
 
-  it("switching to Fix cohort % swaps the right-panel interaction to the backsolve", async () => {
+  it("switching to Set distribution swaps the right-panel interaction to the backsolve — handles stay draggable", async () => {
     activeProvider = live;
     live.setBoundary(liveId, "overall", { mode: "pct" });
     const html = await renderPage(liveId);
-    // Handles are now computed from the targets, not dragged.
-    expect(html).toContain("Handles computed from targets");
+    // Handles remain draggable — now they re-target the band's share.
+    expect(html).toContain("Drag to set share");
     // The % column becomes an input showing target-vs-nearest-achievable, and the
     // backsolve control row appears — only in this mode.
     expect(html).toContain("% actual");
@@ -106,7 +106,7 @@ describe("Boundaries page — two-panel dual-mode layout", () => {
     live.setBoundary(liveId, "overall", { mode: "cuts" });
   });
 
-  it("Fix cohort % backsolves and moves the handles to the solved cuts", async () => {
+  it("Set distribution backsolves and moves the handles to the solved cuts", async () => {
     activeProvider = live;
     live.setBoundary(liveId, "overall", { mode: "pct", targets: [12, 24, 40] });
     const m = live.getBoundaries(liveId, "overall")!;
@@ -141,7 +141,8 @@ describe("Boundaries page — empty cycle", () => {
     expect(html).not.toContain("Reset to suggestion");
     expect(html).not.toContain("% actual");
     // The dual-mode toggle and draggable handles are not surfaced with no data.
-    expect(html).not.toContain("Fix cohort %");
-    expect(html).not.toContain("Handles draggable");
+    expect(html).not.toContain("Set distribution");
+    expect(html).not.toContain("Drag to set cut score");
+    expect(html).not.toContain("Drag to set share");
   });
 });

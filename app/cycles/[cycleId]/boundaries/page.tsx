@@ -2,17 +2,23 @@
 
 /**
  * Screen 05 — Scoring & grade boundaries (human gate 2). Interactive dual mode:
- * "Fix boundaries" (drag/type cut-points → live student counts) and
- * "Fix cohort %" (type target shares → backsolve cut-points). Per assessment the
- * bands are the four performance levels (three cut-points); the Overall scope is
- * the four-band award classification. All counts come from the provider/engine
- * over the real cohort. The cross-cycle comparison is a clearly-labelled mock.
+ * "Set cut-points" (drag/type raw cut-points → live student counts) and
+ * "Set distribution" (drag/type target shares → backsolve cut-points). In BOTH
+ * modes the histogram handles are draggable AND the right-hand table is an
+ * equivalent input — drag a handle OR type in the table; they stay in two-way
+ * sync over the same underlying value. What differs is which quantity drives:
+ * cut-points sets the raw cut directly; distribution re-targets the share and the
+ * existing Wave 3b backsolver settles the handle at the nearest achievable cut.
+ * Per assessment the bands are the four performance levels (three cut-points);
+ * the Overall scope is the four-band award classification. All counts come from
+ * the provider/engine over the real cohort. The cross-cycle comparison is a
+ * clearly-labelled mock.
  *
  * LAYOUT — a single per-subject screen with the dual-mode toggle top-right and a
  * two-panel working area: the score distribution + draggable cut handles dominate
  * the LEFT (the hero); the cut-score table, the cross-cycle comparison, and the
  * guard-rail / D3 / sanity warning strip sit on the RIGHT. The Wave 3b backsolve
- * is NOT a separate always-on panel — it lives entirely inside "Fix cohort %"
+ * is NOT a separate always-on panel — it lives entirely inside "Set distribution"
  * mode, swapping only the right-panel interaction. Switching modes never changes
  * the two-panel layout. When the cycle has no scored data the left card shows a
  * clean placeholder and the right rows are quiet — never bare backsolve controls.
@@ -76,10 +82,15 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
   const setCut = (index: number, v: number) =>
     provider.setBoundary(cycleId, scope, { cutIndex: index, cutValue: v });
+  // "Set distribution" drag: the dragged score position re-targets the band's
+  // share; the existing Wave 3b backsolver re-solves and the handle settles at
+  // the nearest achievable cut. Same value the table's % column edits.
+  const dragTarget = (index: number, v: number) =>
+    provider.setBoundary(cycleId, scope, { dragTargetIndex: index, dragScoreValue: v });
   const setMode = (mode: "cuts" | "pct") => provider.setBoundary(cycleId, scope, { mode });
   const setTarget = (index: number, v: number) =>
     provider.setBoundary(cycleId, scope, { targetIndex: index, targetValue: v });
-  // Wave 3b — suggestion actions (live only inside "Fix cohort %").
+  // Wave 3b — suggestion actions (live only inside "Set distribution").
   const suggest = () => provider.setBoundary(cycleId, scope, { suggest: true });
   const resetAll = () => provider.setBoundary(cycleId, scope, { resetToSuggestion: true });
 
@@ -163,15 +174,15 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
               {isEmpty
                 ? "No scored data yet — complete the Score step to set boundaries."
                 : model.mode === "cuts"
-                  ? `${model.isAward ? "Classify each student's overall score into an award level. " : ""}Drag a cut-point on the curve, or type a score — student counts update as you move.`
-                  : "Type the share of students you want in each level. We backsolve the nearest cut-points that achieve it."}
+                  ? `${model.isAward ? "Classify each student's overall score into an award level. " : ""}Drag a handle on the curve, or type a cut score on the right — student counts update as you move.`
+                  : "Drag a handle to re-target a band's share, or type the share you want on the right — we backsolve the nearest cut score and the handle settles there."}
             </div>
           </div>
           {/* Dual-mode toggle — only meaningful once there is scored data to work with. */}
           {!isEmpty && (
             <div style={{ display: "flex", alignItems: "center", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 400, flex: "0 0 auto" }}>
-              {seg("cuts", "Fix boundaries", "Set scores → see counts")}
-              {seg("pct", "Fix cohort %", "Set shares → solve scores")}
+              {seg("cuts", "Set cut-points", "Set scores → see counts")}
+              {seg("pct", "Set distribution", "Set shares → solve scores")}
               <span style={{ flex: "0 0 auto", paddingRight: 4 }}><CohortPctInfo /></span>
             </div>
           )}
@@ -183,15 +194,9 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span className="hf-lbl">Score distribution · {model.n} students</span>
               {!isEmpty && (
-                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: model.mode === "cuts" ? H.pink : H.ink3, fontWeight: 600 }}>
-                  {model.mode === "cuts" ? (
-                    <>
-                      <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} />
-                      Handles draggable
-                    </>
-                  ) : (
-                    "Handles computed from targets"
-                  )}
+                <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: H.pink, fontWeight: 600 }}>
+                  <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} />
+                  {model.mode === "cuts" ? "Drag to set cut score" : "Drag to set share"}
                 </span>
               )}
             </div>
@@ -204,8 +209,9 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                   cuts={model.cuts}
                   bands={model.bands}
                   isAward={model.isAward}
-                  draggable={model.mode === "cuts"}
-                  onDrag={setCut}
+                  draggable={!model.locked}
+                  mode={model.mode}
+                  onDrag={model.mode === "cuts" ? setCut : dragTarget}
                 />
                 {/* summary stats — its own non-shrinking strip below the plot, so it is
                     always fully visible and never overlaps the chart */}
@@ -217,7 +223,11 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                 </div>
                 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 8, marginTop: 10, color: H.ink3, fontSize: 11.5 }}>
                   <Icon name="arrow" />
-                  <span>Drag a dashed handle or edit a score on the right — everything recomputes instantly.</span>
+                  <span>
+                    {model.mode === "cuts"
+                      ? "Drag a handle or edit a cut score on the right — counts recompute instantly."
+                      : "Drag a handle or edit a share on the right — we backsolve the nearest cut and the handle settles there."}
+                  </span>
                 </div>
               </>
             )}
@@ -225,7 +235,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
           {/* table card — the compact companion (~40%). The cut-score table, the
               cross-cycle comparison and the warning strip live here; the backsolve
-              interaction swaps in only inside "Fix cohort %" mode. Bounded to the
+              interaction swaps in only inside "Set distribution" mode. Bounded to the
               viewport height so every level + the comparison stay reachable. */}
           <div className="hf-card" style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 460, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
@@ -308,9 +318,9 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                 </tbody>
               </table>
 
-              {/* Wave 3b — backsolve controls. Live ONLY inside "Fix cohort %"
+              {/* Wave 3b — backsolve controls. Live ONLY inside "Set distribution"
                   (re-suggest) and when an adopted suggestion has been edited in
-                  "Fix boundaries" (reset). Never a permanent block; a single slim
+                  "Set cut-points" (reset). Never a permanent block; a single slim
                   row that swaps with the mode. */}
               {!isEmpty && !model.locked && <BacksolveBar model={model} onSuggest={suggest} onResetAll={resetAll} />}
 
@@ -369,20 +379,20 @@ function ChartPlaceholder() {
 }
 
 /**
- * Inline plain-language definition of "Fix cohort %", reusing the shared InfoTip
+ * Inline plain-language definition of "Set distribution", reusing the shared InfoTip
  * popover (the same affordance introduced for the Item Quality definition).
  * Accurate to what the mode does post-Wave-3b: it backsolves cut-scores from a
  * target distribution — it is NOT a manual percentage cut.
  */
 function CohortPctInfo() {
   return (
-    <InfoTip label="What does Fix cohort % do?" width={300}>
+    <InfoTip label="What does Set distribution do?" width={300}>
       <div style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-        <div style={{ fontWeight: 700, color: H.ink, fontSize: 12, marginBottom: 4 }}>Fix cohort %</div>
+        <div style={{ fontWeight: 700, color: H.ink, fontSize: 12, marginBottom: 4 }}>Set distribution</div>
         <p style={{ margin: "0 0 7px" }}>
-          Set the target proportion of students you expect in each performance level. The app then{" "}
-          <b style={{ color: H.ink }}>backsolves the raw cut-scores</b> that would produce that distribution — a
-          starting point you can adjust.
+          Drag a handle or type the target proportion of students you want in each performance level. The app then{" "}
+          <b style={{ color: H.ink }}>backsolves the raw cut-scores</b> that would produce that distribution and the
+          handle settles at the nearest achievable cut.
         </p>
         <p style={{ margin: 0, color: H.ink3, fontSize: 10.5 }}>
           At this cohort size exact percentages aren’t always achievable, so it shows the nearest achievable result
@@ -397,7 +407,7 @@ function CohortPctInfo() {
  * Slim backsolve control row inside the right panel. Reuses the existing
  * suggest / reset-to-suggestion provider actions — no new maths. In "Fix
  * cohort %" it offers re-suggest (re-run the backsolve from the current target
- * shares and adopt the solved cuts); in "Fix boundaries" it offers reset only
+ * shares and adopt the solved cuts); in "Set cut-points" it offers reset only
  * when the adopted suggestion has actually been edited. It is never a permanent
  * block — one quiet row that swaps with the mode.
  */
@@ -458,8 +468,8 @@ function BacksolveBar({
 
 /**
  * Bottom warning strip on the right panel — guard-rail / D3 / sanity notices,
- * stacked. Mode-aware: "Fix cohort %" surfaces the remainder note and any
- * guard-rail clamp the backsolver applied; "Fix boundaries" surfaces the
+ * stacked. Mode-aware: "Set distribution" surfaces the remainder note and any
+ * guard-rail clamp the backsolver applied; "Set cut-points" surfaces the
  * cross-cycle sanity check and any cut deliberately set outside the policy band.
  * The ½-D3 cohort check is shown in both modes against the effective Outstanding
  * cut. No new maths — every notice reads from the existing model.
@@ -641,6 +651,7 @@ function BoundaryChart({
   bands,
   isAward,
   draggable,
+  mode,
   onDrag,
 }: {
   histogram: number[];
@@ -648,6 +659,7 @@ function BoundaryChart({
   bands: { level: string; stars: string | null }[];
   isAward: boolean;
   draggable: boolean;
+  mode: "cuts" | "pct";
   onDrag: (index: number, v: number) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -726,7 +738,13 @@ function BoundaryChart({
           <div style={{ position: "absolute", top: 0, bottom: 0, borderLeft: `2px dashed ${H.pink}` }} />
           <div
             onPointerDown={startDrag(i)}
-            title={draggable ? "Drag" : "Computed from target %"}
+            title={
+              !draggable
+                ? "Locked"
+                : mode === "cuts"
+                  ? "Drag to set the raw cut score"
+                  : "Drag to re-target this band's share — settles at the nearest achievable cut"
+            }
             style={{
               position: "absolute",
               top: -2,

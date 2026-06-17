@@ -121,6 +121,14 @@ export interface SetBoundaryInput {
   targetIndex?: number;
   targetValue?: number;
   /**
+   * Drag a handle in "Set distribution" mode: a dragged score-axis position is
+   * translated into the implied target share for that band, then the existing
+   * Wave 3b backsolver re-solves so the handle settles at the nearest achievable
+   * cut. Same underlying value as the table's % column (two-way sync).
+   */
+  dragTargetIndex?: number;
+  dragScoreValue?: number;
+  /**
    * Backsolve cuts from the current targets, store them as the editable starting
    * point + snapshot, and switch to "cuts" mode. Used for both "use suggestion"
    * and "re-suggest".
