@@ -85,14 +85,14 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           <ProvisionalBanner cycleId={cycleId} />
           {!model.locked && (
             <Alert
-              tone="info"
+              tone="warn"
               action={<Link href={`/cycles/${cycleId}/grades/distinction`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>Review safeguard →</Link>}
             >
               <b>Distinction safeguard</b> — confirm every provisional top award attempted enough top-difficulty questions before sign-off.
             </Alert>
           )}
           {!model.locked && (
-            <Alert tone="warn">
+            <Alert tone="info">
               Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments — boundaries can’t change afterward without re-opening.
             </Alert>
           )}
