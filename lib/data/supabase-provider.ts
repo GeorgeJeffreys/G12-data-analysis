@@ -92,7 +92,14 @@ const EMPTY_SEED: Seed = {
   liveCycle: {
     id: "", name: "Loading…", region: "eu-west", startedAt: "", lastActivity: "",
     stageIndex: 0, fileName: "", fileSizeMB: 0, uploadedAgo: "",
-    validation: { passed: true, checks: [] } as unknown as Seed["liveCycle"]["validation"],
+    // A well-formed (empty) validation report — `stats` is required by
+    // ValidationReport and must never be absent. Omitting it is what used to
+    // crash the Import screen's `report.stats.mcqRows` read on an empty cycle.
+    validation: {
+      passed: true,
+      checks: [],
+      stats: { rawRows: 0, mcqRows: 0, droppedSurveyRows: 0, droppedNonMcqRows: 0, assessments: 0, participants: 0, items: 0 },
+    },
     preview: { headers: [], rows: [] }, duplicates: 0,
     participants: [], assessments: [], diagnostics: [],
   },

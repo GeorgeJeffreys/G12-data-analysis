@@ -1,9 +1,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { createElement as e } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { readFileSync } from "node:fs";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
+import { parseExport, ingestAndClean } from "@/lib/ingest";
 import type { Seed } from "@/lib/data/seed-types";
 import type { DataProvider } from "@/lib/data/provider";
+import { sampleExportPath } from "./fixtures";
 
 const EMPTY_VALIDATION = {
   passed: true,
@@ -45,24 +48,48 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-const provider: DataProvider = new InMemoryDataProvider(emptySeed());
-
 // The Import page reads provider state through the context hooks; point those at
-// our empty-cycle provider so we render the genuine page for a brand-new cycle.
+// whichever provider the current test installs (empty cycle vs. ingested cycle)
+// so we render the genuine page against real provider read-models.
+let active: DataProvider = new InMemoryDataProvider(emptySeed());
 vi.mock("@/lib/data/context", () => ({
-  useProvider: () => provider,
-  useProviderData: <T,>(selector: (p: DataProvider) => T) => selector(provider),
+  useProvider: () => active,
+  useProviderData: <T,>(selector: (p: DataProvider) => T) => selector(active),
 }));
 
-describe("Import/Upload page renders for an empty cycle", () => {
-  it("renders the upload empty-state without crashing (no error boundary)", async () => {
-    const { default: ImportPage } = await import("@/app/cycles/[cycleId]/import/page");
-    const html = renderToStaticMarkup(e(ImportPage, { params: { cycleId: "new-cycle" } }));
+async function renderImport() {
+  const { default: ImportPage } = await import("@/app/cycles/[cycleId]/import/page");
+  return renderToStaticMarkup(e(ImportPage, { params: { cycleId: "new-cycle" } }));
+}
+
+describe("Import/Upload page renders", () => {
+  it("renders the upload empty-state for an empty cycle without crashing (no error boundary)", async () => {
+    active = new InMemoryDataProvider(emptySeed());
+    const html = await renderImport();
     expect(html).toContain("Upload exam data");
     // The raw-export card shows its (now-wired) upload prompt — an enabled
     // upload button — not a (meaningless) all-zero validation report.
     expect(html).toContain("Upload exam export");
     // The button must be live now that ingest is wired (no `disabled` attribute).
     expect(html).not.toContain("Raw-export ingest to Supabase is not yet wired");
+  });
+
+  // Regression guard for the data-present path: the validation report renders,
+  // including the "MCQ-only rows after cleaning" line that reads
+  // `model.report.stats.mcqRows` — the exact access that threw "Cannot read
+  // properties of undefined" before the empty-cycle fix. Don't regress it.
+  it("renders the validation report + detected subjects once a raw export is ingested", async () => {
+    const p = new InMemoryDataProvider(emptySeed());
+    const { rows } = parseExport(readFileSync(sampleExportPath()));
+    const { cleanedResponses, validationReport } = ingestAndClean(rows);
+    await p.ingestRawExport("new-cycle", { name: "export.xlsx", sizeMB: 1.3 }, cleanedResponses, validationReport);
+    active = p;
+
+    const html = await renderImport();
+    expect(html).toContain("Upload exam data");
+    expect(html).toContain("Validation report");
+    expect(html).toContain("MCQ-only rows after cleaning");
+    expect(html).toContain("Detected"); // combined-split panel summarises the subjects
+    expect(html).not.toContain("Upload exam export"); // not the empty-state prompt
   });
 });
