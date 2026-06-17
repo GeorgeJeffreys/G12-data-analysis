@@ -21,6 +21,27 @@ export function Button({
   );
 }
 
+/**
+ * Inline loading spinner — sized to sit next to button text. Inherits the
+ * surrounding text colour by default (so it reads white on a `pri` button and
+ * ink on a ghost one). Respects prefers-reduced-motion via the `.hf-spinner`
+ * rule in globals.css.
+ */
+export function Spinner({ size = 13, color = "currentColor" }: { size?: number; color?: string }) {
+  return (
+    <svg
+      className="hf-spinner"
+      viewBox="0 0 16 16"
+      style={{ width: size, height: size, flex: "0 0 auto", display: "inline-block", verticalAlign: "middle" }}
+      role="status"
+      aria-label="Loading"
+    >
+      <circle cx="8" cy="8" r="6" fill="none" stroke={color} strokeWidth="2" strokeOpacity="0.25" />
+      <path d="M8 2a6 6 0 0 1 6 6" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function Chip({
   on,
   children,

@@ -33,7 +33,7 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
   const supabase = createClient();
   const { data: auth } = await supabase.auth.getUser();
   const user = auth.user;
-  if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
+  if (!user) return NextResponse.json({ error: "You must be signed in to upload" }, { status: 401 });
 
   const { data } = await supabase.from("memberships").select("role,cycle_id").eq("user_id", user.id);
   const memberships = (data ?? []) as unknown as { role: string; cycle_id: string | null }[];
@@ -57,6 +57,9 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
     const ingest = await ingestCleanResponses(admin, cycleId, body.clean, {
       fileRef: body.fileName,
       report: body.report,
+      // Resolved from the session client above — the admin client has no session,
+      // so import_batches.created_by must be set explicitly (NOT NULL).
+      createdBy: user.id,
     });
     const compute = await recomputeAndWrite(admin, cycleId);
     // Mark the cycle as past the draft/upload stage now that data is in. The

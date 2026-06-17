@@ -83,6 +83,7 @@ async function main() {
   const ingestResult = await ingestCleanResponses(admin, cycleId, cleanedResponses, {
     fileRef: "sample_qm_export.xlsx",
     report: validationReport,
+    createdBy: owner.id,
   });
   console.log(
     `Ingested ${ingestResult.assessments} assessments, ${ingestResult.items} items, ` +

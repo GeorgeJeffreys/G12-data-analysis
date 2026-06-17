@@ -347,6 +347,17 @@ button:focus-visible {
   background: var(--pink-soft2);
 }
 
+/* inline button spinner (loading state) */
+@keyframes hf-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.hf-spinner {
+  animation: hf-spin 0.6s linear infinite;
+  transform-origin: center;
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition: none !important;

@@ -17,6 +17,7 @@ import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Badge } from "@/components/ui/primitives";
+import { UploadButton } from "@/components/import/UploadButton";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseEssayMarks } from "@/lib/data/parse-essays";
 import { parseIncidentLog } from "@/lib/data/parse-incidents";
@@ -352,10 +353,7 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
   return (
     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-      <Button variant={variant} onClick={() => fileRef.current?.click()} disabled={busy}>
-        <Icon name="upload" size={13} color={variant === "pri" ? "#fff" : undefined} />
-        {busy ? "Ingesting…" : label}
-      </Button>
+      <UploadButton busy={busy} label={label} variant={variant} onClick={() => fileRef.current?.click()} />
       {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
     </div>
   );

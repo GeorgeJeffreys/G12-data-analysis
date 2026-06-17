@@ -61,6 +61,14 @@ export interface IngestWriteResult {
 }
 
 export interface IngestWriteOptions {
+  /**
+   * Authenticated user id recorded as `import_batches.created_by` (audit column).
+   * REQUIRED: this write goes through the secret-key admin client, which has no
+   * session, so the `auth.uid()` column default always resolves to null and would
+   * violate the NOT NULL constraint. The caller resolves the user from the
+   * session-aware server client and passes it explicitly.
+   */
+  createdBy: string;
   /** File name / reference recorded on the import_batches row. */
   fileRef?: string;
   /** Validation report stored alongside the batch (surfaced on refresh). */
@@ -75,8 +83,12 @@ export async function ingestCleanResponses(
   admin: Admin,
   cycleId: string,
   recs: readonly CleanResponse[],
-  opts: IngestWriteOptions = {},
+  opts: IngestWriteOptions,
 ): Promise<IngestWriteResult> {
+  // The service client has no session, so we never let the DB's auth.uid()
+  // default fill an audit column — the caller must resolve the user explicitly.
+  if (!opts.createdBy) throw new Error("You must be signed in to upload");
+
   // ── 1. Clear any prior data for this cycle (FK-safe order) ────────────────
   // responses → items (cascades item_stats/item_reviews) → participants
   // (cascades participant_scores/grades) → assessments (cascades score_runs).
@@ -181,6 +193,8 @@ export async function ingestCleanResponses(
     parsed_rows: opts.report?.stats.rawRows ?? recs.length,
     validation_passed: opts.report?.passed ?? true,
     report_json: opts.report ?? null,
+    // Explicit — the service client has no auth.uid() to default from (NOT NULL).
+    created_by: opts.createdBy,
   });
   if (batchErr) throw new Error(`insert import_batches: ${batchErr.message}`);
 
