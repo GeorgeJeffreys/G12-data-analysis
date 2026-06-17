@@ -11,7 +11,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { CycleShell, Alert } from "@/components/shell/CycleShell";
+import { CycleShell, AlertStack } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
 import { ExportButtons } from "@/components/ui/ExportButtons";
@@ -81,7 +81,26 @@ export default function RawDataPage({ params }: { params: { cycleId: string } })
           right={<ZoomControl zoom={zoom} onZoom={setZoom} />}
         />
       }
-      alerts={<Alert tone="info" action={<Link href={`/cycles/${cycleId}/clean`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>Open Clean →</Link>}>This is exactly what you uploaded, <b>before any analysis</b> — a read-only view. Editing happens in Clean.</Alert>}
+      alerts={
+        <AlertStack
+          notices={[
+            {
+              key: "raw-data",
+              tone: "info",
+              message: (
+                <>
+                  This is exactly what you uploaded, <b>before any analysis</b> — a read-only view. Editing happens in Clean.
+                </>
+              ),
+              action: (
+                <Link href={`/cycles/${cycleId}/clean`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
+                  Open Clean →
+                </Link>
+              ),
+            },
+          ]}
+        />
+      }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "18px 28px", gap: 14, flex: 1, minWidth: 0 }}>
         <div>
