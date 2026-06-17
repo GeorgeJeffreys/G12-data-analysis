@@ -18,6 +18,7 @@ import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Badge } from "@/components/ui/primitives";
 import { UploadButton } from "@/components/import/UploadButton";
+import { UploadStatusLine, ConfirmStep, type UploadStage } from "@/components/import/UploadFlow";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseEssayMarks } from "@/lib/data/parse-essays";
 import { parseIncidentLog } from "@/lib/data/parse-incidents";
@@ -71,6 +72,11 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const adjUp = !!adj?.uploaded;
   const incidentStatus = adjUp ? `${adj!.counts.incidents} incidents · ${adj!.counts.decided} triaged` : "Not added";
 
+  // Why the second-step Confirm is unavailable (shown on the disabled ConfirmStep).
+  const confirmHint = !model.uploaded
+    ? "Upload and ingest a file first."
+    : "Resolve the validation issues above to continue.";
+
   return (
     <CycleShell
       cycleId={cycleId}
@@ -109,6 +115,13 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
         <ImportCard n="03" title="Incident log" tone={adjUp ? "pass" : "neutral"} status={incidentStatus} open={!!open[3]} onToggle={() => toggle(3)}>
           <IncidentBody cycleId={cycleId} model={adj} />
         </ImportCard>
+
+        <ConfirmStep
+          subjectCount={split?.subjects.length ?? 0}
+          canContinue={model.canContinue}
+          hint={confirmHint}
+          href={`/cycles/${cycleId}/raw-data`}
+        />
       </div>
     </CycleShell>
   );
@@ -321,40 +334,55 @@ function ExportEmpty({ cycleId }: { cycleId: string }) {
 function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label: string; variant: "pri" | "ghost" }) {
   const provider = useProvider();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
+  // Explicit, visible stages: idle → uploading (read/parse) → ingesting
+  // (persist + split) → done / failed. The status line names the active one.
+  const [stage, setStage] = useState<UploadStage>("idle");
   const [error, setError] = useState<string | null>(null);
+  const busy = stage === "uploading" || stage === "ingesting";
+
+  const fail = (msg: string) => {
+    setError(msg);
+    setStage("failed");
+  };
 
   const onFile = async (file: File | null) => {
     if (!file) return;
-    setBusy(true);
     setError(null);
+    setStage("uploading");
     try {
       const buffer = await file.arrayBuffer();
       const { rows } = parseExport(buffer);
       if (rows.length === 0) {
-        setError("No rows found. Export from Questionmark with the standard column set (the “in” sheet).");
+        fail("No rows found. Export from Questionmark with the standard column set (the “in” sheet).");
         return;
       }
       const { cleanedResponses, validationReport } = ingestAndClean(rows);
       if (cleanedResponses.length === 0) {
-        setError("No MCQ responses after cleaning. Check this is the combined exam export (not a survey file).");
+        fail("No MCQ responses after cleaning. Check this is the combined exam export (not a survey file).");
         return;
       }
+      // Browser parse/clean done; the server persist + split is the next stage.
+      setStage("ingesting");
       const sizeMB = Math.round((file.size / (1024 * 1024)) * 10) / 10;
       await provider.ingestRawExport(cycleId, { name: file.name, sizeMB }, cleanedResponses, validationReport);
+      setStage("done");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn’t read that file. Use the Questionmark .xlsx combined export.");
+      fail(e instanceof Error ? e.message : "Couldn’t read that file. Use the Questionmark .xlsx combined export.");
     } finally {
-      setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
     }
   };
 
+  // After a failure the control returns to a clearly retryable state: the primary
+  // upload button becomes "Try again"; "Replace file" already reads as retryable.
+  const buttonLabel = stage === "failed" && variant === "pri" ? "Try again" : label;
+  const busyLabel = stage === "ingesting" ? "Ingesting…" : "Uploading…";
+
   return (
     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-      <UploadButton busy={busy} label={label} variant={variant} onClick={() => fileRef.current?.click()} />
-      {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
+      <UploadButton busy={busy} label={buttonLabel} busyLabel={busyLabel} variant={variant} onClick={() => fileRef.current?.click()} />
+      <UploadStatusLine stage={stage} error={error} />
     </div>
   );
 }
