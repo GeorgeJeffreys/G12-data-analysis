@@ -10,8 +10,9 @@
  * on a screen (Review/Boundaries/…) whose data hasn't been produced yet.
  */
 
-/** Map a pipeline stage index to its route. Score+Boundaries share the
- *  boundaries screen, so both navigate there. */
+/** Map a pipeline stage index to its route. Score and Boundaries are distinct
+ *  screens: Score shows the computed post-adjustment scores, Boundaries sets the
+ *  cut-points. */
 export function stageRoute(cycleId: string, index: number): string {
   const base = `/cycles/${cycleId}`;
   switch (index) {
@@ -28,6 +29,7 @@ export function stageRoute(cycleId: string, index: number): string {
     case 5: // Adjustments
       return `${base}/adjustments`;
     case 6: // Score
+      return `${base}/score`;
     case 7: // Boundaries
       return `${base}/boundaries`;
     case 8: // Grades
@@ -48,8 +50,8 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Check raw scores", body: "Review the naïve (pre-adjustment) scores produced from the cleaned data.", cta: "Go to raw scores" },
   { title: "Review item quality", body: "Assessments are validated and waiting for quality review before scoring.", cta: "Go to item review" },
   { title: "Apply adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to adjustments" },
-  { title: "Set boundaries", body: "Scores are computed — set grade boundaries for each subject.", cta: "Go to boundaries" },
-  { title: "Set boundaries", body: "Set grade boundaries for each subject to derive grades.", cta: "Go to boundaries" },
+  { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },
+  { title: "Set boundaries", body: "Scores are confirmed — set grade boundaries for each subject to derive grades.", cta: "Go to boundaries" },
   { title: "Confirm grades", body: "Boundaries are set — review and confirm the resulting grades.", cta: "Go to grades" },
   { title: "Generate documents", body: "Grades are signed off. Generate certificates and performance reports for every student.", cta: "Generate documents" },
 ];

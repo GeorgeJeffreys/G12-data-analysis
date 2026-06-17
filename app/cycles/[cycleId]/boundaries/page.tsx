@@ -11,13 +11,12 @@
  * existing Wave 3b backsolver settles the handle at the nearest achievable cut.
  * Per assessment the bands are the four performance levels (three cut-points);
  * the Overall scope is the four-band award classification. All counts come from
- * the provider/engine over the real cohort. The cross-cycle comparison is a
- * clearly-labelled mock.
+ * the provider/engine over the real cohort.
  *
  * LAYOUT — a single per-subject screen with the dual-mode toggle top-right and a
  * two-panel working area: the score distribution + draggable cut handles dominate
- * the LEFT (the hero); the cut-score table, the cross-cycle comparison, and the
- * guard-rail / D3 / sanity warning strip sit on the RIGHT. The Wave 3b backsolve
+ * the LEFT (the hero); the cut-score table and the guard-rail / D3 / sanity
+ * warning strip sit on the RIGHT. The Wave 3b backsolve
  * is NOT a separate always-on panel — it lives entirely inside "Set distribution"
  * mode, swapping only the right-panel interaction. Switching modes never changes
  * the two-panel layout. When the cycle has no scored data the left card shows a
@@ -38,15 +37,6 @@ import { ExportButtons } from "@/components/ui/ExportButtons";
 import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import { Icon, Mark } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
-
-// MOCK: there is no prior cycle. Cross-cycle comparison is driven by these
-// labelled fixtures and gated by SHOW_CROSS_CYCLE so it's trivial to switch to
-// real data later. Never presented as if computed from real history.
-const SHOW_CROSS_CYCLE = true;
-const MOCK_PRIOR_NAME = "Jan 2026";
-const MOCK_PRIOR_TOP_CUT = 74;
-const MOCK_PRIOR_MIX_PERFORMANCE = [12, 28, 38, 22]; // % per band, top → bottom
-const MOCK_PRIOR_MIX_AWARD = [9, 24, 34, 33];
 
 export default function BoundariesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -121,7 +111,6 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const remainder = 100 - targetSum;
   // Raw cut alongside % (cut-scores are conceptually raw; the model stores %).
   const rawOf = (pct: number) => (model.maxRaw > 0 ? Math.round((pct / 100) * model.maxRaw) : null);
-  const mockMix = model.isAward ? MOCK_PRIOR_MIX_AWARD : MOCK_PRIOR_MIX_PERFORMANCE;
 
   const seg = (val: "cuts" | "pct", label: string, sub: string) => (
     <button
@@ -233,10 +222,10 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
             )}
           </div>
 
-          {/* table card — the compact companion (~40%). The cut-score table, the
-              cross-cycle comparison and the warning strip live here; the backsolve
-              interaction swaps in only inside "Set distribution" mode. Bounded to the
-              viewport height so every level + the comparison stay reachable. */}
+          {/* table card — the compact companion (~40%). The cut-score table and the
+              warning strip live here; the backsolve interaction swaps in only inside
+              "Set distribution" mode. Bounded to the viewport height so every level
+              stays reachable. */}
           <div className="hf-card" style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 460, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
               <table className="hf-rows-compact" style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -323,11 +312,6 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                   "Set cut-points" (reset). Never a permanent block; a single slim
                   row that swaps with the mode. */}
               {!isEmpty && !model.locked && <BacksolveBar model={model} onSuggest={suggest} onResetAll={resetAll} />}
-
-              {/* cross-cycle comparison — compact, collapsible, secondary (mock) */}
-              {!isEmpty && SHOW_CROSS_CYCLE && (
-                <MixComparison isAward={model.isAward} bands={model.bands} mockMix={mockMix} priorName={MOCK_PRIOR_NAME} />
-              )}
             </div>
 
             {/* pinned warning strip — guard-rail / D3 / sanity notices, always at
@@ -339,7 +323,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                   <span className="hf-sub" style={{ fontSize: 11.5 }}>Boundaries become editable once scores are in.</span>
                 </div>
               ) : (
-                <WarningStrip model={model} remainder={remainder} priorName={MOCK_PRIOR_NAME} priorTopCut={MOCK_PRIOR_TOP_CUT} />
+                <WarningStrip model={model} remainder={remainder} />
               )}
             </div>
           </div>
@@ -469,21 +453,17 @@ function BacksolveBar({
 /**
  * Bottom warning strip on the right panel — guard-rail / D3 / sanity notices,
  * stacked. Mode-aware: "Set distribution" surfaces the remainder note and any
- * guard-rail clamp the backsolver applied; "Set cut-points" surfaces the
- * cross-cycle sanity check and any cut deliberately set outside the policy band.
- * The ½-D3 cohort check is shown in both modes against the effective Outstanding
- * cut. No new maths — every notice reads from the existing model.
+ * guard-rail clamp the backsolver applied; "Set cut-points" surfaces any cut
+ * deliberately set outside the policy band. The ½-D3 cohort check is shown in both
+ * modes against the effective Outstanding cut. No new maths — every notice reads
+ * from the existing model.
  */
 function WarningStrip({
   model,
   remainder,
-  priorName,
-  priorTopCut,
 }: {
   model: BoundaryModel;
   remainder: number;
-  priorName: string;
-  priorTopCut: number;
 }) {
   const { mode, isAward, levels, guardrails } = model;
   const levelLabel = (i: number) => {
@@ -513,12 +493,6 @@ function WarningStrip({
       });
     }
   } else {
-    const topCut = model.cuts[0] ?? 0;
-    const delta = topCut - priorTopCut;
-    notices.push({
-      kind: "warn",
-      text: `Top cut is ${delta >= 0 ? "+" : ""}${delta} pts vs ${priorName} (mock) — confirm intended before continuing.`,
-    });
     if (!isAward) {
       const outside = model.cuts.some((c) => c < guardrails.floorPct || c > guardrails.ceilingPct);
       if (outside) {
@@ -549,67 +523,6 @@ function WarningStrip({
           <span className="hf-sub" style={{ fontSize: 11.5, color: nt.kind === "fail" ? H.bad : undefined }}>{nt.text}</span>
         </div>
       ))}
-    </div>
-  );
-}
-
-/**
- * Compact, collapsible cross-cycle comparison (mock) sitting UNDER the cut-score
- * table on the right — matching design/hfBoundaries.jsx ("Grade mix vs Jan
- * 2026"). Now/prior mini bars per band with the Δ above. Secondary, so it can be
- * collapsed out of the way. Clearly labelled MOCK.
- */
-function MixComparison({
-  isAward,
-  bands,
-  mockMix,
-  priorName,
-}: {
-  isAward: boolean;
-  bands: { level: string; stars: string | null; pct: number }[];
-  mockMix: number[];
-  priorName: string;
-}) {
-  const [open, setOpen] = useState(true);
-  const mixMax = Math.max(5, ...bands.map((b) => b.pct), ...mockMix);
-  const PLOT = 46;
-  return (
-    <div style={{ padding: "10px 16px", borderTop: `1px solid ${H.line}` }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className="hf-lbl"
-        style={{ display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap", width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left", color: "inherit" }}
-      >
-        <span style={{ display: "inline-block", transform: open ? "rotate(90deg)" : "none", transition: "transform .12s", color: H.ink3 }}>▸</span>
-        {isAward ? "Award" : "Grade"} mix vs {priorName}
-        <span style={{ fontSize: 8, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.5 }}>MOCK</span>
-      </button>
-      {open && (
-        <>
-          <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "space-around", height: 70, marginTop: 12 }}>
-            {bands.map((b, i) => {
-              const nowPct = b.pct;
-              const last = mockMix[i] ?? 0;
-              const delta = nowPct - last;
-              const label = isAward ? AWARD_SHORT[b.level] ?? b.level : b.stars || b.level;
-              return (
-                <div key={b.level} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 5, flex: 1, minWidth: 0 }} title={b.level}>
-                  <span className="hf-mono" style={{ fontSize: 9.5, color: Math.abs(delta) < 0.5 ? H.ink3 : delta >= 0 ? H.good : H.bad }}>{delta >= 0 ? "+" : ""}{delta.toFixed(1)}</span>
-                  <div style={{ display: "flex", alignItems: "flex-end", gap: 3, height: PLOT }}>
-                    <div style={{ width: 11, height: Math.max(3, (nowPct / mixMax) * PLOT), background: H.ink2, borderRadius: "2px 2px 0 0" }} />
-                    <div style={{ width: 11, height: Math.max(3, (last / mixMax) * PLOT), border: `1.5px solid ${H.line2}`, borderBottom: "none", borderRadius: "2px 2px 0 0" }} />
-                  </div>
-                  <span className="hf-mono" style={{ fontSize: 9.5, fontWeight: 700, color: H.ink3, maxWidth: 56, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-                </div>
-              );
-            })}
-          </div>
-          <div style={{ display: "flex", justifyContent: "center", gap: 16, marginTop: 11, fontSize: 10.5, color: H.ink3 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, background: H.ink2 }} />Now</span>
-            <span style={{ display: "flex", alignItems: "center", gap: 5 }}><span style={{ width: 9, height: 9, borderRadius: 2, border: `1.5px solid ${H.line2}` }} />{priorName} (mock)</span>
-          </div>
-        </>
-      )}
     </div>
   );
 }

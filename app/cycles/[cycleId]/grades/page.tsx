@@ -19,6 +19,7 @@ import { downloadCsv, downloadWorkbook } from "@/lib/ui/export";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
+import { InlineComposition } from "@/components/ui/composition";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import type { GradeCell, GradesModel, StudentComposition, PerfReportStudent, PerfReportSubject, PerfElementResult, DemandScore } from "@/lib/data/types";
 
@@ -229,28 +230,6 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         </div>
       )}
     </CycleShell>
-  );
-}
-
-/**
- * Discrete, always-visible composition for a grades row — MCQ + Essay + Alterations
- * → total (summed over the student's subjects). Shown with the Overall score (its
- * logical home), not under the student identifier. Clicking the row maximises this
- * into the full per-subject right panel (CompositionPanel).
- */
-function InlineComposition({ cs }: { cs?: StudentComposition }) {
-  if (!cs) return null;
-  const r1 = (v: number) => Math.round(v * 10) / 10;
-  const mcq = r1(cs.subjects.reduce((t, s) => t + s.mcq, 0));
-  const essay = r1(cs.subjects.reduce((t, s) => t + s.essay, 0));
-  const alt = r1(cs.subjects.reduce((t, s) => t + s.alterations, 0));
-  return (
-    <div className="hf-mono" style={{ fontSize: 10, color: H.ink3, display: "flex", gap: 6, alignItems: "center", justifyContent: "center", flexWrap: "wrap" }}>
-      <span>MCQ {mcq}</span>
-      <span>+ Essay {essay}</span>
-      <span style={{ color: alt ? H.pink : H.ink3 }}>{alt >= 0 ? "+" : "−"} Alt {Math.abs(alt)}</span>
-      <span style={{ color: H.ink2 }}>→ {cs.overall.total}/{cs.overall.max}</span>
-    </div>
   );
 }
 
