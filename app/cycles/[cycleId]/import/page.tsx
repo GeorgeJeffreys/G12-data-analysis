@@ -375,13 +375,14 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
 
   // After a failure the control returns to a clearly retryable state: the primary
   // upload button becomes "Try again"; "Replace file" already reads as retryable.
+  // The in-flight stage names itself in the single UploadStatusLine indicator (one
+  // spinner, one label), so the button no longer carries its own busy label/spinner.
   const buttonLabel = stage === "failed" && variant === "pri" ? "Try again" : label;
-  const busyLabel = stage === "ingesting" ? "Ingesting…" : "Uploading…";
 
   return (
     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-      <UploadButton busy={busy} label={buttonLabel} busyLabel={busyLabel} variant={variant} onClick={() => fileRef.current?.click()} />
+      <UploadButton busy={busy} label={buttonLabel} variant={variant} onClick={() => fileRef.current?.click()} />
       <UploadStatusLine stage={stage} error={error} />
     </div>
   );
