@@ -90,8 +90,13 @@ export function CycleShell({
 }
 
 /**
- * One consistent alert row for the consolidated alerts area. Matches the existing
- * Provisional/Lock banners so a page's notices read as a single stack.
+ * One consistent alert row for the consolidated alerts area. Each notice is a
+ * dense single line — small glyph, message, inline action — on a uniform light
+ * strip, so several stacked notices read as one compact, scannable area rather
+ * than a run of chunky full-width blocks. Tone gives a quiet visual distinction
+ * (a coloured left accent + glyph): `warn`/`bad` mark a must-act-before-sign-off
+ * notice, `info` a calm informational one. Renders nothing when not shown, so an
+ * empty alerts area leaves no stray strip.
  */
 export function Alert({
   tone = "warn",
@@ -102,14 +107,58 @@ export function Alert({
   children: ReactNode;
   action?: ReactNode;
 }) {
-  const bg = tone === "good" ? H.goodSoft : tone === "bad" ? H.badSoft : tone === "info" ? H.tint : H.warnSoft;
-  const border = tone === "good" ? H.good : tone === "bad" ? H.bad : tone === "info" ? H.line : H.warn;
-  const kind: MarkKind = tone === "good" ? "pass" : tone === "bad" ? "fail" : "warn";
+  // Uniform strip + a quiet coloured left accent per tone — no loud per-row fill,
+  // so the notices group into a single area instead of competing blocks.
+  const accent = tone === "good" ? H.good : tone === "bad" ? H.bad : tone === "info" ? H.line2 : H.warn;
   return (
-    <div role="status" style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 28px", background: bg, borderBottom: `1px solid ${border}55`, flexWrap: "wrap" }}>
-      <Mark kind={kind} size={15} />
-      <span style={{ fontSize: 12, color: H.ink, flex: 1, minWidth: 240 }}>{children}</span>
-      {action}
+    <div
+      role="status"
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        padding: "7px 28px",
+        background: H.canvas,
+        borderBottom: `1px solid ${H.line2}`,
+        boxShadow: `inset 3px 0 0 ${accent}`,
+      }}
+    >
+      <AlertGlyph tone={tone} />
+      <span style={{ fontSize: 12, color: H.ink, flex: 1, minWidth: 220, lineHeight: 1.4 }}>{children}</span>
+      {action && <span style={{ flex: "0 0 auto", whiteSpace: "nowrap" }}>{action}</span>}
     </div>
   );
+}
+
+/**
+ * The leading glyph for an Alert row. Must-act tones reuse the shared Mark
+ * (warn/fail/pass); the calm `info` tone shows a muted "i" so an informational
+ * notice never reads as an alarm next to a must-act one.
+ */
+function AlertGlyph({ tone }: { tone: "warn" | "good" | "bad" | "info" }) {
+  if (tone === "info") {
+    return (
+      <span
+        aria-hidden
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 14,
+          height: 14,
+          flex: "0 0 auto",
+          borderRadius: 999,
+          border: `1px solid ${H.line2}`,
+          color: H.ink3,
+          fontSize: 9,
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+      >
+        i
+      </span>
+    );
+  }
+  const kind: MarkKind = tone === "good" ? "pass" : tone === "bad" ? "fail" : "warn";
+  return <Mark kind={kind} size={14} />;
 }
