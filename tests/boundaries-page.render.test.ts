@@ -126,6 +126,29 @@ describe("Boundaries page — two-panel dual-mode layout", () => {
     // The legacy A–E reference scheme must not appear.
     expect(html).not.toContain("below D");
   });
+
+  it("no longer renders the mock award-mix comparison or its mock vs-previous-cycle warning", async () => {
+    activeProvider = live;
+    live.setBoundary(liveId, "overall", { mode: "cuts" });
+    const html = await renderPage(liveId);
+    // The mock "Award/Grade mix vs Jan 2026" block is gone.
+    expect(html).not.toContain("mix vs");
+    expect(html).not.toContain("MOCK");
+    expect(html).not.toContain("Jan 2026");
+    // Its mock-derived comparison warning is gone too.
+    expect(html).not.toContain("vs Jan 2026 (mock)");
+    expect(html).not.toContain("confirm intended");
+  });
+
+  it("keeps genuine guard-rail warnings — the remainder safeguard still renders", async () => {
+    activeProvider = live;
+    // Removing the mock comparison must not touch the real guard-rail strip: in
+    // "Set distribution" the lowest-band remainder notice is a genuine guard-rail.
+    live.setBoundary(liveId, "overall", { mode: "pct" });
+    const html = await renderPage(liveId);
+    expect(html).toContain("takes the remainder");
+    live.setBoundary(liveId, "overall", { mode: "cuts" });
+  });
 });
 
 describe("Boundaries page — empty cycle", () => {

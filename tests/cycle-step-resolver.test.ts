@@ -43,7 +43,7 @@ describe("stageRoute / doNextForStage", () => {
     expect(stageRoute("c", 0)).toBe("/cycles/c/import"); // Upload
     expect(stageRoute("c", 1)).toBe("/cycles/c/raw-data");
     expect(stageRoute("c", 4)).toBe("/cycles/c/review");
-    expect(stageRoute("c", 6)).toBe("/cycles/c/boundaries"); // Score
+    expect(stageRoute("c", 6)).toBe("/cycles/c/score"); // Score
     expect(stageRoute("c", 7)).toBe("/cycles/c/boundaries"); // Boundaries
     expect(stageRoute("c", 9)).toBe("/cycles/c/documents"); // Export
   });
