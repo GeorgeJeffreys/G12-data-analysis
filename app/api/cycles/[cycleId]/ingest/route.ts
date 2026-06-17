@@ -67,6 +67,13 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
     })("exam_cycles").update({ status: "in_review" }).eq("id", cycleId);
     return NextResponse.json({ ok: true, ingest, compute });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    // Log the full error server-side only. The raw message must never reach the
+    // browser: a malformed secret key surfaces inside a `Headers.set` TypeError
+    // that embeds the key, and Supabase errors can echo back request details.
+    console.error(`ingest failed for cycle ${cycleId}:`, e);
+    return NextResponse.json(
+      { error: "Couldn't connect to the data store — check configuration." },
+      { status: 500 },
+    );
   }
 }

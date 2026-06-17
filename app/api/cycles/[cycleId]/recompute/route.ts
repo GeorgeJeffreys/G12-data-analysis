@@ -35,6 +35,13 @@ export async function POST(_req: Request, { params }: { params: { cycleId: strin
     const result = await recomputeAndWrite(admin, cycleId);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
-    return NextResponse.json({ error: (e as Error).message }, { status: 500 });
+    // Log the full error server-side only; return a generic message so a raw
+    // Supabase/`Headers.set` error (which can embed the secret key) never reaches
+    // the browser.
+    console.error(`recompute failed for cycle ${cycleId}:`, e);
+    return NextResponse.json(
+      { error: "Couldn't connect to the data store — check configuration." },
+      { status: 500 },
+    );
   }
 }

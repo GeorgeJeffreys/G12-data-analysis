@@ -14,12 +14,24 @@ import type { Database } from "@/lib/types/database";
  */
 export function createAdminClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const secret = process.env.SUPABASE_SECRET_KEY;
+  const rawSecret = process.env.SUPABASE_SECRET_KEY;
 
-  if (!url || !secret) {
+  if (!url || !rawSecret) {
     throw new Error(
       "Missing NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SECRET_KEY (server-only). " +
         "Set them in .env.local — the secret key must never be a NEXT_PUBLIC_* var.",
+    );
+  }
+
+  // Defensive guard: a stray space/newline in the Vercel env var would otherwise
+  // make `Headers.set` throw an opaque `TypeError` deep in the request layer —
+  // and that TypeError embeds the key value, so it must never reach the client.
+  // Trim and validate the shape here so a bad value fails fast with a clear,
+  // server-side config error that NEVER contains the key itself.
+  const secret = rawSecret.trim();
+  if (!secret.startsWith("sb_secret_") || /\s/.test(secret)) {
+    throw new Error(
+      "SUPABASE_SECRET_KEY is malformed — check the Vercel env var for stray whitespace.",
     );
   }
 
