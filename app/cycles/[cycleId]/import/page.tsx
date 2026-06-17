@@ -20,6 +20,7 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { parseEssayMarks } from "@/lib/data/parse-essays";
 import { parseIncidentLog } from "@/lib/data/parse-incidents";
+import { parseExport, ingestAndClean } from "@/lib/ingest";
 import type { AdjustmentsModel, CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
 
 type Tone = "pass" | "warn" | "fail" | "neutral";
@@ -97,7 +98,7 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
         {split && <CombinedSplitPanel split={split} />}
 
         <ImportCard n="01" title="Raw exam export" required tone={exportTone} status={exportStatus} open={!!open[1]} onToggle={() => toggle(1)}>
-          <ExportBody model={model} counts={counts} resolved={resolved} onResolve={resolve} />
+          <ExportBody cycleId={cycleId} model={model} counts={counts} resolved={resolved} onResolve={resolve} />
         </ImportCard>
 
         <ImportCard n="02" title="Essay marks" tone={essayUp ? "pass" : "neutral"} status={essayStatus} open={!!open[2]} onToggle={() => toggle(2)}>
@@ -217,11 +218,13 @@ function ImportCard({
 
 // ── 01 · raw exam export body ───────────────────────────────────────────────
 function ExportBody({
+  cycleId,
   model,
   counts,
   resolved,
   onResolve,
 }: {
+  cycleId: string;
   model: IngestModel;
   counts: Record<string, number>;
   resolved: DuplicateStrategy | null;
@@ -230,7 +233,7 @@ function ExportBody({
   // Empty cycle: no raw export ingested yet. Render the upload prompt rather than
   // a file-meta + validation report for data that doesn't exist (which used to
   // crash reading `report.stats.mcqRows`). An empty cycle is the normal start.
-  if (!model.uploaded) return <ExportEmpty />;
+  if (!model.uploaded) return <ExportEmpty cycleId={cycleId} />;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* file meta */}
@@ -239,7 +242,7 @@ function ExportBody({
           <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{model.fileName} · {model.fileSizeMB} MB</span>
         </div>
         <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>uploaded {model.uploadedAgo}</span>
-        <Button variant="ghost">Replace file</Button>
+        <RawExportUploader cycleId={cycleId} label="Replace file" variant="ghost" />
       </div>
 
       {/* validation report */}
@@ -293,25 +296,67 @@ function ExportBody({
 }
 
 /** Empty-state for the raw export card before anything is ingested. The combined
- *  export is the one required input; uploading it splits the subjects and starts
- *  the pipeline. NB: wiring this upload to Supabase (persisting the parsed export
- *  + assessments) is the outstanding dependency — see the note below. */
-function ExportEmpty() {
+ *  export is the one required input; uploading it parses + splits the subjects,
+ *  persists assessments/items/responses, validates, and starts the pipeline. */
+function ExportEmpty({ cycleId }: { cycleId: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="hf-sub" style={{ fontSize: 12, maxWidth: 640 }}>
         Upload <b style={{ color: H.ink }}>one combined export</b> containing every subject. We detect each subject,
-        split it, and run validation automatically — no file is required for the optional essay-marks and incident-log
-        steps below.
+        split it, persist it, and run validation automatically — no file is required for the optional essay-marks and
+        incident-log steps below.
       </div>
-      <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-        <Button disabled title="Raw-export ingest to Supabase is not yet wired (see note)"><Icon name="upload" size={13} />Upload exam export</Button>
-      </div>
-      <div className="hf-sub" style={{ fontSize: 11.5, color: H.ink2, background: H.tint, borderRadius: 8, padding: "10px 12px", maxWidth: 640 }}>
-        <b>Dependency:</b> persisting a raw export (and its split assessments/items/responses) to Supabase isn’t wired up
-        yet, so the combined upload can’t be ingested live from here. Cycles and their assessment list are persisted; the
-        raw-export ingest RPC is the missing piece. Essay marks and the incident log below upload and persist locally.
-      </div>
+      <RawExportUploader cycleId={cycleId} label="Upload exam export" variant="pri" />
+    </div>
+  );
+}
+
+/**
+ * Upload + ingest one combined raw export. Parses + cleans + validates in the
+ * browser (reusing lib/ingest), then hands the cleaned responses to the provider,
+ * which persists the split assessments/items/responses to Supabase (live) or
+ * rebuilds them in memory (demo). Used for both the first upload and "Replace file".
+ */
+function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label: string; variant: "pri" | "ghost" }) {
+  const provider = useProvider();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const buffer = await file.arrayBuffer();
+      const { rows } = parseExport(buffer);
+      if (rows.length === 0) {
+        setError("No rows found. Export from Questionmark with the standard column set (the “in” sheet).");
+        return;
+      }
+      const { cleanedResponses, validationReport } = ingestAndClean(rows);
+      if (cleanedResponses.length === 0) {
+        setError("No MCQ responses after cleaning. Check this is the combined exam export (not a survey file).");
+        return;
+      }
+      const sizeMB = Math.round((file.size / (1024 * 1024)) * 10) / 10;
+      await provider.ingestRawExport(cycleId, { name: file.name, sizeMB }, cleanedResponses, validationReport);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn’t read that file. Use the Questionmark .xlsx combined export.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <Button variant={variant} onClick={() => fileRef.current?.click()} disabled={busy}>
+        <Icon name="upload" size={13} color={variant === "pri" ? "#fff" : undefined} />
+        {busy ? "Ingesting…" : label}
+      </Button>
+      {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
     </div>
   );
 }

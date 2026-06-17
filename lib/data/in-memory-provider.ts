@@ -32,7 +32,10 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
+import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
+import type { CleanResponse } from "@/lib/ingest/types";
+import type { ValidationReport } from "@/lib/ingest/types";
 import { SUBJECT_CATALOG } from "./subject-catalog";
 import type {
   AssembleScoreAnalysisArgs,
@@ -2635,6 +2638,54 @@ export class InMemoryDataProvider implements DataProvider {
     };
     this.audit("config", "Changed item-quality thresholds", "Engine Good/Review/Flag rating bands updated", null);
     this.bump();
+  }
+
+  /**
+   * Ingest a combined raw export into the (single) live cycle: rebuild its
+   * subjects/participants/items/responses from the cleaned responses by running
+   * the real engine, exactly as the seed builder does. There is no database in
+   * this build, so the rebuilt data lives in memory (and resets on reload); the
+   * Supabase provider overrides this to persist + recompute server-side.
+   */
+  ingestRawExport(
+    cycleId: string,
+    file: { name: string; sizeMB: number },
+    clean: CleanResponse[],
+    report: ValidationReport,
+  ): Promise<void> {
+    const lc = this.seed.liveCycle;
+    if (cycleId !== lc.id) return Promise.resolve();
+
+    const built = buildLiveCycleData(clean);
+
+    // Re-ingesting replaces the data set, so any prior per-item/per-scope
+    // decisions for this cycle no longer apply — clear them so the rebuilt
+    // (clean) subjects are served without stale exclusions/boundaries/locks.
+    for (const key of [...this.exclusions.keys()]) if (key.startsWith(`${cycleId}:`)) this.exclusions.delete(key);
+    for (const key of [...this.reasons.keys()]) if (key.startsWith(`${cycleId}:`)) this.reasons.delete(key);
+    for (const key of [...this.boundaries.keys()]) if (key.startsWith(`${cycleId}:`)) this.boundaries.delete(key);
+    this.locked.delete(cycleId);
+
+    lc.fileName = file.name;
+    lc.fileSizeMB = file.sizeMB;
+    lc.uploadedAgo = "just now";
+    lc.lastActivity = "just now";
+    lc.validation = report;
+    lc.preview = built.preview;
+    lc.duplicates = report.checks.find((c) => c.id === "duplicates")?.count ?? 0;
+    lc.participants = built.participants;
+    lc.assessments = built.assessments;
+    lc.diagnostics = built.diagnostics;
+    lc.stageIndex = 1; // uploaded → next action is Raw data
+
+    this.audit(
+      "upload",
+      "Ingested raw export",
+      `${built.assessments.length} subjects · ${built.participants.length} participants · ${file.name}`,
+      cycleId,
+    );
+    this.bump();
+    return Promise.resolve();
   }
 
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void {

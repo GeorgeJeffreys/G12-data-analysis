@@ -33,6 +33,7 @@ import type {
   DistinctionOverrideRow,
   DocumentSettingsRow,
   WorkspaceSettingRow,
+  ImportBatchRow,
   MemberRole,
 } from "@/lib/types/database";
 import type { CurrentUser, Role } from "./types";
@@ -199,6 +200,18 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const docRow = await selOne<DocumentSettingsRow>(
     supabase.from("document_settings").select("*").eq("cycle_id", cycleId).maybeSingle(),
   );
+  // Latest raw-export ingest batch — its stored validation report + file ref are
+  // what the Upload screen shows after a refresh (proving persistence, and
+  // surfacing any blocking issues from the original upload).
+  const importBatch = await selOne<ImportBatchRow>(
+    supabase
+      .from("import_batches")
+      .select("*")
+      .eq("cycle_id", cycleId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  );
 
   // Index helpers ----------------------------------------------------------
   const statByItem = new Map(stats.map((s) => [s.item_id, s]));
@@ -298,6 +311,14 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   seedAssessments.sort((a, b) => a._order - b._order);
   diagnostics.sort((a, b) => a._order - b._order);
 
+  // The stored validation report (if a raw export has been ingested) drives the
+  // Upload screen's validation panel + blocking-issue gating across refreshes.
+  const ingestReport =
+    (importBatch?.report_json as ValidationReport | null | undefined) ?? null;
+  const ingestValidation: ValidationReport = ingestReport ?? EMPTY_VALIDATION;
+  const ingestFileName = importBatch?.file_ref || "exam_export.xlsx";
+  const ingestDuplicates = ingestReport?.checks.find((c) => c.id === "duplicates")?.count ?? 0;
+
   const priorCycles: SeedPriorCycle[] = cycles.slice(1).map((c) => ({
     id: c.id,
     name: c.name,
@@ -320,12 +341,12 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       startedAt: new Date(live.created_at).toLocaleDateString(),
       lastActivity: new Date(live.updated_at).toLocaleString(),
       stageIndex: stageIndexFromStatus(live.status),
-      fileName: "exam_export.xlsx",
+      fileName: ingestFileName,
       fileSizeMB: 0,
-      uploadedAgo: new Date(live.created_at).toLocaleDateString(),
-      validation: EMPTY_VALIDATION,
+      uploadedAgo: importBatch ? new Date(importBatch.created_at).toLocaleString() : new Date(live.created_at).toLocaleDateString(),
+      validation: ingestValidation,
       preview: { headers: [], rows: [] },
-      duplicates: 0,
+      duplicates: ingestDuplicates,
       participants: seedParticipants,
       assessments: seedAssessments.map(({ _order, ...a }) => { void _order; return a; }),
       diagnostics: diagnostics.map(({ _order, ...d }) => { void _order; return d; }),

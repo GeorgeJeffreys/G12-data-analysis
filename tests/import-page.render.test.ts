@@ -59,9 +59,10 @@ describe("Import/Upload page renders for an empty cycle", () => {
     const { default: ImportPage } = await import("@/app/cycles/[cycleId]/import/page");
     const html = renderToStaticMarkup(e(ImportPage, { params: { cycleId: "new-cycle" } }));
     expect(html).toContain("Upload exam data");
-    // The raw-export card shows its upload prompt + the Supabase dependency note,
-    // not a (meaningless) all-zero validation report.
+    // The raw-export card shows its (now-wired) upload prompt — an enabled
+    // upload button — not a (meaningless) all-zero validation report.
     expect(html).toContain("Upload exam export");
-    expect(html).toContain("Dependency");
+    // The button must be live now that ingest is wired (no `disabled` attribute).
+    expect(html).not.toContain("Raw-export ingest to Supabase is not yet wired");
   });
 });

@@ -17,6 +17,7 @@
  */
 
 import type { AssembleScoreAnalysisArgs, AssembleItemAnalysisArgs } from "@/lib/export/types";
+import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
@@ -212,6 +213,19 @@ export interface DataProvider {
     excluded: boolean,
     reason?: string | null,
   ): void;
+  /**
+   * Ingest a combined raw export for a cycle: persist the split assessments,
+   * items, participants and the response matrix the engine consumes, then make
+   * the pipeline read that stored data. The browser parses + cleans + validates
+   * the file (reusing lib/ingest) and hands the cleaned responses + report here.
+   * Resolves once the data is persisted (Supabase) or rebuilt (in-memory).
+   */
+  ingestRawExport(
+    cycleId: string,
+    file: { name: string; sizeMB: number },
+    clean: CleanResponse[],
+    report: ValidationReport,
+  ): Promise<void>;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;
   /** Edit the engine's item-quality Good/Review/Flag thresholds (Lead/Admin only). */

@@ -39,6 +39,7 @@ import type {
   IncidentDecisionInput,
   EssayUploadRow,
 } from "./provider";
+import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
@@ -342,6 +343,35 @@ export class SupabaseDataProvider implements DataProvider {
     // Ingest-time action with no protected column; local only.
     this.inner.resolveDuplicates(cycleId, strategy);
     this.bump();
+  }
+
+  // raw-export ingest — the browser parses + cleans + validates the file (reusing
+  // lib/ingest) and hands the cleaned responses here. Persist + recompute must run
+  // server-side (the engine never runs in the browser; these tables aren't
+  // client-writable), so we POST to the ingest route and then re-hydrate from the
+  // database, which makes every downstream screen read the freshly-stored data.
+  async ingestRawExport(
+    cycleId: string,
+    file: { name: string; sizeMB: number },
+    clean: CleanResponse[],
+    report: ValidationReport,
+  ): Promise<void> {
+    const res = await fetch(`/api/cycles/${cycleId}/ingest`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ clean, report, fileName: file.name }),
+    });
+    if (!res.ok) {
+      let message = `Ingest failed (${res.status}).`;
+      try {
+        const body = (await res.json()) as { error?: string };
+        if (body.error) message = body.error;
+      } catch {
+        /* non-JSON error body */
+      }
+      throw new Error(message);
+    }
+    await this.rehydrate();
   }
   lockCycle(cycleId: string): void {
     this.inner.lockCycle(cycleId);
