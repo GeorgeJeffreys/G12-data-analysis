@@ -22,7 +22,7 @@ import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
 import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
-import { InlineComposition, SubjectScoreCell } from "@/components/ui/composition";
+import { SubjectScoreCell, OverallScoreCell } from "@/components/ui/composition";
 import Link from "next/link";
 
 export default function ScorePage({ params }: { params: { cycleId: string } }) {
@@ -67,8 +67,8 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
         <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
           <span className="hf-h2" style={{ fontSize: 16 }}>Computed scores</span>
           <span className="hf-sub" style={{ fontSize: 12, maxWidth: 620 }}>
-            Final post-adjustment scores per student — the numbers boundaries are set against. Each cell is raw / max · %,
-            with its MCQ + Essay + Alterations composition.
+            Final post-adjustment scores per student — the numbers boundaries are set against. Each cell shows raw/max
+            and %; hover a cell for the MCQ + Essay + Alterations breakdown.
           </span>
           <div style={{ flex: 1, minWidth: 12 }} />
           <ZoomControl zoom={zoom} onZoom={setZoom} />
@@ -77,14 +77,18 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
         {/* scores table — same all-subjects participant-table layout as Grades */}
         <div ref={scrollRef} className="hf-card" style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
           <div style={zoomWrapStyle}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            {/* Spreadsheet-style: fixed column widths, subtle gridlines (hf-grid),
+                a sticky header row (hf-th) and a sticky participant column
+                (hf-sticky-col). One compact figure per cell; hover reveals the
+                MCQ + Essay + Alterations composition via the cell's title. */}
+            <table className="hf-grid" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
               <thead>
                 <tr>
-                  <th className="hf-th">Participant</th>
+                  <th className="hf-th hf-sticky-col" style={{ width: 200 }}>Participant</th>
                   {comp.subjects.map((s) => (
-                    <th key={s.id} className="hf-th" style={{ textAlign: "center" }}>{subjectHeader(s.name)}</th>
+                    <th key={s.id} className="hf-th" style={{ textAlign: "right", width: 104 }}>{subjectHeader(s.shortName)}</th>
                   ))}
-                  <th className="hf-th" style={{ textAlign: "center" }}>Overall</th>
+                  <th className="hf-th" style={{ textAlign: "right", width: 116 }}>Overall</th>
                 </tr>
               </thead>
               <tbody>
@@ -92,7 +96,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
                   const byAssessment = new Map(st.subjects.map((s) => [s.assessmentId, s]));
                   return (
                     <tr key={st.participantId} className="hf-hover">
-                      <td className="hf-td">
+                      <td className="hf-td hf-sticky-col">
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={st.name}>{st.name}</div>
                           <div className="hf-mono" style={{ fontSize: 10.5, color: H.ink3, marginTop: 1 }} title="Student ID">
@@ -103,22 +107,13 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
                       {comp.subjects.map((sub) => {
                         const s = byAssessment.get(sub.id);
                         return (
-                          <td key={sub.id} className="hf-td" style={{ textAlign: "center" }}>
-                            {s ? <SubjectScoreCell s={s} /> : <span className="hf-sub hf-mono">—</span>}
+                          <td key={sub.id} className="hf-td" style={{ textAlign: "right" }}>
+                            {s ? <SubjectScoreCell s={s} /> : <span className="hf-sub hf-mono" title="No score for this subject">–</span>}
                           </td>
                         );
                       })}
-                      <td className="hf-td" style={{ textAlign: "center" }}>
-                        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-                          <span
-                            className="hf-mono"
-                            style={{ fontSize: 12.5, color: H.ink, fontWeight: 700, whiteSpace: "nowrap" }}
-                            title="Overall raw score / maximum · percentage"
-                          >
-                            {fmtNum(st.overall.total)} / {fmtNum(st.overall.max)} · {st.overall.pct.toFixed(1)}%
-                          </span>
-                          <InlineComposition cs={st} />
-                        </div>
+                      <td className="hf-td" style={{ textAlign: "right" }}>
+                        <OverallScoreCell cs={st} />
                       </td>
                     </tr>
                   );
@@ -132,17 +127,17 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
   );
 }
 
-/** Compact number: integers stay whole; fractional scores show one decimal. */
-function fmtNum(n: number): string {
-  return Number.isInteger(n) ? String(n) : n.toFixed(1);
-}
-
-/** Short subject-name column header, matching the Grades table. */
-function subjectHeader(name: string): string {
-  if (/applicable/i.test(name)) return "Applicable Math";
-  if (/english/i.test(name)) return "English";
-  if (/scientific/i.test(name)) return "Scientific";
-  if (/arabic/i.test(name)) return "Arabic";
-  if (/life/i.test(name)) return "Life";
-  return name.split(" ")[0] ?? name;
+/**
+ * Clean subject-name column header — identical to the Grades table. Reads the
+ * already-classified `shortName` (e.g. "Arabic 1st Lang"), never the raw
+ * assessment name, so it never falls back to the "G12++ " data prefix.
+ */
+function subjectHeader(shortName: string): string {
+  if (/applicable/i.test(shortName)) return "Applicable Math";
+  if (/english/i.test(shortName)) return "English";
+  if (/scientific/i.test(shortName)) return "Scientific";
+  if (/arabic/i.test(shortName)) return "Arabic";
+  if (/life/i.test(shortName)) return "Life";
+  // Strip any "G12++ " data prefix before falling back to the raw label.
+  return shortName.replace(/^\s*G12\+\+\s*/i, "").split(" ")[0] || shortName;
 }

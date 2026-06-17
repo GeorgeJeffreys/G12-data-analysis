@@ -51,12 +51,54 @@ describe("Score page — per-student post-adjustment computed scores", () => {
     }
   });
 
-  it("surfaces the score composition (MCQ + Essay + Alterations → total), reusing the Grades logic", async () => {
+  it("surfaces the score composition (MCQ + Essay + Alterations → total) on demand, reusing the Grades logic", async () => {
     activeProvider = live;
     const html = await renderScore(liveId);
-    expect(html).toContain("MCQ");
-    expect(html).toContain("Essay");
-    expect(html).toContain("Alt");
+    // The composition is no longer printed inline in every cell — it's revealed on
+    // hover, so it lives in a title tooltip (title="MCQ … + Essay … + Alt … → …").
+    expect(html).toMatch(/title="MCQ [\d.]+ \+ Essay [\d.]+ [+−] Alt [\d.]+ →/);
+  });
+
+  it("renders clean subject headers identical to Grades (Arabic, never the 'G12++' data prefix)", async () => {
+    activeProvider = live;
+    const html = await renderScore(liveId);
+    // Column headers read the clean subject names, the same as the Grades screen.
+    for (const h of ["Applicable Math", "English", "Scientific", "Arabic", "Life", "Overall"]) {
+      expect(html).toContain(`>${h}<`);
+    }
+    // The "G12++ " data prefix must never appear as a column header label. (The
+    // product brand legitimately contains "G12++" elsewhere in the shell, so scope
+    // the check to <th> cells.)
+    expect(html).not.toMatch(/<th[^>]*>[^<]*G12\+\+/);
+  });
+
+  it("strips the 'G12++ ' prefix even when it leaks into a subject's shortName", async () => {
+    // Guard the header derivation directly: a subject whose shortName still carries
+    // the raw "G12++ " prefix must render the clean trailing label, never "G12++".
+    const base = live.getComposition(liveId)!;
+    const leaked = {
+      ...base,
+      subjects: base.subjects.map((s, i) => (i === 0 ? { ...s, shortName: "G12++ Mystery" } : s)),
+    };
+    // Delegate everything to the live provider (preserving prototype methods used
+    // by the shell, e.g. getCurrentUser), overriding only getComposition.
+    activeProvider = new Proxy(live, {
+      get(target, prop, receiver) {
+        if (prop === "getComposition") return () => leaked;
+        const v = Reflect.get(target, prop, receiver);
+        return typeof v === "function" ? v.bind(target) : v;
+      },
+    }) as unknown as DataProvider;
+    const html = await renderScore(liveId);
+    expect(html).toContain(">Mystery<");
+    expect(html).not.toMatch(/<th[^>]*>[^<]*G12\+\+/);
+  });
+
+  it("renders one compact figure per subject cell (raw/max · %), not a multi-line cell", async () => {
+    activeProvider = live;
+    const html = await renderScore(liveId);
+    // Each cell is a single compact figure like "18/35 · 51%".
+    expect(html).toMatch(/\d+\/\d+ · \d+%/);
   });
 
   it("is read-only: no cut-point / boundary controls (distinct from Boundaries)", async () => {

@@ -66,21 +66,63 @@ export function InlineComposition({ cs }: { cs?: StudentComposition }) {
 }
 
 /**
- * Per-subject computed score for the Score screen: the prominent raw/max · % the
- * engine produced, with the MCQ + Essay + Alterations composition beneath it
- * (e.g. "MCQ 7 + Essay 0 + Alt 0 → 7/105 · 6.7%").
+ * One-line MCQ + Essay ± Alterations → total/max · pct% summary, for a hover
+ * tooltip (the `title` of a Score cell). Same numbers/wording as CompositionLine,
+ * but plain text so the spreadsheet-style cell stays a single compact figure and
+ * the breakdown is revealed on demand rather than printed in every cell.
+ */
+export function compositionTitle(c: {
+  mcq: number;
+  essay: number;
+  alterations: number;
+  total: number;
+  max: number;
+  pct: number;
+}): string {
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const a = r1(c.alterations);
+  const alt = `${a >= 0 ? "+" : "−"} Alt ${Math.abs(a)}`;
+  return `MCQ ${r1(c.mcq)} + Essay ${r1(c.essay)} ${alt} → ${fmtNum(c.total)}/${fmtNum(c.max)} · ${c.pct.toFixed(1)}%`;
+}
+
+/** Overall (subject-summed) composition tooltip for one student. */
+export function overallCompositionTitle(cs: StudentComposition): string {
+  const mcq = cs.subjects.reduce((t, s) => t + s.mcq, 0);
+  const essay = cs.subjects.reduce((t, s) => t + s.essay, 0);
+  const alt = cs.subjects.reduce((t, s) => t + s.alterations, 0);
+  return compositionTitle({ mcq, essay, alterations: alt, total: cs.overall.total, max: cs.overall.max, pct: cs.overall.pct });
+}
+
+/**
+ * Per-subject computed score for the Score screen — a single compact, right-
+ * aligned figure (raw/max · %), Excel-style. The MCQ + Essay + Alterations
+ * composition is no longer printed inline; it's revealed on hover via the cell's
+ * title tooltip (see compositionTitle), keeping rows dense and scannable.
  */
 export function SubjectScoreCell({ s }: { s: SubjectComposition }) {
   return (
-    <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
-      <span
-        className="hf-mono"
-        style={{ fontSize: 11.5, color: H.ink, fontWeight: 600, whiteSpace: "nowrap" }}
-        title="computed score · raw / max · percentage"
-      >
-        {fmtNum(s.total)} / {fmtNum(s.max)} · {s.pct.toFixed(1)}%
-      </span>
-      <CompositionLine mcq={s.mcq} essay={s.essay} alt={s.alterations} total={s.total} max={s.max} />
-    </div>
+    <span
+      className="hf-mono"
+      style={{ fontSize: 12, color: H.ink, fontWeight: 600, whiteSpace: "nowrap" }}
+      title={compositionTitle(s)}
+    >
+      {fmtNum(s.total)}/{fmtNum(s.max)} · {Math.round(s.pct)}%
+    </span>
+  );
+}
+
+/**
+ * Overall computed score for the Score screen — the bold single figure for a
+ * student's total, with the subject-summed composition on hover.
+ */
+export function OverallScoreCell({ cs }: { cs: StudentComposition }) {
+  return (
+    <span
+      className="hf-mono"
+      style={{ fontSize: 12.5, color: H.ink, fontWeight: 700, whiteSpace: "nowrap" }}
+      title={overallCompositionTitle(cs)}
+    >
+      {fmtNum(cs.overall.total)}/{fmtNum(cs.overall.max)} · {Math.round(cs.overall.pct)}%
+    </span>
   );
 }

@@ -394,7 +394,7 @@ export interface StudentComposition {
 }
 export interface CompositionModel {
   cycleId: string;
-  subjects: { id: string; name: string; hasEssay: boolean }[];
+  subjects: { id: string; name: string; shortName: string; hasEssay: boolean }[];
   students: StudentComposition[];
 }
 

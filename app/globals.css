@@ -250,6 +250,40 @@ tr.hf-hover:hover {
   background: var(--pink-soft2);
 }
 
+/* Sticky first column (e.g. the participant column on the Score screen): the
+   column stays pinned to the left edge while the subject columns scroll
+   horizontally underneath it — the companion to the sticky .hf-th header row,
+   giving a spreadsheet feel where both the header and the identity column stay
+   visible. The solid background covers scrolling cells; the inset shadow draws
+   the divider (border-collapse drops borders on stuck cells). */
+.hf-sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--paper);
+  box-shadow: inset -1px 0 0 var(--line2);
+}
+/* The top-left corner (a sticky header cell that is also the sticky column) must
+   sit above both the header row and the column, and keep the header tint. */
+th.hf-sticky-col {
+  z-index: 5;
+  background: var(--tint);
+}
+/* Keep the row-hover highlight visible on the pinned cell. */
+tr.hf-hover:hover .hf-sticky-col {
+  background: var(--pink-soft2);
+}
+
+/* Subtle vertical gridlines for a spreadsheet-style table — opt in per table. */
+.hf-grid th.hf-th,
+.hf-grid td.hf-td {
+  border-right: 1px solid var(--line);
+}
+.hf-grid th.hf-th:last-child,
+.hf-grid td.hf-td:last-child {
+  border-right: none;
+}
+
 /* Compact rows for short, fixed-length tables (e.g. the Boundaries award levels)
    so the table plus anything beneath it fits on screen without scrolling. */
 .hf-rows-compact td.hf-td {

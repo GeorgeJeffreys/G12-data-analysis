@@ -30,7 +30,9 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
     stageIndex: 5,
     done: 2,
     primary: (
-      <Link href={`/cycles/${cycleId}/boundaries`}>
+      // Adjustments → Score (step 7) → Boundaries (step 8): the next step is the
+      // computed-scores screen, not boundaries (no step is skipped here).
+      <Link href={`/cycles/${cycleId}/score`}>
         <Button variant="pri">Continue to scoring<Icon name="arrow" color="#fff" /></Button>
       </Link>
     ),

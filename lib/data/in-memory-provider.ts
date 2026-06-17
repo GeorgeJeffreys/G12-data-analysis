@@ -2082,7 +2082,7 @@ export class InMemoryDataProvider implements DataProvider {
   getComposition(cycleId: string): CompositionModel | null {
     if (cycleId !== this.seed.liveCycle.id) return null;
     const essayIds = new Set(this.essaySubjectIds());
-    const subjects = this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name, hasEssay: essayIds.has(a.id) }));
+    const subjects = this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name, shortName: a.shortName, hasEssay: essayIds.has(a.id) }));
     const labelOf = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
 
     // participant -> assessment -> ParticipantScore
