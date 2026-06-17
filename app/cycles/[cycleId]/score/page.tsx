@@ -17,8 +17,8 @@
  */
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { CycleShell } from "@/components/shell/CycleShell";
-import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
+import { CycleShell, AlertStack } from "@/components/shell/CycleShell";
+import { useProvisionalNotice } from "@/components/shell/ProvisionalBanner";
 import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
@@ -32,6 +32,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
   // every score on this screen comes from the composition (participant_scores).
   const grades = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const provisional = useProvisionalNotice(cycleId);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!comp || comp.students.length === 0) {
@@ -59,7 +60,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
           </Button>
         </Link>
       }
-      alerts={<ProvisionalBanner cycleId={cycleId} />}
+      alerts={<AlertStack notices={provisional ? [provisional] : []} />}
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "16px 32px 18px", gap: 12, flex: 1, minHeight: 0 }}>
         {/* slim header strip — title + plain-language note + zoom, kept small so the

@@ -28,9 +28,9 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import type { BoundaryModel } from "@/lib/data/types";
 import { H } from "@/lib/ui/tokens";
 import { AWARD_SHORT } from "@/lib/data/grading";
-import { CycleShell } from "@/components/shell/CycleShell";
+import { CycleShell, AlertStack } from "@/components/shell/CycleShell";
 import { Shell } from "@/components/shell/Shell";
-import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
+import { useProvisionalNotice } from "@/components/shell/ProvisionalBanner";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button } from "@/components/ui/primitives";
 import { ExportButtons } from "@/components/ui/ExportButtons";
@@ -44,6 +44,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const [scope, setScope] = useState<string>("overall");
   const model = useProviderData((p) => p.getBoundaries(cycleId, scope), [cycleId, scope]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const provisional = useProvisionalNotice(cycleId);
 
   // Pre-fill the draggable cut-score sliders from the Wave 3b backsolved
   // suggestion as the starting point — the suggestion IS the initial slider
@@ -146,7 +147,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           </Button>
         </Link>
       }
-      alerts={<ProvisionalBanner cycleId={cycleId} />}
+      alerts={<AlertStack notices={provisional ? [provisional] : []} />}
       subjectTabs={
         <AssessmentTabs
           activeId={scope}

@@ -11,8 +11,8 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { DataProvider } from "@/lib/data/provider";
 import { H } from "@/lib/ui/tokens";
-import { CycleShell, Alert } from "@/components/shell/CycleShell";
-import { ProvisionalBanner } from "@/components/shell/ProvisionalBanner";
+import { CycleShell, AlertStack, type Notice } from "@/components/shell/CycleShell";
+import { useProvisionalNotice } from "@/components/shell/ProvisionalBanner";
 import { Button } from "@/components/ui/primitives";
 import { ExportButtons } from "@/components/ui/ExportButtons";
 import { downloadCsv, downloadWorkbook } from "@/lib/ui/export";
@@ -30,6 +30,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
   const perf = useProviderData((p) => p.getPerformanceReport(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const provisional = useProvisionalNotice(cycleId);
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
@@ -82,22 +83,38 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
         )
       }
       alerts={
-        <>
-          <ProvisionalBanner cycleId={cycleId} />
-          {!model.locked && (
-            <Alert
-              tone="warn"
-              action={<Link href={`/cycles/${cycleId}/grades/distinction`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>Review safeguard →</Link>}
-            >
-              <b>Distinction safeguard</b> — confirm every provisional top award attempted enough top-difficulty questions before sign-off.
-            </Alert>
-          )}
-          {!model.locked && (
-            <Alert tone="info">
-              Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments — boundaries can’t change afterward without re-opening.
-            </Alert>
-          )}
-        </>
+        <AlertStack
+          notices={[
+            ...(provisional ? [provisional] : []),
+            ...(!model.locked
+              ? ([
+                  {
+                    key: "distinction",
+                    tone: "warn",
+                    message: (
+                      <>
+                        <b>Distinction safeguard</b> — confirm every provisional top award attempted enough top-difficulty questions before sign-off.
+                      </>
+                    ),
+                    action: (
+                      <Link href={`/cycles/${cycleId}/grades/distinction`} style={{ fontSize: 11.5, color: H.pink, fontWeight: 600 }}>
+                        Review safeguard →
+                      </Link>
+                    ),
+                  },
+                  {
+                    key: "locking",
+                    tone: "info",
+                    message: (
+                      <>
+                        Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments — boundaries can’t change afterward without re-opening.
+                      </>
+                    ),
+                  },
+                ] satisfies Notice[])
+              : []),
+          ]}
+        />
       }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "16px 32px 18px", gap: 12, flex: 1, minHeight: 0 }}>

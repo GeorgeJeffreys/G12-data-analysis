@@ -11,7 +11,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
-import { CycleShell, Alert } from "@/components/shell/CycleShell";
+import { CycleShell, Alert, AlertStack } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Avatar } from "@/components/ui/primitives";
 import { ExportButtons } from "@/components/ui/ExportButtons";
@@ -73,9 +73,20 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
         />
       }
       alerts={
-        <Alert tone="warn" action={<span className="hf-mono" style={{ fontSize: 11.5, color: H.warn, fontWeight: 700 }}>0 items excluded</span>}>
-          <b>Scores as-submitted — before any item review.</b> No questions have been dropped yet; final scores can change once weak items are reviewed.
-        </Alert>
+        <AlertStack
+          notices={[
+            {
+              key: "as-submitted",
+              tone: "warn",
+              message: (
+                <>
+                  <b>Scores as-submitted — before any item review.</b> No questions have been dropped yet; final scores can change once weak items are reviewed.
+                </>
+              ),
+              action: <span className="hf-mono" style={{ fontSize: 11.5, color: H.warn, fontWeight: 700 }}>0 items excluded</span>,
+            },
+          ]}
+        />
       }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "16px 28px", gap: 12, flex: 1, minHeight: 0, minWidth: 0 }}>
