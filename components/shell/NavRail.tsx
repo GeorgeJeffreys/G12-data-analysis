@@ -12,10 +12,11 @@ import { AccountMenu } from "./AccountMenu";
 
 // Three areas, with the batch-2 rail icons (design/hf.jsx HRAIL).
 const NAV = [
-  { k: "Cycles", href: "/", d: "M3 5h10M3 8h10M3 11h7" },
-  { k: "Analytics", href: "/analytics", d: "M3 13V8.5M7.5 13V3.5M12 13V10" },
+  { k: "Cycles", label: "Years", href: "/", d: "M3 5h10M3 8h10M3 11h7" },
+  { k: "Analytics", label: "Analytics", href: "/analytics", d: "M3 13V8.5M7.5 13V3.5M12 13V10" },
   {
     k: "Settings",
+    label: "Settings",
     href: "/settings",
     d: "M8 6a2 2 0 100 4 2 2 0 100-4M8 2.6V4.2M8 11.8v1.6M13.4 8H11.8M4.2 8H2.6M11.4 4.6l-1 1M5.6 10.4l-1 1M11.4 11.4l-1-1M5.6 5.6l-1-1",
   },
@@ -99,7 +100,7 @@ export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Setting
             </span>
             {/* permanent label under each icon (always visible) */}
             <span style={{ fontSize: 8.5, fontWeight: on ? 700 : 500, letterSpacing: "0.2px", color: on ? H.pink : H.ink3, lineHeight: 1 }}>
-              {it.k}
+              {it.label}
             </span>
           </Link>
         );

@@ -30,6 +30,8 @@ import type {
   CurrentUser,
   CycleDetail,
   CycleSummary,
+  YearSummary,
+  YearDetail,
   DocSettings,
   DocumentsModel,
   DuplicateStrategy,
@@ -151,6 +153,14 @@ export interface DataProvider {
   getCurrentUser(): CurrentUser;
 
   // reads
+  /**
+   * Year list (the home screen). Each year groups its February + May sittings.
+   * `listCycles` remains the per-sitting list used internally and by the
+   * pipeline; a year is just a grouping over it.
+   */
+  listYears(): YearSummary[];
+  /** One year opened: its February / May sittings + the (stubbed) Overall. */
+  getYear(yearId: string): YearDetail | null;
   listCycles(): CycleSummary[];
   getCycle(cycleId: string): CycleDetail | null;
   getIngest(cycleId: string): IngestModel | null;

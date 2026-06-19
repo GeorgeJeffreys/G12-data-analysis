@@ -70,8 +70,15 @@ async function main() {
   const { cleanedResponses, validationReport } = ingestAndClean(rows);
   console.log(`Cleaned ${cleanedResponses.length} responses.`);
 
-  // 3. Cycle + owner membership.
-  const [cycle] = await insert(admin, "exam_cycles", { name: "May 2026", region: "eu-west", created_by: owner.id });
+  // 3. Year + cycle + owner membership (0005: cycle is the May sitting of 2026).
+  const [year] = await insert(admin, "exam_years", { name: "2026", region: "eu-west", created_by: owner.id });
+  const [cycle] = await insert(admin, "exam_cycles", {
+    name: "May 2026",
+    region: "eu-west",
+    created_by: owner.id,
+    year_id: year!.id,
+    sitting: "may",
+  });
   const cycleId = cycle!.id;
   await tbl(admin, "exam_cycles").update({ status: "in_review" }).eq("id", cycleId);
   await insert(admin, "memberships", { cycle_id: cycleId, user_id: owner.id, role: "lead_admin" }, "id");

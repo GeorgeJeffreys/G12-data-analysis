@@ -25,6 +25,8 @@ export type SchemeMethod = "judgemental" | "fixed_pct";
 // 0003
 export type IncidentSource = "incident_log" | "complaint";
 export type AlterationApply = "student" | "subject" | "none";
+// 0005 — a year contains two sittings; each sitting is a full pipeline run.
+export type SittingPeriod = "february" | "may";
 
 // --- Reusable JSON shapes ----------------------------------------------------
 export interface GradeBand {
@@ -34,11 +36,26 @@ export interface GradeBand {
 }
 
 // --- Table row shapes --------------------------------------------------------
+// 0005 — exam_years group sittings. A year is "2026"; its sittings are the
+// February and May exam_cycles (pipeline runs) plus a derived Overall view.
+export interface ExamYearRow {
+  id: string;
+  name: string;
+  region: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ExamCycleRow {
   id: string;
   name: string;
   status: CycleStatus;
   region: string;
+  /** 0005 — the year this sitting belongs to (NULL only for un-migrated rows). */
+  year_id: string | null;
+  /** 0005 — which sitting of the year this pipeline run is. */
+  sitting: SittingPeriod | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -277,10 +294,17 @@ type TableDef<Row, Insert, Update> = {
 export interface Database {
   public: {
     Tables: {
+      // 0005 — exam_years group the per-sitting exam_cycles pipeline runs.
+      exam_years: TableDef<
+        ExamYearRow,
+        Pick<ExamYearRow, "name"> & Partial<Pick<ExamYearRow, "region">>,
+        Partial<Pick<ExamYearRow, "name" | "region">>
+      >;
       exam_cycles: TableDef<
         ExamCycleRow,
-        Pick<ExamCycleRow, "name"> & Partial<Pick<ExamCycleRow, "region">>,
-        Partial<Pick<ExamCycleRow, "name" | "region">>
+        Pick<ExamCycleRow, "name"> &
+          Partial<Pick<ExamCycleRow, "region" | "year_id" | "sitting">>,
+        Partial<Pick<ExamCycleRow, "name" | "region" | "year_id" | "sitting">>
       >;
       memberships: TableDef<
         MembershipRow,
@@ -363,10 +387,21 @@ export interface Database {
     Functions: {
       // 0001
       create_cycle: { Args: { p_name: string; p_region?: string }; Returns: ExamCycleRow };
-      // 0004
+      // 0004 (extended in 0005 with optional year_id / sitting)
       create_cycle_with_assessments: {
-        Args: { p_name: string; p_region?: string; p_assessments?: unknown };
+        Args: {
+          p_name: string;
+          p_region?: string;
+          p_assessments?: unknown;
+          p_year_id?: string | null;
+          p_sitting?: SittingPeriod;
+        };
         Returns: string;
+      };
+      // 0005 — create (or find by name) an exam year.
+      create_exam_year: {
+        Args: { p_name: string; p_region?: string };
+        Returns: ExamYearRow;
       };
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };

@@ -15,9 +15,14 @@
 
 begin;
 
--- 1. cycle (owner = first auth user) ----------------------------------------
-insert into exam_cycles (id, name, status, region, created_by) values
-  ('3385d4a5-b4c2-5331-a7a9-53a03f3f4869', 'May 2026', 'in_review', 'eu-west', (select id from auth.users order by created_at limit 1));
+-- 1. year + cycle (owner = first auth user) ---------------------------------
+-- 0005: the cycle is the MAY sitting of the 2026 year.
+insert into exam_years (id, name, region, created_by) values
+  ('20260000-0000-4000-8000-000000002026', '2026', 'eu-west', (select id from auth.users order by created_at limit 1));
+
+insert into exam_cycles (id, name, status, region, created_by, year_id, sitting) values
+  ('3385d4a5-b4c2-5331-a7a9-53a03f3f4869', 'May 2026', 'in_review', 'eu-west', (select id from auth.users order by created_at limit 1),
+   '20260000-0000-4000-8000-000000002026', 'may');
 
 insert into memberships (cycle_id, user_id, role)
   select '3385d4a5-b4c2-5331-a7a9-53a03f3f4869', id, 'lead_admin' from auth.users order by created_at limit 1;

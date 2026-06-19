@@ -76,6 +76,10 @@ import {
   type CurrentUser,
   type CycleDetail,
   type CycleSummary,
+  type YearSummary,
+  type YearDetail,
+  type SittingRef,
+  type SittingKey,
   type DocSettings,
   type DocumentsModel,
   type DuplicateStrategy,
@@ -551,6 +555,137 @@ export class InMemoryDataProvider implements DataProvider {
       };
     }
     return null;
+  }
+
+  // ── years (groups of sittings) ────────────────────────────────────────────
+  // A year is a grouping over the per-sitting cycles. We derive the year label
+  // and sitting (February / May) from each cycle's name — the same mapping the
+  // SQL migration applies to the stored rows (see 0005). No engine/scoring code
+  // is involved: this is pure presentation grouping.
+
+  /** Stable, route-safe year id from a year label, e.g. "2026" → "year-2026". */
+  private yearId(year: string): string {
+    return `year-${year}`;
+  }
+
+  /** Pull a 4-digit year out of a cycle name (fallback: "Unknown"). */
+  private yearOf(name: string): string {
+    const m = name.match(/(19|20)\d{2}/);
+    return m ? m[0] : "Unknown";
+  }
+
+  /** Map a cycle name to its sitting: Jan–Apr → February, otherwise May. */
+  private sittingOf(name: string): SittingKey {
+    return /\b(jan|feb|mar|apr)/i.test(name) ? "february" : "may";
+  }
+
+  private sittingRefFrom(c: CycleSummary, sitting: SittingKey): SittingRef {
+    return {
+      sitting,
+      label: sitting === "february" ? "February" : "May",
+      cycleId: c.id,
+      cycleName: c.name,
+      started: true,
+      locked: c.locked,
+      stageLabel: c.stageLabel,
+      stepsDone: c.stepsDone,
+      participants: c.participants,
+      assessments: c.assessments,
+      lastActivity: c.lastActivity,
+      live: c.live,
+      mock: c.mock,
+    };
+  }
+
+  private emptySitting(sitting: SittingKey): SittingRef {
+    return {
+      sitting,
+      label: sitting === "february" ? "February" : "May",
+      cycleId: null,
+      cycleName: null,
+      started: false,
+      locked: false,
+      stageLabel: "Not started",
+      stepsDone: 0,
+      participants: 0,
+      assessments: 0,
+      lastActivity: "—",
+      live: false,
+      mock: false,
+    };
+  }
+
+  /** Group every cycle into its year + sitting slot (newest year first). */
+  private buildYears(): { id: string; name: string; february: SittingRef; may: SittingRef }[] {
+    const order: string[] = [];
+    const byYear = new Map<string, { february?: SittingRef; may?: SittingRef }>();
+    for (const c of this.listCycles()) {
+      const year = this.yearOf(c.name);
+      const sitting = this.sittingOf(c.name);
+      if (!byYear.has(year)) {
+        byYear.set(year, {});
+        order.push(year);
+      }
+      const slot = byYear.get(year)!;
+      const ref = this.sittingRefFrom(c, sitting);
+      // First write wins per slot; listCycles is newest-first and the live run is
+      // first, so the most relevant cycle keeps the slot if names ever collide.
+      if (!slot[sitting]) slot[sitting] = ref;
+    }
+    return order.map((year) => {
+      const slot = byYear.get(year)!;
+      return {
+        id: this.yearId(year),
+        name: year,
+        february: slot.february ?? this.emptySitting("february"),
+        may: slot.may ?? this.emptySitting("may"),
+      };
+    });
+  }
+
+  listYears(): YearSummary[] {
+    return this.buildYears().map((y) => {
+      const live = y.february.live || y.may.live;
+      const mock =
+        (!y.february.started || y.february.mock) &&
+        (!y.may.started || y.may.mock) &&
+        !live;
+      const lastActivity =
+        (y.may.live && y.may.lastActivity) ||
+        (y.february.live && y.february.lastActivity) ||
+        (y.may.started && y.may.lastActivity) ||
+        (y.february.started && y.february.lastActivity) ||
+        "—";
+      return {
+        id: y.id,
+        name: y.name,
+        february: y.february,
+        may: y.may,
+        participants: Math.max(y.february.participants, y.may.participants),
+        lastActivity,
+        live,
+        mock,
+      };
+    });
+  }
+
+  getYear(yearId: string): YearDetail | null {
+    const y = this.buildYears().find((yr) => yr.id === yearId);
+    if (!y) return null;
+    // Overall is the best-of-two-by-award-level rollup — implemented next prompt.
+    const ready = y.february.started && y.february.locked && y.may.started && y.may.locked;
+    return {
+      id: y.id,
+      name: y.name,
+      february: y.february,
+      may: y.may,
+      overall: {
+        ready,
+        note: ready
+          ? "Both sittings are locked — the Overall best-of-two rollup runs here."
+          : "Overall becomes available once both the February and May sittings are locked.",
+      },
+    };
   }
 
   // ── ingest & validate ─────────────────────────────────────────────────────

@@ -4,16 +4,37 @@ This is the **provider built blind** (no DB access from the build environment).
 Run these steps from your own machine to seed the database and verify the
 round-trip, RLS, and the privileged transitions. Everything is reversible.
 
-Prereqs: migrations `0001`, `0002`, `0003`, **and `0004`** applied in the
-Supabase SQL editor (run `supabase/migrations/0003_adjustments_essays_config.sql`
-and `supabase/migrations/0004_create_cycle_with_assessments.sql` if you haven't),
-and Node ≥ 20.
+Prereqs: migrations `0001`, `0002`, `0003`, `0004`, **and `0005`** applied in
+the Supabase SQL editor (run `supabase/migrations/0003_adjustments_essays_config.sql`,
+`supabase/migrations/0004_create_cycle_with_assessments.sql` and
+`supabase/migrations/0005_year_sitting_structure.sql` if you haven't), and
+Node ≥ 20.
 
 > **`0004` is required for the new-cycle flow.** It adds
 > `create_cycle_with_assessments(p_name, p_region, p_assessments)`, which the
 > live provider calls to persist a new cycle together with its chosen
 > assessments and return the new cycle id. Without it, "Create cycle" on the
 > live app will error.
+
+> **`0005` introduces the year → sitting structure.** A cycle is now a full
+> **year**; within a year are two **sittings** (February and May), and each
+> sitting is one `exam_cycles` pipeline run. `0005` adds the `exam_years` table
+> plus `exam_cycles.year_id` + `exam_cycles.sitting`, and **maps every existing
+> cycle into a year**: it derives the year from a 4-digit year in the cycle name
+> (fallback: `created_at` year) and the sitting from the month word in the name
+> (Jan–Apr → February, otherwise May), find-or-creates the year, and links the
+> cycle. The seeded **"May 2026" cycle becomes the May sitting of a new "2026"
+> year.** The change is **additive and reversible** — run
+> `supabase/migrations/0005_year_sitting_structure.rollback.sql` to undo it with
+> no loss to any 0001–0004 data. **Overall is derived, not stored** (best-of-two
+> by award level, per student per subject — the rollup ships in a later prompt).
+>
+> Apply order, in the SQL editor:
+> 1. `0005_year_sitting_structure.sql` — adds the structure and runs the
+>    one-time backfill mapping.
+> 2. (verify) `select y.name as year, c.name as sitting_cycle, c.sitting
+>    from exam_cycles c join exam_years y on y.id = c.year_id order by 1,2;`
+> 3. To roll back: `0005_year_sitting_structure.rollback.sql`.
 
 ---
 

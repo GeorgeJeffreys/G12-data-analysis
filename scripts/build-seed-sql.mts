@@ -49,6 +49,9 @@ const enumLit = (s: string | null | undefined): string =>
   s === null || s === undefined ? "NULL" : `'${String(s).replace(/'/g, "''")}'`;
 
 const CYCLE_ID = uuid("cycle:may-2026");
+// 0005: fixed year UUID (matches supabase/seed.sql) — the 2026 year the cycle's
+// May sitting belongs to.
+const YEAR_ID = "20260000-0000-4000-8000-000000002026";
 
 function main() {
   const file = readFileSync("data/sample_qm_export.xlsx");
@@ -99,10 +102,14 @@ function main() {
   w(`begin;`);
   w();
 
-  // 1. cycle + owner membership
-  w(`-- 1. cycle (owner = first auth user) ----------------------------------------`);
-  w(`insert into exam_cycles (id, name, status, region, created_by) values`);
-  w(`  ('${CYCLE_ID}', 'May 2026', 'in_review', 'eu-west', (select id from auth.users order by created_at limit 1));`);
+  // 1. year + cycle + owner membership (0005: cycle is the MAY sitting of 2026)
+  w(`-- 1. year + cycle (owner = first auth user) ---------------------------------`);
+  w(`insert into exam_years (id, name, region, created_by) values`);
+  w(`  ('${YEAR_ID}', '2026', 'eu-west', (select id from auth.users order by created_at limit 1));`);
+  w();
+  w(`insert into exam_cycles (id, name, status, region, created_by, year_id, sitting) values`);
+  w(`  ('${CYCLE_ID}', 'May 2026', 'in_review', 'eu-west', (select id from auth.users order by created_at limit 1),`);
+  w(`   '${YEAR_ID}', 'may');`);
   w();
   w(`insert into memberships (cycle_id, user_id, role)`);
   w(`  select '${CYCLE_ID}', id, 'lead_admin' from auth.users order by created_at limit 1;`);

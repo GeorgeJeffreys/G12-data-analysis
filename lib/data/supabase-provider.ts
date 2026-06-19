@@ -51,6 +51,8 @@ import type {
   CurrentUser,
   CycleDetail,
   CycleSummary,
+  YearSummary,
+  YearDetail,
   DocSettings,
   DocumentsModel,
   DuplicateStrategy,
@@ -273,6 +275,8 @@ export class SupabaseDataProvider implements DataProvider {
   }
 
   // ── reads (delegate to the hydrated inner provider) ─────────────────────
+  listYears(): YearSummary[] { return this.inner.listYears(); }
+  getYear(yearId: string): YearDetail | null { return this.inner.getYear(yearId); }
   listCycles(): CycleSummary[] { return this.inner.listCycles(); }
   getCycle(cycleId: string): CycleDetail | null { return this.inner.getCycle(cycleId); }
   getIngest(cycleId: string): IngestModel | null { return this.inner.getIngest(cycleId); }

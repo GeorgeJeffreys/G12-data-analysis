@@ -48,6 +48,61 @@ export interface CycleSummary {
   mock: boolean;
 }
 
+/** Which sitting of a year. "overall" is the derived best-of-two view. */
+export type SittingKey = "february" | "may";
+
+/**
+ * One sitting tile inside a year. A sitting is a full pipeline run (an
+ * exam_cycle). When no run exists yet for the slot, `started` is false and
+ * `cycleId` is null — the year view offers to start it.
+ */
+export interface SittingRef {
+  sitting: SittingKey;
+  /** Display label, e.g. "February" / "May". */
+  label: string;
+  /** The exam_cycle id for this sitting, or null when not started. */
+  cycleId: string | null;
+  cycleName: string | null;
+  started: boolean;
+  locked: boolean;
+  stageLabel: string;
+  stepsDone: number;
+  participants: number;
+  assessments: number;
+  lastActivity: string;
+  live: boolean;
+  mock: boolean;
+}
+
+/** One row in the year list (was the cycles list). */
+export interface YearSummary {
+  id: string;
+  name: string;
+  february: SittingRef;
+  may: SittingRef;
+  /** Distinct participants across the year's sittings (max of the two). */
+  participants: number;
+  lastActivity: string;
+  /** True when one of the sittings is the live (active) run. */
+  live: boolean;
+  /** True when every sitting in the year is mock decoration. */
+  mock: boolean;
+}
+
+/** A year opened: its two sittings + the (stubbed) Overall rollup. */
+export interface YearDetail {
+  id: string;
+  name: string;
+  february: SittingRef;
+  may: SittingRef;
+  /**
+   * Overall is DERIVED (best-of-two by award level, per student per subject) —
+   * the rollup is implemented in the next prompt. `ready` is true only once both
+   * sittings are locked, which is when an Overall makes sense.
+   */
+  overall: { ready: boolean; note: string };
+}
+
 export interface AssessmentRef {
   id: string;
   name: string;
