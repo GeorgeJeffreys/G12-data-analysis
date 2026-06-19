@@ -9,14 +9,15 @@
  *
  * Order, always identical:
  *   breadcrumb (G12++ › Cycles › <cycle> › <page>)
- *   cycle tab bar   — Pipeline · Diagnostics · Audit log · Certificates
+ *   cycle tab bar   — Pipeline · Audit log · Certificates
  *   pipeline stepper — pipeline-area pages only, with the top-right primary action
  *   subject chip row — pipeline per-subject pages only
  *   alerts area      — one predictable place per page for every notice
  *   page body
  *
- * Diagnostics / Audit / Certificates are reached via the tab bar and show no
- * stepper; their primary action (if any) sits top-right in the header.
+ * Audit / Certificates are reached via the tab bar and show no stepper; their
+ * primary action (if any) sits top-right in the header. (Diagnostics is now a
+ * pipeline step, not a tab.)
  */
 import { useState, type ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";
@@ -25,7 +26,7 @@ import { LockStatus } from "./LockBanner";
 import { cyclesSubnav } from "@/lib/ui/subnav";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 
-export type CycleArea = "pipeline" | "diagnostics" | "audit" | "documents";
+export type CycleArea = "pipeline" | "audit" | "documents";
 
 export function CycleShell({
   cycleId,

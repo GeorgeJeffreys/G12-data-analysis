@@ -32,7 +32,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Raw scores" stageIndex={3}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Raw scores" stageIndex={2}>
         <div style={{ padding: 32 }} className="hf-sub">No data for this cycle.</div>
       </CycleShell>
     );
@@ -45,7 +45,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Raw scores"
-      stageIndex={3}
+      stageIndex={2}
       actions={
         <ExportButtons
           onCsv={() => {

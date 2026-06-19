@@ -37,7 +37,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={8}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={9}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this cycle.</div>
       </CycleShell>
     );
@@ -54,7 +54,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Grades & sign-off"
-      stageIndex={8}
+      stageIndex={9}
       actions={
         <ExportButtons
           xlsxLabel="Performance report (.xlsx)"
@@ -107,7 +107,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                     tone: "info",
                     message: (
                       <>
-                        Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments — boundaries can’t change afterward without re-opening.
+                        Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments — cut scores can’t change afterward without re-opening.
                       </>
                     ),
                   },
@@ -237,7 +237,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             </div>
             <div className="hf-sub" style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
               Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments.
-              Boundaries and grades can’t change afterward without re-opening the cycle.
+              Cut scores and grades can’t change afterward without re-opening the cycle.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>

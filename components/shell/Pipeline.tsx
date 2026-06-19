@@ -1,7 +1,8 @@
 /**
- * Pipeline stepper: Data import → Review → Adjustments → Score → Boundaries →
- * Grades → Export. Ported from design/hf.jsx (HPipeline). Appears on every cycle
- * screen. (Ingest + Validate were merged into the single "Data import" step.)
+ * Pipeline stepper: Upload → Clean → Raw scores → Question review → Diagnostics →
+ * Essay marks → Technical adjustments → Score → Cut scores → Grades → Export.
+ * Ported from design/hf.jsx (HPipeline). Appears on every cycle screen. (Raw data
+ * was merged into Clean; Diagnostics and Essay marks are now steps.)
  *
  * When a `cycleId` is supplied (and not `compact`), each stage is a navigable
  * link to that stage's screen, so the stepper doubles as cycle navigation.
@@ -12,7 +13,7 @@ import { H, PIPELINE_STAGES } from "@/lib/ui/tokens";
 import { stageRoute } from "@/lib/data/pipeline-route";
 
 /**
- * Map a pipeline stage index to its route (10-stage pipeline). Shared with the
+ * Map a pipeline stage index to its route (11-stage pipeline). Shared with the
  * provider's current-step resolver via `stageRoute` so navigation and the
  * "land on current step" logic can never disagree.
  */

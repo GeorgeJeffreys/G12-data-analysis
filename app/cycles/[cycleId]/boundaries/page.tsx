@@ -60,8 +60,8 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Boundaries" }]}>
-        <div style={{ padding: 32 }} className="hf-sub">No boundary data for this cycle.</div>
+      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Cut scores" }]}>
+        <div style={{ padding: 32 }} className="hf-sub">No cut-score data for this cycle.</div>
       </Shell>
     );
   }
@@ -136,13 +136,13 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
     <CycleShell
       cycleId={cycleId}
       cycleName={cycleName}
-      page="Scoring & grade boundaries"
-      stageIndex={7}
+      page="Cut scores"
+      stageIndex={8}
       actions={<ExportButtons onCsv={exportBoundariesCsv} onXlsx={exportBoundariesXlsx} />}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri">
-            Confirm boundaries
+            Confirm cut scores
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>
@@ -159,10 +159,10 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16 }}>
           <div>
-            <div className="hf-h1">{model.isAward ? "Set overall award boundaries" : "Set grade boundaries"}</div>
+            <div className="hf-h1">{model.isAward ? "Set overall award cut scores" : "Set grade cut scores"}</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 560 }}>
               {isEmpty
-                ? "No scored data yet — complete the Score step to set boundaries."
+                ? "No scored data yet — complete the Score step to set cut scores."
                 : model.mode === "cuts"
                   ? `${model.isAward ? "Classify each student's overall score into an award level. " : ""}Drag a handle on the curve, or type a cut score on the right — student counts update as you move.`
                   : "Drag a handle to re-target a band's share, or type the share you want on the right — we backsolve the nearest cut score and the handle settles there."}
@@ -321,7 +321,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
               {isEmpty ? (
                 <div style={{ display: "flex", alignItems: "center", padding: "11px 14px", gap: 9 }}>
                   <Mark kind="warn" size={15} />
-                  <span className="hf-sub" style={{ fontSize: 11.5 }}>Boundaries become editable once scores are in.</span>
+                  <span className="hf-sub" style={{ fontSize: 11.5 }}>Cut scores become editable once scores are in.</span>
                 </div>
               ) : (
                 <WarningStrip model={model} remainder={remainder} />
@@ -357,7 +357,7 @@ function ChartPlaceholder() {
       <div className="hf-mono" style={{ fontSize: 22, color: H.ink3, opacity: 0.6 }}>·····</div>
       <div style={{ fontSize: 13, fontWeight: 600, color: H.ink2 }}>No scored data yet</div>
       <div className="hf-sub" style={{ fontSize: 11.5, maxWidth: 320 }}>
-        Complete the Score step to set boundaries — the distribution and cut handles appear here once scores are in.
+        Complete the Score step to set cut scores — the distribution and cut handles appear here once scores are in.
       </div>
     </div>
   );
@@ -437,7 +437,7 @@ function BacksolveBar({
           {mode === "pct" && (
             <Button variant="ghost" onClick={onSuggest}>
               <Icon name="arrow" />
-              {suggestedCuts ? "Re-suggest" : "Use as boundaries"}
+              {suggestedCuts ? "Re-suggest" : "Use as cut scores"}
             </Button>
           )}
           {showReset && (

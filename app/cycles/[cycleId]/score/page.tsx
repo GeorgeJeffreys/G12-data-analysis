@@ -37,7 +37,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
 
   if (!comp || comp.students.length === 0) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Score" stageIndex={6}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Score" stageIndex={7}>
         <div style={{ padding: 32 }} className="hf-sub">No computed scores for this cycle yet.</div>
       </CycleShell>
     );
@@ -51,7 +51,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
       cycleId={cycleId}
       cycleName={cycleName}
       page="Score"
-      stageIndex={6}
+      stageIndex={7}
       primary={
         <Link href={`/cycles/${cycleId}/boundaries`}>
           <Button variant="pri">

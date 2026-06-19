@@ -49,13 +49,14 @@ export function ratingColor(rating: "Good" | "Review" | "Flag"): string {
 
 export const PIPELINE_STAGES = [
   "Upload",
-  "Raw data",
   "Clean",
   "Raw scores",
   "Question review",
-  "Adjustments",
+  "Diagnostics",
+  "Essay marks",
+  "Technical adjustments",
   "Score",
-  "Boundaries",
+  "Cut scores",
   "Grades",
   "Export",
 ] as const;

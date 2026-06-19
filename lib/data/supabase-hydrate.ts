@@ -322,8 +322,8 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const priorCycles: SeedPriorCycle[] = cycles.slice(1).map((c) => ({
     id: c.id,
     name: c.name,
-    stageIndex: 6,
-    stepsDone: 7,
+    stageIndex: 7,
+    stepsDone: 8,
     participants: 0,
     assessments: 0,
     lastActivity: new Date(c.updated_at).toLocaleDateString(),
@@ -419,14 +419,17 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
 }
 
 function stageIndexFromStatus(status: string): number {
+  // 11-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
+  // Diagnostics(4) Essay marks(5) Technical adjustments(6) Score(7)
+  // Cut scores(8) Grades(9) Export(10).
   switch (status) {
     case "draft":
     case "ingested": return 0;
-    case "validated":
-    case "in_review": return 1;
-    case "scored": return 3;
-    case "graded": return 5;
-    case "locked": return 6;
+    case "validated": return 1; // Clean
+    case "in_review": return 3; // Question review
+    case "scored": return 7; // Score (computed post-adjustment)
+    case "graded": return 9; // Grades
+    case "locked": return 10; // Export
     default: return 1;
   }
 }

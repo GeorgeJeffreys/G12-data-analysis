@@ -39,13 +39,23 @@ function seedAtStage(stageIndex: number): Seed {
 }
 
 describe("stageRoute / doNextForStage", () => {
-  it("routes each stage index to its screen (10-stage pipeline)", () => {
+  it("routes each stage index to its screen (11-stage pipeline)", () => {
     expect(stageRoute("c", 0)).toBe("/cycles/c/import"); // Upload
-    expect(stageRoute("c", 1)).toBe("/cycles/c/raw-data");
-    expect(stageRoute("c", 4)).toBe("/cycles/c/review");
-    expect(stageRoute("c", 6)).toBe("/cycles/c/score"); // Score
-    expect(stageRoute("c", 7)).toBe("/cycles/c/boundaries"); // Boundaries
-    expect(stageRoute("c", 9)).toBe("/cycles/c/documents"); // Export
+    expect(stageRoute("c", 1)).toBe("/cycles/c/clean"); // Clean (raw data folded in)
+    expect(stageRoute("c", 2)).toBe("/cycles/c/raw-scores"); // Raw scores
+    expect(stageRoute("c", 3)).toBe("/cycles/c/review"); // Question review
+    expect(stageRoute("c", 4)).toBe("/cycles/c/diagnostics"); // Diagnostics (now a step)
+    expect(stageRoute("c", 5)).toBe("/cycles/c/essays"); // Essay marks
+    expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments"); // Technical adjustments
+    expect(stageRoute("c", 7)).toBe("/cycles/c/score"); // Score
+    expect(stageRoute("c", 8)).toBe("/cycles/c/boundaries"); // Cut scores
+    expect(stageRoute("c", 9)).toBe("/cycles/c/grades"); // Grades
+    expect(stageRoute("c", 10)).toBe("/cycles/c/documents"); // Export
+  });
+
+  it("there is no standalone Raw data route — it is folded into Clean", () => {
+    // No stage index maps to the old /raw-data screen.
+    for (let i = 0; i <= 10; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
   });
 
   it("doNext for an empty cycle lands on Upload, not a late screen", () => {
@@ -62,10 +72,12 @@ describe("getCycle current-step resolution", () => {
   });
 
   it("a partially-progressed cycle lands on its genuine next step", () => {
-    // stageIndex 1 = raw data already in, next incomplete is Raw data.
-    expect(new InMemoryDataProvider(seedAtStage(1)).getCycle("c")!.doNext.href).toBe("/cycles/c/raw-data");
-    // stageIndex 4 = Review.
-    expect(new InMemoryDataProvider(seedAtStage(4)).getCycle("c")!.doNext.href).toBe("/cycles/c/review");
+    // stageIndex 1 = upload done, next incomplete is Clean (raw data folded in).
+    expect(new InMemoryDataProvider(seedAtStage(1)).getCycle("c")!.doNext.href).toBe("/cycles/c/clean");
+    // stageIndex 3 = Question review.
+    expect(new InMemoryDataProvider(seedAtStage(3)).getCycle("c")!.doNext.href).toBe("/cycles/c/review");
+    // stageIndex 4 = Diagnostics (now a pipeline step, not a tab).
+    expect(new InMemoryDataProvider(seedAtStage(4)).getCycle("c")!.doNext.href).toBe("/cycles/c/diagnostics");
   });
 
   it("the seeded demo cycle still resolves to a valid pipeline screen", () => {

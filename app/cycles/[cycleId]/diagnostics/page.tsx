@@ -7,14 +7,15 @@
  * grading. They reproduce the team's Speededness and Timing workbook definitions.
  */
 import { Fragment, useState, type CSSProperties } from "react";
+import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
-import { Badge } from "@/components/ui/primitives";
+import { Badge, Button } from "@/components/ui/primitives";
 import { ExportButtons } from "@/components/ui/ExportButtons";
 import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
-import { Mark } from "@/components/ui/icons";
+import { Icon, Mark } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { ReliabilityPanel } from "@/components/ui/reliability";
 import type { DiagnosticsModel, DiagnosticsAssessment, ReliabilityModel } from "@/lib/data/types";
@@ -34,7 +35,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
 
   if (!model || model.assessments.length === 0) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" area="diagnostics">
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" stageIndex={4}>
         <div style={{ padding: 32 }} className="hf-sub">No diagnostics for this cycle.</div>
       </CycleShell>
     );
@@ -63,8 +64,13 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Diagnostics"
-      area="diagnostics"
+      stageIndex={4}
       actions={<ExportButtons onCsv={exportCsv} onXlsx={exportXlsx} disabled={!reliability} title={reliability ? undefined : "No reliability data"} />}
+      primary={
+        <Link href={`/cycles/${cycleId}/essays`}>
+          <Button variant="pri">Continue to essay marks<Icon name="arrow" color="#fff" /></Button>
+        </Link>
+      }
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>

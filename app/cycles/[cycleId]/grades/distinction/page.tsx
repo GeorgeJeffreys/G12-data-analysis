@@ -57,7 +57,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Distinction safeguard"
-      stageIndex={8}
+      stageIndex={9}
       done={5}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
@@ -112,10 +112,10 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
           <div className="hf-card" style={{ padding: "14px 18px", display: "flex", gap: 11, alignItems: "center" }}>
             <Mark kind="pass" size={18} />
             <span style={{ fontSize: 13 }}>
-              <b>No students are currently in line for a {short(model.topAward)}</b> at the present boundaries, so there’s
+              <b>No students are currently in line for a {short(model.topAward)}</b> at the present cut scores, so there’s
               nothing to safeguard. A {short(model.topAward)} needs ★★★ Outstanding in ≥3 subjects with the rest at ≥★ Meets;
               lower the Outstanding performance cut-scores on the{" "}
-              <Link href={`/cycles/${cycleId}/boundaries`} style={{ color: H.pink, fontWeight: 600 }}>Boundaries</Link> screen
+              <Link href={`/cycles/${cycleId}/boundaries`} style={{ color: H.pink, fontWeight: 600 }}>Cut scores</Link> screen
               to bring real candidates in line.
             </span>
           </div>

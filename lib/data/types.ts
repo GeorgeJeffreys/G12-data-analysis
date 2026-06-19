@@ -21,13 +21,14 @@ export interface CurrentUser {
 
 export const PIPELINE = [
   "Upload",
-  "Raw data",
   "Clean",
   "Raw scores",
-  "Review",
-  "Adjustments",
+  "Question review",
+  "Diagnostics",
+  "Essay marks",
+  "Technical adjustments",
   "Score",
-  "Boundaries",
+  "Cut scores",
   "Grades",
   "Export",
 ] as const;

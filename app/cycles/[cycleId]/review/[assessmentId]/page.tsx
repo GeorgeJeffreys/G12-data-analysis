@@ -208,7 +208,7 @@ export default function ReviewPage({
       cycleId={cycleId}
       cycleName={cycleName}
       page="Question review & scoring"
-      stageIndex={4}
+      stageIndex={3}
       actions={
         <ExportButtons
           onCsv={async () => { await exportItemAnalysisCsv(provider, cycleId); provider.recordExport(cycleId, "Item analysis (CSV)"); }}
@@ -216,9 +216,9 @@ export default function ReviewPage({
         />
       }
       primary={
-        <Link href={`/cycles/${cycleId}/adjustments`}>
+        <Link href={`/cycles/${cycleId}/diagnostics`}>
           <Button variant="pri">
-            Continue to adjustments
+            Continue to diagnostics
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

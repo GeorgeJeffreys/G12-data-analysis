@@ -57,7 +57,7 @@ describe("confirm step — distinct second action", () => {
         subjectCount: 0,
         canContinue: false,
         hint: "Upload and ingest a file first.",
-        href: "/cycles/c1/raw-data",
+        href: "/cycles/c1/clean",
       }),
     );
     expect(html).toContain("Upload and ingest a file first.");
@@ -72,11 +72,11 @@ describe("confirm step — distinct second action", () => {
         subjectCount: 5,
         canContinue: true,
         hint: "",
-        href: "/cycles/c1/raw-data",
+        href: "/cycles/c1/clean",
       }),
     );
     expect(html).toContain("Confirm 5 subjects &amp; continue");
-    expect(html).toContain('href="/cycles/c1/raw-data"');
+    expect(html).toContain('href="/cycles/c1/clean"');
     expect(html).not.toContain('disabled=""'); // not disabled when ingest succeeded
     expect(html).not.toContain('aria-disabled="true"');
   });

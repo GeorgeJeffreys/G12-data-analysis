@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * Screen 03 — Data cleaning (a dedicated clean-only step; viewing lives on Raw
- * data). Ports design/hfFront.jsx · HFCleanSeparate: select rows / columns to
- * remove, work the validation report (must-fix blockers vs warnings), and see
- * the before → after effect. The raw file is never touched — removals are a
- * recorded, non-destructive decision (like duplicate resolution), so scoring and
- * parity are unaffected.
+ * Screen 02 — Clean data (the merged Raw data + Clean step). The raw-data view
+ * and the cleaning controls now live together: a summary band + element / demand
+ * breakdown of exactly what was uploaded, then the select rows / columns to
+ * remove + validation report (must-fix blockers vs warnings) with the
+ * before → after effect. The raw file is never touched — removals are a recorded,
+ * non-destructive decision (like duplicate resolution), so scoring and parity are
+ * unaffected.
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -18,6 +19,7 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
+import type { RawDataModel } from "@/lib/data/types";
 
 export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -26,6 +28,9 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const [scope, setScope] = useState<string | undefined>(undefined);
   const assessmentId = scope ?? first ?? "";
   const model = useProviderData((p) => (assessmentId ? p.getDataCleaning(cycleId, assessmentId) : null), [cycleId, assessmentId]);
+  // Raw-data view (summary band + element/demand breakdown) folded into Clean:
+  // the same read-only overview that used to live on the separate Raw data step.
+  const raw = useProviderData((p) => (assessmentId ? p.getRawData(cycleId, assessmentId) : null), [cycleId, assessmentId]);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   // local, non-destructive selection of rows / columns to remove
@@ -42,7 +47,7 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Clean data" stageIndex={2}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Clean data" stageIndex={1}>
         <div style={{ padding: 32 }} className="hf-sub">No data for this cycle.</div>
       </CycleShell>
     );
@@ -56,7 +61,7 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
       cycleId={cycleId}
       cycleName={cycleName}
       page="Clean data"
-      stageIndex={2}
+      stageIndex={1}
       actions={<Button variant="ghost" onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}><Icon name="refresh" />Revert all</Button>}
       primary={
         <Link href={blocked ? "#" : `/cycles/${cycleId}/raw-scores`} tabIndex={blocked ? -1 : undefined}>
@@ -76,8 +81,11 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
       }
     >
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
-        {/* main: select + table */}
+        {/* main: raw-data overview + select + table */}
         <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "16px 24px", gap: 12, minWidth: 0 }}>
+          {/* Raw-data view (folded in from the old Raw data step): a read-only
+              summary of exactly what was uploaded, before any cleaning. */}
+          {raw && <RawOverview model={raw} />}
           <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="hf-h2" style={{ fontSize: 16 }}>Clean data — {model.assessment.shortName}</div>
@@ -152,5 +160,73 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
         </aside>
       </div>
     </CycleShell>
+  );
+}
+
+/**
+ * Read-only raw-data overview, folded in from the old standalone Raw data step:
+ * exactly what was uploaded, before any cleaning — a summary band plus the
+ * by-element and by-demand breakdowns. The editable spreadsheet below is the
+ * cleaning surface; this block is purely "show me my data".
+ */
+function RawOverview({ model }: { model: RawDataModel }) {
+  const stat = (n: string | number, label: string, accent?: boolean) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
+      <span className="hf-mono" style={{ fontSize: String(n).length > 6 ? 17 : 21, fontWeight: 600, color: accent ? H.pink : H.ink }}>{n}</span>
+      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
+    </div>
+  );
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="hf-sub" style={{ fontSize: 12 }}>
+        This is exactly what you uploaded, <b style={{ color: H.ink }}>before any cleaning</b> — review it, then remove rows/columns and work any flagged values below.
+      </div>
+
+      {/* summary band */}
+      <div style={{ display: "flex", alignItems: "stretch", border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper, padding: "12px 0" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 18px" }}>
+          <span className="hf-mono" style={{ fontSize: 21, fontWeight: 600 }}>{model.participants}</span>
+          <span className="hf-lbl" style={{ fontSize: 9.5 }}>Participants</span>
+        </div>
+        {stat(model.items, "Items", true)}
+        {stat(model.elementsCount, "Major elements")}
+        {stat(model.subElementsCount, "Sub-elements")}
+        {stat(`${model.demand.D1}·${model.demand.D2}·${model.demand.D3}`, "D1·D2·D3")}
+      </div>
+
+      {/* breakdowns: by major element + by demand */}
+      <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "14px 18px", border: `1px solid ${H.line}`, borderRadius: 10, background: H.paper }}>
+        <div style={{ flex: 2, minWidth: 280, display: "flex", flexDirection: "column", gap: 9 }}>
+          <span className="hf-lbl">Items by major element &amp; sub-element</span>
+          {model.byElement.map((el, i) => {
+            const max = Math.max(...model.byElement.map((e) => e.items), 1);
+            return (
+              <div key={el.major} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span className="hf-mono" style={{ width: 16, height: 16, borderRadius: 5, background: H.tint2, color: H.ink2, fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{String.fromCharCode(65 + i)}</span>
+                <span style={{ flex: 1, fontSize: 12, color: H.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${el.major} — ${el.subs.length} sub-element${el.subs.length === 1 ? "" : "s"}: ${el.subs.join(", ")}`}>
+                  {el.major} <span className="hf-sub" style={{ fontSize: 10.5 }}>· {el.subs.length} sub</span>
+                </span>
+                <div style={{ width: 90, height: 8, background: H.tint2, borderRadius: 5, flex: "0 0 auto" }}><div style={{ width: `${(el.items / max) * 100}%`, height: "100%", background: H.bar, borderRadius: 5 }} /></div>
+                <span className="hf-mono" style={{ width: 22, fontSize: 11.5, textAlign: "right", flex: "0 0 auto" }}>{el.items}</span>
+              </div>
+            );
+          })}
+        </div>
+        <div style={{ flex: 1, minWidth: 190, display: "flex", flexDirection: "column", gap: 9, borderLeft: `1px solid ${H.line}`, paddingLeft: 22 }}>
+          <span className="hf-lbl">Items by demand level</span>
+          {([["D1", model.demand.D1, "Less demanding"], ["D2", model.demand.D2, "Moderately demanding"], ["D3", model.demand.D3, "More demanding"]] as const).map(([d, v, name]) => {
+            const dmax = Math.max(model.demand.D1, model.demand.D2, model.demand.D3, 1);
+            return (
+              <div key={d} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span className="hf-mono" style={{ fontSize: 11, fontWeight: 700, color: H.ink2, width: 20, flex: "0 0 auto" }}>{d}</span>
+                <span style={{ flex: 1, fontSize: 11.5, color: H.ink2, whiteSpace: "nowrap" }}>{name}</span>
+                <div style={{ width: 64, height: 8, background: H.tint2, borderRadius: 5, flex: "0 0 auto" }}><div style={{ width: `${(v / dmax) * 100}%`, height: "100%", background: H.bar, borderRadius: 5 }} /></div>
+                <span className="hf-mono" style={{ width: 22, fontSize: 11.5, textAlign: "right", flex: "0 0 auto" }}>{v}</span>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
   );
 }

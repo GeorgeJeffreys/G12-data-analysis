@@ -185,7 +185,7 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       name,
       shortName: shortNameOf(name),
       rtl: RTL_SCRIPT.test(name) || /arabic/i.test(name),
-      stageIndex: 1, // freshly ingested → next action is Raw data
+      stageIndex: 1, // freshly ingested → next action is Clean
       items,
       responses: seedResponses,
     });

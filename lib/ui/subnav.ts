@@ -4,10 +4,9 @@
  */
 import type { SubnavItem } from "@/components/shell/Shell";
 
-export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "documents" | "diagnostics"): SubnavItem[] {
+export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "documents"): SubnavItem[] {
   return [
     { label: "Pipeline", href: `/cycles/${cycleId}`, on: active === "pipeline" },
-    { label: "Diagnostics", href: `/cycles/${cycleId}/diagnostics`, on: active === "diagnostics" },
     { label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" },
     { label: "Certificates", href: `/cycles/${cycleId}/documents`, on: active === "documents" },
   ];

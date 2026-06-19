@@ -2701,7 +2701,7 @@ export class InMemoryDataProvider implements DataProvider {
     lc.participants = built.participants;
     lc.assessments = built.assessments;
     lc.diagnostics = built.diagnostics;
-    lc.stageIndex = 1; // uploaded → next action is Raw data
+    lc.stageIndex = 1; // uploaded → next action is Clean
 
     this.audit(
       "upload",

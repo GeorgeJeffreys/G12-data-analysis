@@ -1,7 +1,8 @@
 "use client";
 
 /**
- * Screen — Adjustments (replaces the old per-student exclusion step). Triage each
+ * Screen — Technical adjustments (replaces the old per-student exclusion step).
+ * Triage each
  * incident-log / complaint row into an alteration — applied to a specific student,
  * a whole subject (bulk), or no action. Nothing is auto-applied; every alteration
  * is a recorded human decision (audit-logged). The step is optional/skippable when
@@ -26,12 +27,12 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
   const shellProps = {
     cycleId,
     cycleName,
-    page: "Adjustments",
-    stageIndex: 5,
+    page: "Technical adjustments",
+    stageIndex: 6,
     done: 2,
     primary: (
-      // Adjustments → Score (step 7) → Boundaries (step 8): the next step is the
-      // computed-scores screen, not boundaries (no step is skipped here).
+      // Technical adjustments → Score (step 8) → Cut scores (step 9): the next
+      // step is the computed-scores screen, not cut scores (no step is skipped).
       <Link href={`/cycles/${cycleId}/score`}>
         <Button variant="pri">Continue to scoring<Icon name="arrow" color="#fff" /></Button>
       </Link>
@@ -52,7 +53,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
         {/* header */}
         <div className="hf-pad" style={{ display: "flex", alignItems: "flex-end", gap: 20, padding: "22px 28px 0", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 280 }}>
-            <div className="hf-h1">Adjustments</div>
+            <div className="hf-h1">Technical adjustments</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 640 }}>
               Triage each incident into a raw-mark alteration — per student, a whole subject, or no action.
               Nothing is applied automatically. (See each student’s mark composition on the Grades screen.)
