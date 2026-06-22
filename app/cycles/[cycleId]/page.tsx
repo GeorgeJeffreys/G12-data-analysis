@@ -71,16 +71,16 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
 
   if (timedOut) {
     return (
-      <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: "Couldn’t open" }]}>
+      <Shell active="Cycles" crumb={[{ label: "Sittings", href: "/" }, { label: "Couldn’t open" }]}>
         <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 14, flex: 1 }}>
-          <div className="hf-h1">Couldn’t open this cycle</div>
+          <div className="hf-h1">Couldn’t open this sitting</div>
           <div className="hf-sub" style={{ maxWidth: 560 }}>
-            The cycle data didn’t load. This can happen if the connection dropped or the cycle isn’t
-            available. Try again, or go back to the cycles list.
+            The sitting data didn’t load. This can happen if the connection dropped or the sitting isn’t
+            available. Try again, or go back to the sittings list.
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
             <button className="hf-btn" onClick={() => { setTimedOut(false); router.refresh(); }}>Retry</button>
-            <button className="hf-btn" onClick={() => router.push("/")}>Back to cycles</button>
+            <button className="hf-btn" onClick={() => router.push("/")}>Back to sittings</button>
           </div>
         </div>
       </Shell>
@@ -89,8 +89,8 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
 
   if (!cycle) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Not found" }]}>
-        <div style={{ padding: 32 }} className="hf-sub">That cycle doesn’t exist.</div>
+      <Shell crumb={[{ label: "Sittings", href: "/" }, { label: "Not found" }]}>
+        <div style={{ padding: 32 }} className="hf-sub">That sitting doesn’t exist.</div>
       </Shell>
     );
   }
@@ -98,11 +98,11 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
   // Mock prior cycle — a locked, illustrative record with no detailed data.
   if (cycle.mock) {
     return (
-      <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}>
+      <Shell active="Cycles" crumb={[{ label: "Sittings", href: "/" }, { label: cycle.name }]}>
         <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 14, flex: 1 }}>
           <div>
-            <div className="hf-lbl" style={{ color: H.ink3 }}>Locked cycle</div>
-            <div className="hf-h1" style={{ marginTop: 4 }}>{cycle.name} cycle</div>
+            <div className="hf-lbl" style={{ color: H.ink3 }}>Locked sitting</div>
+            <div className="hf-h1" style={{ marginTop: 4 }}>{cycle.name} sitting</div>
             <div className="hf-sub" style={{ marginTop: 7 }}>
               {cycle.participants.toLocaleString()} participants · {cycle.assessmentCount} assessments · started {cycle.startedAt}
             </div>
@@ -121,10 +121,10 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
   // Real cycle with no further step to land on (e.g. freshly created, nothing
   // uploaded yet). Show a small overview with an entry point rather than hang.
   return (
-    <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: cycle.name }]}>
+    <Shell active="Cycles" crumb={[{ label: "Sittings", href: "/" }, { label: cycle.name }]}>
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 14, flex: 1 }}>
         <div>
-          <div className="hf-lbl" style={{ color: H.ink3 }}>Cycle</div>
+          <div className="hf-lbl" style={{ color: H.ink3 }}>Sitting</div>
           <div className="hf-h1" style={{ marginTop: 4 }}>{cycle.name}</div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
             {cycle.participants.toLocaleString()} participants · {cycle.assessmentCount} assessments · started {cycle.startedAt}
@@ -148,7 +148,7 @@ function Landing() {
     <div
       style={{ display: "flex", height: "100vh", alignItems: "center", justifyContent: "center", color: H.ink3, fontSize: 13 }}
     >
-      Opening cycle…
+      Opening sitting…
     </div>
   );
 }

@@ -8,7 +8,7 @@
  * the shell fixes everything else in place.
  *
  * Order, always identical:
- *   breadcrumb (G12++ › Cycles › <cycle> › <page>)
+ *   breadcrumb (G12++ › Sittings › <sitting> › <page>)
  *   cycle tab bar   — Pipeline · Audit log · Certificates
  *   pipeline stepper — pipeline-area pages only, with the top-right primary action
  *   subject chip row — pipeline per-subject pages only
@@ -62,8 +62,8 @@ export function CycleShell({
 }) {
   const isPipeline = area === "pipeline";
   const crumb = page
-    ? [{ label: "Cycles", href: "/" }, { label: cycleName, href: `/cycles/${cycleId}` }, { label: page }]
-    : [{ label: "Cycles", href: "/" }, { label: cycleName }];
+    ? [{ label: "Sittings", href: "/" }, { label: cycleName, href: `/cycles/${cycleId}` }, { label: page }]
+    : [{ label: "Sittings", href: "/" }, { label: cycleName }];
 
   return (
     <Shell

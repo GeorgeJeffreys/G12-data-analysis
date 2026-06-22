@@ -22,7 +22,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
   const cycleId = params.cycleId;
   const provider = useProvider();
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
 
   const shellProps = {
     cycleId,
@@ -42,7 +42,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
   if (!adj) {
     return (
       <CycleShell {...shellProps}>
-        <div style={{ padding: 32 }} className="hf-sub">No adjustment data for this cycle.</div>
+        <div style={{ padding: 32 }} className="hf-sub">No adjustment data for this sitting.</div>
       </CycleShell>
     );
   }

@@ -23,7 +23,7 @@ export function LockStatus({ cycleId }: { cycleId: string }) {
   return (
     <span
       role="status"
-      title="This cycle is locked & signed off — edits are frozen until it is re-opened."
+      title="This sitting is locked & signed off — edits are frozen until it is re-opened."
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -44,7 +44,7 @@ export function LockStatus({ cycleId }: { cycleId: string }) {
       {isLead && (
         <button
           onClick={() => provider.unlockCycle(cycleId)}
-          title="Re-open the cycle for editing (audit-logged)"
+          title="Re-open the sitting for editing (audit-logged)"
           style={{ border: "none", background: "transparent", color: H.ink2, fontSize: 11, fontWeight: 600, cursor: "pointer", padding: 0, marginLeft: 2, textDecoration: "underline" }}
         >
           Re-open

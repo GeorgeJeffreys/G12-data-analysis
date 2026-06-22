@@ -27,15 +27,15 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
   const provider = useProvider();
   const [scope, setScope] = useState<string | undefined>(undefined);
   const model = useProviderData((p) => p.getDistinctionSafeguard(cycleId, scope), [cycleId, scope]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
 
   const [overrideFor, setOverrideFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Distinction safeguard" }]}>
-        <div style={{ padding: 32 }} className="hf-sub">No grading data for this cycle.</div>
+      <Shell crumb={[{ label: "Sittings", href: "/" }, { label: "Distinction safeguard" }]}>
+        <div style={{ padding: 32 }} className="hf-sub">No grading data for this sitting.</div>
       </Shell>
     );
   }

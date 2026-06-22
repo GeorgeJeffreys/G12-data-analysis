@@ -29,14 +29,14 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
   const provider = useProvider();
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
   const reliability = useProviderData((p) => p.getReliability(cycleId), [cycleId]) as ReliabilityModel | null;
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const [active, setActive] = useState(0);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!model || model.assessments.length === 0) {
     return (
       <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" stageIndex={4}>
-        <div style={{ padding: 32 }} className="hf-sub">No diagnostics for this cycle.</div>
+        <div style={{ padding: 32 }} className="hf-sub">No diagnostics for this sitting.</div>
       </CycleShell>
     );
   }

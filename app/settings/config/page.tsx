@@ -145,7 +145,7 @@ export default function ConfigPage() {
         <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 320, display: "flex", flexDirection: "column", gap: 18 }}>
             <SectionCard title="Data retention" mock>
-              <Row label="Archive locked cycles after">
+              <Row label="Archive locked sittings after">
                 <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <input
                     className="hf-input"

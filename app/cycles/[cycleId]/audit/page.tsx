@@ -53,7 +53,7 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
   const [filter, setFilter] = useState<AuditFilter>("all");
   const [search, setSearch] = useState("");
   const model = useProviderData((p) => p.getAuditLog(cycleId, filter, search), [cycleId, filter, search]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   return (

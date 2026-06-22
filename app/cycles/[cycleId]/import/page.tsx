@@ -35,15 +35,15 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const essay = useProviderData((p) => p.getEssayMarks(cycleId), [cycleId]) as EssayMarksModel | null;
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
   const split = useProviderData((p) => p.getCombinedSplit(cycleId), [cycleId]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
 
   const [open, setOpen] = useState<Record<number, boolean>>({ 1: true, 2: false, 3: false });
   const [resolved, setResolved] = useState<DuplicateStrategy | null>(null);
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Data import" }]}>
-        <div style={{ padding: 32 }} className="hf-sub">No import data for this cycle.</div>
+      <Shell crumb={[{ label: "Sittings", href: "/" }, { label: "Data import" }]}>
+        <div style={{ padding: 32 }} className="hf-sub">No import data for this sitting.</div>
       </Shell>
     );
   }

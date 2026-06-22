@@ -115,7 +115,7 @@ export default function ReviewPage({
   const assessmentId = decodeURIComponent(params.assessmentId);
   const provider = useProvider();
   const model = useProviderData((p) => p.getReview(cycleId, assessmentId), [cycleId, assessmentId]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
 
   const [search, setSearch] = useState("");
   const [quality, setQuality] = useState<QualityFilter>("all");
@@ -162,9 +162,9 @@ export default function ReviewPage({
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Not found" }]}>
+      <Shell crumb={[{ label: "Sittings", href: "/" }, { label: "Not found" }]}>
         <div style={{ padding: 32 }} className="hf-sub">
-          That assessment isn’t in this cycle.
+          That assessment isn’t in this sitting.
         </div>
       </Shell>
     );

@@ -23,7 +23,7 @@ import type { RawDataModel } from "@/lib/data/types";
 
 export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const first = useProviderData((p) => p.getCycle(cycleId)?.assessments[0]?.id, [cycleId]);
   const [scope, setScope] = useState<string | undefined>(undefined);
   const assessmentId = scope ?? first ?? "";
@@ -48,7 +48,7 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
   if (!model) {
     return (
       <CycleShell cycleId={cycleId} cycleName={cycleName} page="Clean data" stageIndex={1}>
-        <div style={{ padding: 32 }} className="hf-sub">No data for this cycle.</div>
+        <div style={{ padding: 32 }} className="hf-sub">No data for this sitting.</div>
       </CycleShell>
     );
   }

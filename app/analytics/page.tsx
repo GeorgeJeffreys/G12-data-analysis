@@ -46,7 +46,7 @@ export default function TrendsPage() {
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 30px", gap: 18, flex: 1 }}>
         <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="hf-h1">Trends across cycles</div>
+            <div className="hf-h1">Trends across sittings</div>
             <div className="hf-sub" style={{ marginTop: 6 }}>
               How each assessment has behaved over the last {model.cycleNames.length} sittings ({model.cycleNames[0]} → {model.cycleNames[model.cycleNames.length - 1]}).
             </div>
@@ -58,7 +58,7 @@ export default function TrendsPage() {
               <select
                 value={sel}
                 onChange={(e) => setSel(Number(e.target.value))}
-                aria-label="Cycle to show trends for"
+                aria-label="Sitting to show trends for"
                 style={{ border: "none", background: "transparent", font: "inherit", color: "inherit", padding: "5px 11px", cursor: "pointer", outline: "none", fontWeight: 700 }}
               >
                 {model.cycleNames.map((name, i) => (

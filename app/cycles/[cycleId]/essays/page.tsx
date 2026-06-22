@@ -20,7 +20,7 @@ import type { EssayMarksModel } from "@/lib/data/types";
 
 export default function EssaysPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const essay = useProviderData((p) => p.getEssayMarks(cycleId), [cycleId]) as EssayMarksModel | null;
 
   return (

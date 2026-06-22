@@ -43,7 +43,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const provider = useProvider();
   const [scope, setScope] = useState<string>("overall");
   const model = useProviderData((p) => p.getBoundaries(cycleId, scope), [cycleId, scope]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const provisional = useProvisionalNotice(cycleId);
 
   // Pre-fill the draggable cut-score sliders from the Wave 3b backsolved
@@ -60,8 +60,8 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
 
   if (!model) {
     return (
-      <Shell crumb={[{ label: "Cycles", href: "/" }, { label: "Cut scores" }]}>
-        <div style={{ padding: 32 }} className="hf-sub">No cut-score data for this cycle.</div>
+      <Shell crumb={[{ label: "Sittings", href: "/" }, { label: "Cut scores" }]}>
+        <div style={{ padding: 32 }} className="hf-sub">No cut-score data for this sitting.</div>
       </Shell>
     );
   }

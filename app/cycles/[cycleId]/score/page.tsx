@@ -31,7 +31,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
   // Grades is only used for the human Student ID (the secondary identity line);
   // every score on this screen comes from the composition (participant_scores).
   const grades = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const provisional = useProvisionalNotice(cycleId);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
@@ -52,7 +52,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
           </Button>
         }
       >
-        <div style={{ padding: 32 }} className="hf-sub">No computed scores for this cycle yet.</div>
+        <div style={{ padding: 32 }} className="hf-sub">No computed scores for this sitting yet.</div>
       </CycleShell>
     );
   }

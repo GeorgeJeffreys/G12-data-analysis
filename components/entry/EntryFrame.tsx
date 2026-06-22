@@ -27,7 +27,7 @@ export function EntryFrame({ children }: { children: ReactNode }) {
             G12++ Exam<br />Processing Suite
           </div>
           <div style={{ fontSize: 14, color: "rgba(255,255,255,.72)", marginTop: 14, maxWidth: 320, lineHeight: 1.5 }}>
-            Review item quality, set grade boundaries, and publish auditable results — one exam cycle at a time.
+            Review item quality, set grade boundaries, and publish auditable results — one exam sitting at a time.
           </div>
         </div>
         <div style={{ flex: 1 }} />

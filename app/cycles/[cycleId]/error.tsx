@@ -25,7 +25,7 @@ export default function CycleError({
   }, [error]);
 
   return (
-    <Shell active="Cycles" crumb={[{ label: "Cycles", href: "/" }, { label: "Something went wrong" }]}>
+    <Shell active="Cycles" crumb={[{ label: "Sittings", href: "/" }, { label: "Something went wrong" }]}>
       <div style={{ display: "flex", flexDirection: "column", gap: 14, padding: 32, maxWidth: 520, flex: 1 }}>
         <div>
           <div className="hf-lbl" style={{ color: H.ink3 }}>Cycle</div>

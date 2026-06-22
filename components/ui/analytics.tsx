@@ -210,7 +210,7 @@ export function MockBanner({ text }: { text?: string }) {
     <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: H.warnSoft, border: `1px solid ${H.warn}33`, borderRadius: 10 }}>
       <Mark kind="warn" size={15} />
       <span style={{ fontSize: 12, color: H.ink }}>
-        {text ?? "Prior cycles are illustrative mock data — there's no real cross-cycle history yet. Only the latest cycle's figures are computed from real results."}
+        {text ?? "Prior sittings are illustrative mock data — there's no real cross-sitting history yet. Only the latest sitting's figures are computed from real results."}
       </span>
       <span style={{ marginLeft: "auto", fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>MOCK PRIORS</span>
     </div>

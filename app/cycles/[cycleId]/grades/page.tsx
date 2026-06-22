@@ -29,7 +29,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const model = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
   const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
   const perf = useProviderData((p) => p.getPerformanceReport(cycleId), [cycleId]);
-  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   // A sitting's year-Overall surface, where certificates/reports are generated from
   // the best-of-two award. The year id mirrors the provider's `year-${YYYY}` scheme
   // (derived from the cycle name); fall back to the years home if no year is present.
@@ -43,7 +43,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   if (!model) {
     return (
       <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={9}>
-        <div style={{ padding: 32 }} className="hf-sub">No grades for this cycle.</div>
+        <div style={{ padding: 32 }} className="hf-sub">No grades for this sitting.</div>
       </CycleShell>
     );
   }
@@ -246,7 +246,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             </div>
             <div className="hf-sub" style={{ fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
               Locking writes a signed, timestamped record and freezes all {model.assessments.length} assessments.
-              Cut scores and grades can’t change afterward without re-opening the cycle.
+              Cut scores and grades can’t change afterward without re-opening the sitting.
             </div>
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <Button variant="ghost" onClick={() => setConfirming(false)}>Cancel</Button>

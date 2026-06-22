@@ -85,7 +85,7 @@ export default function ComparePage() {
   return (
     <Shell
       active="Analytics"
-      crumb={[{ label: "Analytics" }, { label: "Compare cycles" }]}
+      crumb={[{ label: "Analytics" }, { label: "Compare sittings" }]}
       subnav={analyticsSubnav("compare")}
       actions={
         <Button variant="ghost" onClick={() => exportComparison(model)}>
@@ -95,7 +95,7 @@ export default function ComparePage() {
     >
       <div style={{ maxWidth: 1340, width: "100%", margin: "0 auto", padding: "24px 30px 56px", display: "flex", flexDirection: "column", gap: 18 }}>
         <div className="hf-col" style={{ gap: 6 }}>
-          <div className="hf-h1">Compare cycles</div>
+          <div className="hf-h1">Compare sittings</div>
           <div className="hf-sub">
             Side-by-side comparison of{" "}
             {model.cycles.map((c, i) => (
@@ -104,13 +104,13 @@ export default function ComparePage() {
                 <strong style={{ color: H.ink }}>{c.name}</strong>
               </span>
             ))}
-            , grouped into exam info, question statistics and usable items. Many of the same students sit consecutive cycles, so these comparisons are directly meaningful.
+            , grouped into exam info, question statistics and usable items. Many of the same students sit consecutive sittings, so these comparisons are directly meaningful.
           </div>
         </div>
 
-        {/* ── controls: cycles + subject view ── */}
+        {/* ── controls: sittings + subject view ── */}
         <div className="hf-card" style={{ padding: "13px 16px", display: "flex", flexWrap: "wrap", gap: 10, alignItems: "center", position: "relative" }}>
-          <span className="hf-lbl" style={{ marginRight: 2 }}>Cycles</span>
+          <span className="hf-lbl" style={{ marginRight: 2 }}>Sittings</span>
           {model.cycles.map((c) => (
             <span key={c.id} className="hf-chip on" style={{ gap: 6 }}>
               {c.name}
@@ -129,7 +129,7 @@ export default function ComparePage() {
           ))}
           <span style={{ position: "relative" }}>
             <Chip onClick={() => unselected.length > 0 && setAddOpen((v) => !v)}>
-              <Icon name="plus" size={12} />Add cycle
+              <Icon name="plus" size={12} />Add sitting
             </Chip>
             {addOpen && unselected.length > 0 && (
               <div className="hf-card" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 30, padding: 6, display: "flex", flexDirection: "column", gap: 2, minWidth: 180, boxShadow: "0 10px 30px -10px rgba(31,42,49,.35)" }}>
@@ -155,7 +155,7 @@ export default function ComparePage() {
           ))}
         </div>
 
-        {model.anyMock && <MockBanner text="Prior cycles are illustrative mock data — only the latest (live) cycle's figures are computed from real results. Cycle names are explicit throughout." />}
+        {model.anyMock && <MockBanner text="Prior sittings are illustrative mock data — only the latest (live) sitting's figures are computed from real results. Sitting names are explicit throughout." />}
 
         {view === "all" ? (
           <OverviewBody model={model} cyclesMeta={cyclesMeta} />
@@ -168,7 +168,7 @@ export default function ComparePage() {
 }
 
 const ALPHA_INFO = (
-  <span>By convention, a reliability coefficient (Cronbach&apos;s α) of <strong>0.70 or above</strong> is considered acceptable for a test of this kind — the dashed line marks 0.70. α comes from the cycle&apos;s reliability output; it is shown as unavailable where a cycle has none.</span>
+  <span>By convention, a reliability coefficient (Cronbach&apos;s α) of <strong>0.70 or above</strong> is considered acceptable for a test of this kind — the dashed line marks 0.70. α comes from the sitting&apos;s reliability output; it is shown as unavailable where a sitting has none.</span>
 );
 const PVALUE_INFO = <span>The p-value is the average proportion of candidates answering correctly. <strong>Higher = easier.</strong> It is a difficulty index, not a quality judgement.</span>;
 const PB_INFO = <span>Point-biserial measures how well an item separates stronger and weaker candidates. Higher is better; the dashed line marks the 0.20 convention.</span>;
@@ -201,7 +201,7 @@ function OverviewBody({ model, cyclesMeta }: { model: CompareCyclesModel; cycles
       </div>
       <div style={GRID2}>
         <ChartCard title="Participation — candidates sitting per subject" cycles={`${cyclesCaption} · per subject`}
-          note="Many of the same students sit consecutive cycles, so counts move only modestly."
+          note="Many of the same students sit consecutive sittings, so counts move only modestly."
           legend={cyclesMeta.map((c, i) => ({ c: cycleColor(i, cyclesMeta.length), label: c.name }))}>
           <GroupedBars groups={subjectSeries(model, (m) => m?.participants ?? null)} cycles={cyclesMeta} max={partMax} ticks={ticksTo(partMax, 4)} fmt={(v) => String(v)} />
         </ChartCard>
@@ -216,7 +216,7 @@ function OverviewBody({ model, cyclesMeta }: { model: CompareCyclesModel; cycles
           <GroupedBars groups={subjectSeries(model, (m) => m?.passOrAbove ?? null)} cycles={cyclesMeta} max={100} ticks={[0, 25, 50, 75, 100]} fmt={pct} />
         </ChartCard>
         <ChartCard title="Overall award distribution — all subjects" cycles={`${cyclesCaption} · candidates per award level`}
-          note="The standing award-distribution chart. Each award level shows the cycles side by side in its own colour; the newest is solid."
+          note="The standing award-distribution chart. Each award level shows the sittings side by side in its own colour; the newest is solid."
           legend={cyclesMeta.map((c, i) => ({ c: H.ink3, light: i !== cyclesMeta.length - 1, label: c.name }))}
           info={AWARD_INFO}>
           <AwardDist levels={model.awardLevels} cycles={cyclesMeta} counts={awardCounts} max={awardMax} ticks={ticksTo(awardMax, 5)} />
@@ -231,7 +231,7 @@ function OverviewBody({ model, cyclesMeta }: { model: CompareCyclesModel; cycles
       </div>
       <div style={GRID2}>
         <ChartCard style={{ gridColumn: "1 / -1" }} title="Exam difficulty — average p-value per subject" cycles={`${cyclesCaption} · all subjects`}
-          note="p-value = average proportion correct. Higher = easier. Each line shows how a subject's difficulty moved between cycles."
+          note="p-value = average proportion correct. Higher = easier. Each line shows how a subject's difficulty moved between sittings."
           legend={cyclesMeta.map((c, i) => ({ c: cycleColor(i, cyclesMeta.length), label: c.name, ring: i !== cyclesMeta.length - 1 }))}
           info={PVALUE_INFO}>
           <SlopeChart groups={subjectSeries(model, (m) => m?.avgPValue ?? null)} cycles={cyclesMeta} min={slopeMin} max={slopeMax} ticks={ticksTo(slopeMax, 4).filter((t) => t >= slopeMin)} fmt={f2} />
@@ -243,7 +243,7 @@ function OverviewBody({ model, cyclesMeta }: { model: CompareCyclesModel; cycles
           <GroupedBars groups={subjectSeries(model, (m) => m?.avgPointBiserial ?? null)} cycles={cyclesMeta} max={0.4} ticks={[0, 0.1, 0.2, 0.3, 0.4]} fmt={f2} refLine={0.2} />
         </ChartCard>
         <ChartCard title="Reliability — Cronbach's α per subject" cycles={`${cyclesCaption} · per subject`}
-          note="Internal consistency of each test. Convention: α ≥ 0.70 is acceptable (dashed line). Unavailable cycles show no bar."
+          note="Internal consistency of each test. Convention: α ≥ 0.70 is acceptable (dashed line). Unavailable sittings show no bar."
           legend={cyclesMeta.map((c, i) => ({ c: cycleColor(i, cyclesMeta.length), label: c.name }))}
           info={ALPHA_INFO}>
           <GroupedBars groups={subjectSeries(model, (m) => m?.alpha ?? null)} cycles={cyclesMeta} max={1.0} ticks={[0, 0.25, 0.5, 0.75, 1.0]} fmt={f2} refLine={0.7} />
@@ -299,7 +299,7 @@ function FocusBody({ model, cyclesMeta, subjectId, onBack }: { model: CompareCyc
       </div>
       <div style={GRID2}>
         <ChartCard title={`Cut-scores — ${subject.short}`} cycles={`How the cut-scores moved · ${cyclesCaption}`}
-          note="Each marker is a raw-score threshold between performance levels. Hollow = earlier cycle, magenta = newest."
+          note="Each marker is a raw-score threshold between performance levels. Hollow = earlier sitting, magenta = newest."
           legend={cyclesMeta.map((c, i) => ({ c: cycleColor(i, cyclesMeta.length), label: c.name, ring: i !== cyclesMeta.length - 1 }))}>
           <CutScores cuts={cutRows} cycles={cyclesMeta} scoreMax={scoreMax} />
         </ChartCard>
@@ -310,7 +310,7 @@ function FocusBody({ model, cyclesMeta, subjectId, onBack }: { model: CompareCyc
       </div>
 
       {/* ── Question statistics ── */}
-      <SectionHead title="Question statistics" sub="How this subject's items behaved between the cycles." />
+      <SectionHead title="Question statistics" sub="How this subject's items behaved between the sittings." />
       <div className="hf-row" style={{ gap: 14, flexWrap: "wrap", alignItems: "stretch" }}>
         <KpiTile label="Difficulty (p-value)" cycles={cyclesMeta} values={model.cycles.map((c) => c.subjects[subjectId]?.avgPValue ?? null)} fmt={f2} good={null} info={PVALUE_INFO} />
         <KpiTile label="Discrimination (point-biserial)" cycles={cyclesMeta} values={model.cycles.map((c) => c.subjects[subjectId]?.avgPointBiserial ?? null)} fmt={f2} good info={PB_INFO} />
@@ -320,7 +320,7 @@ function FocusBody({ model, cyclesMeta, subjectId, onBack }: { model: CompareCyc
       {/* ── Usable items ── */}
       <SectionHead title="Usable items" sub="The item pool for this subject and how much was removed." />
       <ChartCard title={`Item pool — ${subject.short}`} cycles={`Items scored vs removed · ${cyclesCaption}`}
-        note="Fewer items removed indicates a cleaner, more usable item pool that cycle."
+        note="Fewer items removed indicates a cleaner, more usable item pool that sitting."
         legend={[...cyclesMeta.map((c, i) => ({ c: cycleColor(i, cyclesMeta.length), label: `Usable · ${c.name}` })), { c: H.warn, label: "Removed" }]}>
         <StackedItems groups={[{ label: subject.short, usable: model.cycles.map((c) => c.subjects[subjectId]?.itemsUsable ?? null), removed: model.cycles.map((c) => c.subjects[subjectId]?.itemsRemoved ?? null) }]} cycles={cyclesMeta} max={itemMax} ticks={ticksTo(itemMax, 5)} />
       </ChartCard>

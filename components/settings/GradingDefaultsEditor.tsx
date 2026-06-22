@@ -105,11 +105,11 @@ export function GradingDefaultsEditor() {
 
     for (const lbl of livePerf) {
       if (!nextPerf.has(lbl) && inUse.perf.includes(lbl))
-        w.push(`Performance level “${lbl}” is in use by current cycle results — removing it leaves those cells unmapped.`);
+        w.push(`Performance level “${lbl}” is in use by current sitting results — removing it leaves those cells unmapped.`);
     }
     for (const lbl of liveAward) {
       if (!nextAward.has(lbl) && inUse.award.includes(lbl))
-        w.push(`Award “${lbl}” is in use by current cycle results — removing it leaves those awards unmapped.`);
+        w.push(`Award “${lbl}” is in use by current sitting results — removing it leaves those awards unmapped.`);
     }
     for (const p of perf) {
       if (!livePerf.has(p.label) && !p.stars.trim())
@@ -289,7 +289,7 @@ function LevelTable<T extends { label: string; cut: number | null; stars?: strin
                 <td className="hf-td">
                   <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
                     <TextField value={r.label} editable={editable} onChange={(v) => update(i, { label: v } as Partial<T>)} />
-                    {used && <span title="In use by current cycle results" style={{ fontSize: 8.5, color: H.ink2, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.4 }}>IN USE</span>}
+                    {used && <span title="In use by current sitting results" style={{ fontSize: 8.5, color: H.ink2, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 4px", letterSpacing: 0.4 }}>IN USE</span>}
                   </div>
                 </td>
                 {showStars && (
