@@ -68,8 +68,8 @@ describe("Import/Upload page renders", () => {
     const html = await renderImport();
     expect(html).toContain("Upload exam data");
     // The raw-export card shows its (now-wired) upload prompt — an enabled
-    // upload button — not a (meaningless) all-zero validation report.
-    expect(html).toContain("Upload exam export");
+    // upload button for the three QM CSVs — not a (meaningless) all-zero report.
+    expect(html).toContain("Upload the three QM CSVs");
     // The button must be live now that ingest is wired (no `disabled` attribute).
     expect(html).not.toContain("Raw-export ingest to Supabase is not yet wired");
   });

@@ -18,6 +18,7 @@
 
 import type { AssembleScoreAnalysisArgs, AssembleItemAnalysisArgs } from "@/lib/export/types";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
+import type { CanonicalModel } from "@/lib/ingest/qm";
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
@@ -253,6 +254,14 @@ export interface DataProvider {
     file: { name: string; sizeMB: number },
     clean: CleanResponse[],
     report: ValidationReport,
+    /**
+     * The faithful 3-CSV canonical model + source filenames. Optional so the
+     * legacy single-file path still type-checks; the live (Supabase) provider
+     * forwards it to the ingest route, which persists the richer intake
+     * (migration 0006). The in-memory provider ignores it (it has no DB), but
+     * records the sitting tag.
+     */
+    extra?: { canonical?: CanonicalModel; files?: { items?: string; assessments?: string; topics?: string } },
   ): Promise<void>;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;

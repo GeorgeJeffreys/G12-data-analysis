@@ -37,6 +37,7 @@ import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
 import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
+import type { CanonicalModel } from "@/lib/ingest/qm";
 import { SUBJECT_CATALOG } from "./subject-catalog";
 import { isEssaySubject, reservedEssayMax } from "./essays";
 import type {
@@ -3014,6 +3015,11 @@ export class InMemoryDataProvider implements DataProvider {
     file: { name: string; sizeMB: number },
     clean: CleanResponse[],
     report: ValidationReport,
+    // The faithful 3-CSV canonical model is forwarded by the live provider to the
+    // server persist path; the in-memory provider has no DB, so it only uses it
+    // for the sitting tag in the audit line (the engine matrix is rebuilt from
+    // `clean`, keeping parity untouched).
+    extra?: { canonical?: CanonicalModel; files?: { items?: string; assessments?: string; topics?: string } },
   ): Promise<void> {
     const lc = this.seed.liveCycle;
     if (cycleId !== lc.id) return Promise.resolve();
@@ -3040,10 +3046,11 @@ export class InMemoryDataProvider implements DataProvider {
     lc.diagnostics = built.diagnostics;
     lc.stageIndex = 1; // uploaded → next action is Clean
 
+    const sittingNote = extra?.canonical?.sitting ? ` · ${extra.canonical.sitting.label} sitting` : "";
     this.audit(
       "upload",
       "Ingested raw export",
-      `${built.assessments.length} subjects · ${built.participants.length} participants · ${file.name}`,
+      `${built.assessments.length} subjects · ${built.participants.length} participants · ${file.name}${sittingNote}`,
       cycleId,
     );
     this.bump();

@@ -33,6 +33,33 @@ export {
 export type { SubjectSummary, SubjectElementSummary } from "./split";
 export type * from "./types";
 
+// 3-CSV Questionmark ingest (Items + Assessments + Topics → canonical model).
+export {
+  ingestThreeExports,
+  buildCanonicalModel,
+  buildCanonicalModelFromTables,
+  detectThreeExports,
+  detectKind,
+  DetectionError,
+  parseCsv,
+  normalizeSubjectName,
+  parseSitting,
+} from "./qm";
+export type {
+  ThreeExportIngest,
+  NamedInput,
+  QmFileKind,
+  CanonicalModel,
+  QmSubject,
+  QmParticipant,
+  QmItem,
+  QmResult,
+  QmTopicRollup,
+  Sitting,
+  IntegrityReport,
+  ReconcileIssue,
+} from "./qm";
+
 export interface IngestAndCleanResult {
   cleanedResponses: CleanResponse[];
   validationReport: ValidationReport;
