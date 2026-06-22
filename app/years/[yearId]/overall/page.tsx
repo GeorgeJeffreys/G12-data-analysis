@@ -1,23 +1,126 @@
 "use client";
 
 /**
- * Overall (best-of-two) view — STUB.
+ * Overall (best-of-two) view.
  *
- * Per the year model, Overall takes, for each student and each subject, the
- * HIGHER award across the February and May sittings (best-of-two by AWARD LEVEL,
- * not raw score). It is a derived aggregation, not a pipeline run — there is no
- * scoring/engine work here. The rollup logic is implemented in the next prompt;
- * this page documents the contract and links back to the two sittings.
+ * Per the year model, Overall takes — for every student and every subject — the
+ * HIGHER award level across the February and May sittings (best-of-two by level
+ * RANK, not raw score). Each cell is tagged with the sitting it came from
+ * (Feb / May) for provenance, and the overall award is DERIVED from the rolled-up
+ * per-subject levels using the existing award-derivation rule. It is a derived
+ * aggregation, not a pipeline run — no scoring/engine/safeguard work runs here;
+ * each sitting's award is already its own signed-off, safeguard-checked result.
+ *
+ * Certificates issue from this Overall (see ./overall/documents).
  */
 import Link from "next/link";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Badge } from "@/components/ui/primitives";
-import { Icon } from "@/components/ui/icons";
+import { Icon, Mark } from "@/components/ui/icons";
+import { MiniGradeBars } from "@/components/ui/charts";
+import { AWARD_SHORT } from "@/lib/data/grading";
+import type { OverallGradeCell } from "@/lib/data/types";
+
+/** Plain subject-name column header, matching the Grades screen. */
+function subjectHeader(shortName: string): string {
+  if (/applicable/i.test(shortName)) return "Applicable Math";
+  if (/english/i.test(shortName)) return "English";
+  if (/scientific/i.test(shortName)) return "Scientific";
+  if (/arabic/i.test(shortName)) return "Arabic";
+  if (/life/i.test(shortName)) return "Life";
+  return shortName.split(" ")[0] ?? shortName;
+}
+
+/** A small Feb / May provenance tag for one Overall cell. */
+function SourceTag({ source }: { source: OverallGradeCell["source"] }) {
+  const isFeb = source === "february";
+  return (
+    <span
+      title={`Best result came from the ${isFeb ? "February" : "May"} sitting`}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        height: 14,
+        padding: "0 5px",
+        borderRadius: 4,
+        fontSize: 9,
+        fontWeight: 700,
+        letterSpacing: 0.3,
+        textTransform: "uppercase",
+        background: isFeb ? H.tint2 : H.pinkSoft,
+        color: isFeb ? H.ink2 : H.pink,
+      }}
+    >
+      {isFeb ? "Feb" : "May"}
+    </span>
+  );
+}
+
+/** Per-subject Overall cell: stars + the Feb/May provenance tag (best-of-two). */
+function OverallCell({ cell, starMap }: { cell?: OverallGradeCell; starMap: Record<string, string> }) {
+  if (!cell) {
+    return <span className="hf-mono" style={{ color: H.ink3 }}>·</span>;
+  }
+  const tooltip =
+    `Best of two — chosen ${cell.level} (${cell.source === "february" ? "February" : "May"})` +
+    `\nFebruary: ${cell.februaryLevel ?? "no result"}` +
+    `\nMay: ${cell.mayLevel ?? "no result"}`;
+  return (
+    <span title={tooltip} style={{ display: "inline-flex", flexDirection: "column", alignItems: "center", gap: 3 }}>
+      <span
+        className="hf-mono"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minWidth: 34,
+          height: 23,
+          borderRadius: 7,
+          border: `1px solid ${H.line2}`,
+          background: H.paper,
+          color: cell.stars ? H.pink : H.ink3,
+          fontWeight: 700,
+          fontSize: 12,
+          letterSpacing: 1.5,
+        }}
+      >
+        {starMap[cell.level] || "·"}
+      </span>
+      <SourceTag source={cell.source} />
+    </span>
+  );
+}
+
+/** Overall award pill (compact label, full award as tooltip). */
+function AwardBadge({ award }: { award: string }) {
+  const isNoAward = award === "No Award" || award === "";
+  return (
+    <span
+      title={award}
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "4px 10px",
+        height: 24,
+        borderRadius: 999,
+        fontWeight: 700,
+        fontSize: 11,
+        background: isNoAward ? H.tint2 : H.pink,
+        color: isNoAward ? H.ink2 : "#fff",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {AWARD_SHORT[award] ?? award ?? "—"}
+    </span>
+  );
+}
 
 export default function YearOverallPage({ params }: { params: { yearId: string } }) {
   const year = useProviderData((p) => p.getYear(params.yearId), [params.yearId]);
+  const model = useProviderData((p) => p.getOverallGrades(params.yearId), [params.yearId]);
 
   if (!year) {
     return (
@@ -32,56 +135,100 @@ export default function YearOverallPage({ params }: { params: { yearId: string }
     );
   }
 
+  const crumb = [
+    { label: "Years", href: "/" },
+    { label: year.name, href: `/years/${year.id}` },
+    { label: "Overall" },
+  ];
+
   return (
-    <Shell
-      active="Cycles"
-      crumb={[
-        { label: "Years", href: "/" },
-        { label: year.name, href: `/years/${year.id}` },
-        { label: "Overall" },
-      ]}
-    >
-      <div style={{ display: "flex", flexDirection: "column", padding: "28px 32px", gap: 22, flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <div className="hf-h1">{year.name} · Overall</div>
+    <Shell active="Cycles" crumb={crumb}>
+      <div style={{ display: "flex", flexDirection: "column", padding: "20px 32px 18px", gap: 14, flex: 1, minHeight: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+          <div className="hf-h1" style={{ fontSize: 19 }}>{year.name} · Overall</div>
           <Badge tone={year.overall.ready ? "good" : "neutral"}>
-            {year.overall.ready ? "Ready" : "Pending"}
+            {year.overall.ready ? "Ready" : "Provisional"}
           </Badge>
+          {model && (
+            <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className="hf-lbl">Awards</span>
+              <MiniGradeBars data={model.distribution.map((d) => ({ label: AWARD_SHORT[d.level] ?? d.level, count: d.count }))} />
+            </span>
+          )}
+          <div style={{ flex: 1, minWidth: 12 }} />
+          {model?.ready && (
+            <Link href={`/years/${year.id}/overall/documents`}>
+              <Button variant="pri">
+                <Icon name="award" color="#fff" />
+                Generate certificates
+              </Button>
+            </Link>
+          )}
         </div>
 
-        <Card style={{ padding: 24, display: "flex", flexDirection: "column", gap: 14, maxWidth: 720 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>Best of two — coming next</div>
-          <div className="hf-sub" style={{ lineHeight: 1.6 }}>
-            The Overall result is derived from the two sittings. For every student and every
-            subject it takes the <strong>higher award level</strong> (not the higher raw score)
-            across February and May. Cut scores are standard-set per sitting and the D3 safeguard
-            applies per sitting; Overall only compares the resulting awards. This is an aggregation
-            view — no scoring or engine work runs here.
+        <div className="hf-sub" style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <span>
+            Best of two by <strong>award level</strong> (not raw score), per student per subject. The <span style={{ color: H.pink, fontWeight: 700 }}>Feb</span>/<span style={{ color: H.pink, fontWeight: 700 }}>May</span> tag shows which sitting each result came from; the overall award is derived from the best-of-two levels.
+          </span>
+          {model?.demo && (
+            <Badge tone="warn">Demo February sitting</Badge>
+          )}
+        </div>
+        {model?.demo && (
+          <Card style={{ padding: "10px 14px", background: H.warnSoft, display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <Mark kind="warn" size={15} />
+            <span className="hf-sub" style={{ fontSize: 11.5 }}>
+              Live Supabase is unreachable in this environment and the seed carries real grades only for the {model.may?.cycleName ?? "May"} sitting, so the February baseline shown here is <strong>generated from the May cohort</strong> to demonstrate the best-of-two rollup. With real two-sitting data the same view reads both sittings’ signed-off grades.
+            </span>
+          </Card>
+        )}
+
+        {!model ? (
+          <Card style={{ padding: 24, maxWidth: 640 }}>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>No results to roll up yet</div>
+            <div className="hf-sub" style={{ marginTop: 8 }}>{year.overall.note}</div>
+          </Card>
+        ) : (
+          <div className="hf-card" style={{ overflow: "auto", flex: 1, minWidth: 0 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th className="hf-th">Participant</th>
+                  {model.assessments.map((a) => (
+                    <th key={a.id} className="hf-th" style={{ textAlign: "center" }}>{subjectHeader(a.shortName)}</th>
+                  ))}
+                  <th className="hf-th" style={{ textAlign: "center" }}>Overall award</th>
+                </tr>
+              </thead>
+              <tbody>
+                {model.rows.map((r) => (
+                  <tr key={r.id} className="hf-hover">
+                    <td className="hf-td">
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.label}>{r.label}</div>
+                        <div className="hf-mono" style={{ fontSize: 10.5, color: H.ink3, marginTop: 1, display: "flex", gap: 6, alignItems: "center" }}>
+                          <span title="Student ID">{r.studentId}</span>
+                          {!r.inMay && <span title="Did not retake in May — February stands" style={{ color: H.ink2 }}>Feb only</span>}
+                          {!r.inFebruary && <span title="No February result — May stands" style={{ color: H.ink2 }}>May only</span>}
+                        </div>
+                      </div>
+                    </td>
+                    {model.assessments.map((a) => (
+                      <td key={a.id} className="hf-td" style={{ textAlign: "center" }}>
+                        <OverallCell cell={r.grades[a.id]} starMap={model.starMap} />
+                      </td>
+                    ))}
+                    <td className="hf-td" style={{ textAlign: "center" }}>
+                      <AwardBadge award={r.award} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="hf-sub">{year.overall.note}</div>
-        </Card>
+        )}
 
         <div>
-          <div className="hf-sub" style={{ marginBottom: 8 }}>Sittings feeding this Overall</div>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {[year.february, year.may].map((s) =>
-              s.started ? (
-                <Link key={s.sitting} href={`/cycles/${s.cycleId}`}>
-                  <Button>
-                    {s.label} sitting
-                    <Icon name="arrow" />
-                  </Button>
-                </Link>
-              ) : (
-                <Button key={s.sitting} disabled>
-                  {s.label} — not started
-                </Button>
-              ),
-            )}
-          </div>
-        </div>
-
-        <div style={{ marginTop: "auto" }}>
           <Link href={`/years/${year.id}`} style={{ color: H.pink, fontSize: 13 }}>
             ‹ Back to {year.name}
           </Link>

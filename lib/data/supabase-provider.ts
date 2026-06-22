@@ -57,6 +57,7 @@ import type {
   DocumentsModel,
   DuplicateStrategy,
   GradesModel,
+  OverallGradesModel,
   GradingDefaultsModel,
   IngestModel,
   CombinedSplitModel,
@@ -288,6 +289,8 @@ export class SupabaseDataProvider implements DataProvider {
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null { return this.inner.getItemDetail(cycleId, assessmentId, itemId); }
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null { return this.inner.getBoundaries(cycleId, scope); }
   getGrades(cycleId: string): GradesModel | null { return this.inner.getGrades(cycleId); }
+  getOverallGrades(yearId: string): OverallGradesModel | null { return this.inner.getOverallGrades(yearId); }
+  getOverallDocuments(yearId: string): DocumentsModel | null { return this.inner.getOverallDocuments(yearId); }
   getPerformanceReport(cycleId: string): PerformanceReportModel | null { return this.inner.getPerformanceReport(cycleId); }
   getGradingDefaults(): GradingDefaultsModel { return this.inner.getGradingDefaults(); }
   getStudentReview(cycleId: string): StudentReviewModel | null { return this.inner.getStudentReview(cycleId); }

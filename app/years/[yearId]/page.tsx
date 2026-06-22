@@ -4,7 +4,7 @@
  * Screen 02 — A year opened. Shows the year's two sittings (February and May)
  * plus the derived Overall view. Each sitting tile opens the existing
  * per-sitting pipeline (app/cycles/[cycleId]) unchanged; Overall opens the
- * best-of-two rollup (stubbed here — implemented in the next prompt).
+ * best-of-two rollup (app/years/[yearId]/overall).
  */
 import Link from "next/link";
 import { useProviderData } from "@/lib/data/context";
@@ -103,7 +103,7 @@ export default function YearPage({ params }: { params: { yearId: string } }) {
           <SittingCard s={year.february} />
           <SittingCard s={year.may} />
 
-          {/* Overall — derived best-of-two (rollup implemented next prompt). */}
+          {/* Overall — derived best-of-two across the two sittings. */}
           <Card style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, minHeight: 190, borderStyle: "dashed" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
               <div style={{ fontWeight: 700, fontSize: 16 }}>Overall</div>

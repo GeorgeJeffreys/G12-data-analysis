@@ -32,6 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
+import { rollupOverall } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
 import type { CleanResponse } from "@/lib/ingest/types";
@@ -84,7 +85,10 @@ import {
   type DocumentsModel,
   type DuplicateStrategy,
   type GradeBandRow,
+  type GradeCell,
+  type GradeMatrixRow,
   type GradesModel,
+  type OverallGradesModel,
   type GradingDefaultsModel,
   type IngestModel,
   type ItemDetailModel,
@@ -213,6 +217,17 @@ function stddev(xs: number[]): number {
 function round(x: number, d = 1): number {
   const f = 10 ** d;
   return Math.round(x * f) / f;
+}
+
+/** Deterministic 32-bit FNV-1a hash of a string (no deps) — used only for the
+ *  demo February baseline, never for real scoring. */
+function hash32(seed: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
 }
 
 /**
@@ -1454,6 +1469,178 @@ export class InMemoryDataProvider implements DataProvider {
       locked: this.locked.has(cycleId),
       canLock: this.user.role === "lead_admin" && !this.locked.has(cycleId),
     };
+  }
+
+  // ── Overall (best-of-two across the year's two sittings) ──────────────────
+  /**
+   * The year's Overall view: per student, per subject, the HIGHER award of the
+   * two sittings (by level rank), plus the derived overall award. Pure
+   * aggregation over each sitting's signed-off `GradesModel` (see
+   * `lib/data/overall.ts`) — no scoring, cut-score, or safeguard work runs here.
+   *
+   * In this build only the live (May) sitting carries real grades, and live
+   * Supabase is unreachable, so the February baseline is synthesized from the May
+   * cohort (clearly flagged `demo: true`) to give the rollup two sittings to
+   * compare. With real two-sitting data, both sittings' `getGrades` feed the same
+   * `rollupOverall` unchanged.
+   */
+  getOverallGrades(yearId: string): OverallGradesModel | null {
+    const year = this.buildYears().find((y) => y.id === yearId);
+    if (!year) return null;
+
+    const mayGrades = year.may.cycleId ? this.getGrades(year.may.cycleId) : null;
+    const realFeb = year.february.cycleId ? this.getGrades(year.february.cycleId) : null;
+    // Demo February baseline (only when there's a real May sitting but no real
+    // February grades to compare against).
+    const febGrades = realFeb ?? (mayGrades ? this.demoFebruaryGrades(mayGrades) : null);
+    const demo = realFeb === null && febGrades !== null;
+
+    if (!mayGrades && !febGrades) return null;
+
+    const perfLevels = this.grading.performanceLevels;
+    const awardLevels = this.grading.awardLevels;
+    const starMap = this.grading.starMap;
+    const assessments = (mayGrades ?? febGrades)!.assessments;
+
+    const rows = rollupOverall({
+      february: febGrades,
+      may: mayGrades,
+      assessments,
+      performanceLevels: perfLevels,
+      awardLevels,
+      starMap,
+    });
+
+    const distCounts = new Map<string, number>();
+    for (const r of rows) distCounts.set(r.award, (distCounts.get(r.award) ?? 0) + 1);
+    const distribution = awardLevels.map((level) => ({ level, count: distCounts.get(level) ?? 0 }));
+
+    const ready = year.february.started && year.february.locked && year.may.started && year.may.locked;
+    const note = ready
+      ? "Both sittings are signed off — this Overall is final and certificates issue from it."
+      : "Overall is provisional until both the February and May sittings are locked; figures shown are the current best-of-two.";
+
+    return {
+      yearId: year.id,
+      yearName: year.name,
+      assessments,
+      rows,
+      distribution,
+      awardLevels,
+      starMap,
+      performanceLevels: perfLevels,
+      february: { cycleId: year.february.cycleId, cycleName: year.february.cycleName },
+      may: { cycleId: year.may.cycleId, cycleName: year.may.cycleName },
+      ready,
+      locked: ready,
+      demo,
+      note,
+    };
+  }
+
+  /**
+   * Synthesize a DEMO February sitting from the May cohort so the best-of-two
+   * rollup has two sittings to compare in this fixtures-only build. Deterministic
+   * per (studentId, subject): most subjects sit one level BELOW May (a student who
+   * improved by May → May wins), some equal, some ABOVE May (February stands), and
+   * a few absent (not sat in February → only May). The February award is derived
+   * with the same award rule, so it is a faithful "signed-off" second sitting.
+   *
+   * NOT real data — `getOverallGrades` flags this with `demo: true`. With real
+   * two-sitting data, `getGrades` returns the actual February grades and this is
+   * never called.
+   */
+  private demoFebruaryGrades(may: GradesModel): GradesModel {
+    const levels = this.grading.performanceLevels; // best → lowest
+    const L = levels.length;
+    const awardLevels = this.grading.awardLevels;
+    const starMap = this.grading.starMap;
+
+    const rows: GradeMatrixRow[] = may.rows.map((r) => {
+      const grades: Record<string, GradeCell> = {};
+      for (const a of may.assessments) {
+        const mayLevel = r.grades[a.id]?.level ?? "";
+        const mr = mayLevel ? levels.indexOf(mayLevel) : L - 1;
+        const baseRank = mr < 0 ? L - 1 : mr;
+        const b = hash32(`${r.studentId}|${a.id}`) % 10;
+        let level: string;
+        if (b < 1) level = ""; // ~10%: not sat in February → only May has a result
+        else if (b < 6) level = levels[Math.min(L - 1, baseRank + 1)] ?? ""; // ~50%: one below → May wins
+        else if (b < 8) level = levels[baseRank] ?? ""; // ~20%: equal
+        else level = levels[Math.max(0, baseRank - 1)] ?? ""; // ~20%: one above → February stands
+        grades[a.id] = { level, stars: level ? starsFor(level, starMap) : "" };
+      }
+      const subjectLevels = may.assessments.map((a) => grades[a.id]?.level ?? "");
+      const outcome = deriveAward(
+        { subjectLevels, d3Pass: true },
+        { performanceLevels: levels, awardLevels },
+      );
+      return {
+        id: r.id,
+        studentId: r.studentId,
+        label: r.label,
+        grades,
+        award: outcome.award,
+        distinctionCap: null,
+        overallRaw: r.overallRaw,
+        overallMax: r.overallMax,
+        overallPct: r.overallPct,
+      };
+    });
+
+    const distCounts = new Map<string, number>();
+    for (const r of rows) distCounts.set(r.award, (distCounts.get(r.award) ?? 0) + 1);
+    const distribution = awardLevels.map((level) => ({ level, count: distCounts.get(level) ?? 0 }));
+
+    return { ...may, cycleId: "demo-february", rows, distribution };
+  }
+
+  /**
+   * Certificates & reports for the Overall (best-of-two) result. Certificates
+   * issue from Overall — NOT a single sitting — so this points the document
+   * generator at the rolled-up best-of-two awards. Only available once the Overall
+   * is signed off (both sittings locked), mirroring the per-sitting lock gate.
+   */
+  getOverallDocuments(yearId: string): DocumentsModel | null {
+    const overall = this.getOverallGrades(yearId);
+    if (!overall) return null;
+    const locked = overall.locked;
+
+    const refs = overall.assessments;
+    const resolve = (re: RegExp) => refs.find((a) => re.test(a.id) || re.test(a.name));
+    const slotDefs: { slot: string; re: RegExp }[] = [
+      { slot: "S1", re: /applicable math/i },
+      { slot: "S2", re: /scientific/i },
+      { slot: "S3", re: /arabic/i },
+      { slot: "S4", re: /english/i },
+      { slot: "S5", re: /life/i },
+    ];
+    const subjectOrder = slotDefs.map((d) => ({ slot: d.slot, assessment: resolve(d.re)?.name ?? d.slot }));
+
+    const base = this.docSettings(overall.may?.cycleId ?? yearId);
+    const settings: DocSettings = { ...base, cycleName: `${overall.yearName} · Overall` };
+
+    if (!locked) {
+      return { cycleId: yearId, locked, students: [], settings, subjectOrder };
+    }
+
+    const students: StudentSummary[] = overall.rows.map((r) => ({
+      participantId: r.id,
+      name: r.label,
+      award: r.award,
+      subjects: slotDefs.map((d) => {
+        const ref = resolve(d.re);
+        const cell = ref ? r.grades[ref.id] : undefined;
+        return {
+          slot: d.slot,
+          assessment: ref?.name ?? d.slot,
+          level: cell?.level ?? "",
+          stars: cell?.stars ?? "",
+        };
+      }),
+    }));
+
+    return { cycleId: yearId, locked, students, settings, subjectOrder };
   }
 
   /**

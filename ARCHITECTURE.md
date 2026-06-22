@@ -654,6 +654,46 @@ The cohort-level half of the D3 rule (constraining the Outstanding cut so ≥½ 
 is implied) and the suggested-cut-score backsolver are **Wave 3b**, out of scope
 here.
 
+### Overall rollup — best-of-two across the year's two sittings (`lib/data/overall.ts`)
+
+A year holds two sittings (February + May); each is a full, independently
+signed-off pipeline run. **Overall** is the derived best-of-two view used to
+issue certificates. `rollupOverall` is **comparison / aggregation only** — it
+consumes each sitting's `GradesModel` and never touches scoring, cut scores, or
+the safeguard:
+
+1. For every **student × subject**, it takes the **higher performance level** of
+   the two sittings, by level **rank** (best → lowest), *not* raw score. A subject
+   present in only one sitting uses that sitting; students are matched across
+   sittings by **Student ID**. Each `OverallGradeCell` records its `source`
+   (`february` / `may`) and both raw per-sitting levels for provenance.
+2. The **overall award** is derived from the rolled-up per-subject levels via the
+   existing `deriveAward` rule (the award rule is **reused, not reinvented**). The
+   per-sitting **D3 safeguard is NOT re-run** at the Overall level — each
+   sitting's award is already its own signed-off, safeguard-checked result — so
+   `deriveAward` is called with `d3Pass: true` (no cap recomputed on the
+   rolled-up levels). This is the value of best-of-two: a student who aced
+   different subjects in different sittings can earn a higher *overall* award than
+   either sitting alone.
+
+Provider: `getOverallGrades(yearId)` → `OverallGradesModel` (the Overall view,
+`/years/[yearId]/overall`, reuses the Grades table layout with a Feb/May tag per
+cell); `getOverallDocuments(yearId)` → `DocumentsModel` so **certificates issue
+from Overall, not a single sitting** (`/years/[yearId]/overall/documents`),
+gated until both sittings are locked. Tests: `tests/overall.rollup.test.ts`,
+`tests/overall.provider.test.ts`, `tests/overall-page.render.test.ts`. Parity is
+unaffected — **183/183** (aggregation over already-computed awards).
+
+**Data-shape note (flagged assumption).** The retake model treats a
+student × subject *present in May* as a retake and *absent* as "February stands".
+The current build's seed inverts this: it carries **real grades only for the live
+May sitting**, and live Supabase is unreachable, so there is no real February
+sitting to compare. `getOverallGrades` therefore **synthesizes a clearly-labelled
+demo February baseline** from the May cohort (`demo: true`, shown with a banner)
+so the rollup has two sittings to exercise in the UI. The rollup logic itself is
+general and fully unit-tested against two-sitting fixtures; wiring two *real*
+sittings only needs multi-cycle hydration to feed both `getGrades` calls.
+
 ### Element / sub-element results & the unofficial report
 
 `getPerformanceReport` reports per-student levels at **major-element AND

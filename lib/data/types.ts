@@ -97,8 +97,8 @@ export interface YearDetail {
   may: SittingRef;
   /**
    * Overall is DERIVED (best-of-two by award level, per student per subject) —
-   * the rollup is implemented in the next prompt. `ready` is true only once both
-   * sittings are locked, which is when an Overall makes sense.
+   * the rollup lives in `getOverallGrades` / `lib/data/overall.ts`. `ready` is
+   * true only once both sittings are locked, which is when an Overall is final.
    */
   overall: { ready: boolean; note: string };
 }
@@ -675,6 +675,73 @@ export interface GradesModel {
   performanceLevels: string[];
   locked: boolean;
   canLock: boolean;
+}
+
+// --- Overall (best-of-two across the year's two sittings) --------------------
+/** Which sitting a chosen per-subject result came from. */
+export type OverallSource = "february" | "may";
+
+/**
+ * One subject cell in the Overall (best-of-two) view: the HIGHER of the two
+ * sittings' performance levels, with provenance (which sitting it came from) and
+ * the raw per-sitting levels for transparency. The comparison is by performance
+ * level RANK (best → lowest), never by raw score.
+ */
+export interface OverallGradeCell {
+  /** The chosen (higher) performance level. */
+  level: string;
+  stars: string;
+  /** Which sitting supplied the chosen level (the visible Feb/May tag). */
+  source: OverallSource;
+  /** Level recorded in the February sitting (null = no February result). */
+  februaryLevel: string | null;
+  /** Level recorded in the May sitting (null = no May result). */
+  mayLevel: string | null;
+}
+
+export interface OverallGradeRow {
+  /** Stable key — the human Student ID, which matches across the two sittings. */
+  id: string;
+  studentId: string;
+  label: string;
+  /** Best-of-two per assessment id. */
+  grades: Record<string, OverallGradeCell>;
+  /**
+   * Overall award DERIVED from the best-of-two per-subject levels via the
+   * existing award-derivation rule. The per-sitting D3 safeguard is NOT re-run at
+   * the Overall level (each sitting's award is already signed-off, safeguard-checked).
+   */
+  award: string;
+  /** Whether the student appeared in each sitting. */
+  inFebruary: boolean;
+  inMay: boolean;
+}
+
+export interface OverallGradesModel {
+  yearId: string;
+  yearName: string;
+  /** Subjects (union across the two sittings — uses the populated sitting's refs). */
+  assessments: AssessmentRef[];
+  rows: OverallGradeRow[];
+  /** Distribution over the award levels (derived overall awards). */
+  distribution: { level: string; count: number }[];
+  awardLevels: string[];
+  starMap: Record<string, string>;
+  performanceLevels: string[];
+  february: { cycleId: string | null; cycleName: string | null } | null;
+  may: { cycleId: string | null; cycleName: string | null } | null;
+  /** True when both sittings are locked (signed off) — Overall is final / certifiable. */
+  ready: boolean;
+  /** Alias of `ready`: certificates issue only from a signed-off Overall. */
+  locked: boolean;
+  /**
+   * True when the February sitting is DEMO data synthesized from the May cohort.
+   * In this build only the live (May) sitting carries real grades and live
+   * Supabase is unreachable, so the February baseline is generated locally to
+   * exercise the best-of-two rollup. With real two-sitting data this is false.
+   */
+  demo: boolean;
+  note: string;
 }
 
 export type DuplicateStrategy = "keep_latest" | "keep_first" | "exclude";

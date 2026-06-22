@@ -36,6 +36,7 @@ import type {
   DocumentsModel,
   DuplicateStrategy,
   GradesModel,
+  OverallGradesModel,
   GradingDefaultsModel,
   IngestModel,
   CombinedSplitModel,
@@ -177,6 +178,15 @@ export interface DataProvider {
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null;
   getBoundaries(cycleId: string, scope: string): BoundaryModel | null;
   getGrades(cycleId: string): GradesModel | null;
+  /**
+   * The year's Overall (best-of-two) grades: per student, per subject, the higher
+   * award of the February and May sittings, with Feb/May provenance, plus the
+   * derived overall award. Aggregation only — consumes each sitting's signed-off
+   * awards (does not re-run scoring, cut scores, or the safeguard).
+   */
+  getOverallGrades(yearId: string): OverallGradesModel | null;
+  /** Certificates & reports built from the Overall result (not a single sitting). */
+  getOverallDocuments(yearId: string): DocumentsModel | null;
   /** Per-student performance + per-element levels for the performance-report export. */
   getPerformanceReport(cycleId: string): PerformanceReportModel | null;
   /**
