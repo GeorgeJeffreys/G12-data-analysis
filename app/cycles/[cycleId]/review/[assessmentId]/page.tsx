@@ -217,8 +217,8 @@ export default function ReviewPage({
       }
       primary={
         <Link href={`/cycles/${cycleId}/diagnostics`}>
-          <Button variant="pri">
-            Continue to diagnostics
+          <Button variant="pri" title="Continue to diagnostics">
+            Continue
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

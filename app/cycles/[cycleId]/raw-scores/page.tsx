@@ -63,7 +63,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
           }}
         />
       }
-      primary={<Link href={reviewHref}><Button variant="pri">Continue to item review<Icon name="arrow" color="#fff" /></Button></Link>}
+      primary={<Link href={reviewHref}><Button variant="pri" title="Continue to item review">Continue<Icon name="arrow" color="#fff" /></Button></Link>}
       subjectTabs={
         <AssessmentTabs
           activeId={assessmentId}

@@ -90,6 +90,7 @@ import {
   type GradeCell,
   type GradeMatrixRow,
   type GradesModel,
+  type ManualMarkAdjustment,
   type OverallGradesModel,
   type GradingDefaultsModel,
   type IngestModel,
@@ -150,6 +151,7 @@ import {
   type GradingConfig,
   DEFAULT_PERFORMANCE_TARGETS,
   DEFAULT_AWARD_TARGETS,
+  MARGINAL_MARK_THRESHOLD,
 } from "./grading";
 import {
   ALL_CAPABILITY_IDS,
@@ -306,6 +308,12 @@ export class InMemoryDataProvider implements DataProvider {
   // alterations: cycle -> human-decided +/- raw marks per student per subject.
   // Derived from decided incidents (rebuildAlterations); read by the engine.
   private alterationsByCycle = new Map<string, Alteration[]>();
+  // Manual mark adjustments (Grades-stage overrides): cycle -> records. These ride
+  // the SAME alterations input the engine consumes (merged in `alterationsFor`),
+  // so a manual delta recomputes the grade through the full path (incl. the D3
+  // safeguard) without ever touching item-stats or engine logic. Audited + reversible.
+  private manualAdjustmentsByCycle = new Map<string, ManualMarkAdjustment[]>();
+  private manualAdjSeq = 0;
   // incident log (Part 3): the triage queue behind the Adjustments step.
   private incidentLogByCycle = new Map<
     string,
@@ -476,8 +484,61 @@ export class InMemoryDataProvider implements DataProvider {
     return undefined;
   }
   private alterationsFor(cycleId: string, assessmentId?: string): Alteration[] {
-    const all = this.alterationsByCycle.get(cycleId) ?? [];
+    // Incident-derived alterations + manual mark adjustments, fed to the engine as
+    // the single `alterations` input. The manual delta is therefore applied as
+    // engine INPUT (never by altering item-stats/engine logic), so the grade
+    // recomputes through the full existing path — keeping engine parity intact.
+    const incident = this.alterationsByCycle.get(cycleId) ?? [];
+    const manual = (this.manualAdjustmentsByCycle.get(cycleId) ?? []).map((m) => ({
+      participantId: m.participantId,
+      assessmentId: m.assessmentId,
+      marks: m.delta,
+    }));
+    const all = [...incident, ...manual];
     return assessmentId ? all.filter((e) => e.assessmentId === assessmentId) : all;
+  }
+
+  /** The active manual mark adjustment on one student's subject, if any. */
+  private manualAdjustmentFor(cycleId: string, participantId: string, assessmentId: string): ManualMarkAdjustment | undefined {
+    return (this.manualAdjustmentsByCycle.get(cycleId) ?? []).find(
+      (m) => m.participantId === participantId && m.assessmentId === assessmentId,
+    );
+  }
+
+  /** Public lookup of a manual adjustment by id (used by the Supabase wrapper). */
+  findManualAdjustment(cycleId: string, adjustmentId: string): ManualMarkAdjustment | undefined {
+    return (this.manualAdjustmentsByCycle.get(cycleId) ?? []).find((m) => m.id === adjustmentId);
+  }
+
+  /**
+   * Raw marks a student's subject score sits below the cut for the NEXT grade up,
+   * with that grade's level — or null when the student is not within
+   * `MARGINAL_MARK_THRESHOLD` raw marks of any boundary (3+ marks below, or
+   * already at the top band). Cuts are percentages, so each is converted to raw
+   * marks of THIS subject's max (so "2 marks" means marks, not points).
+   */
+  private marginalInfo(
+    score: ParticipantScore,
+    cuts: number[],
+    levels: string[],
+  ): { marksToNext: number; nextLevel: string } | null {
+    const { raw, max } = score;
+    if (max <= 0) return null;
+    // cuts are descending (best → lowest); the next grade up is the CLOSEST cut
+    // strictly above the student's raw — i.e. the lowest boundary they have not
+    // yet cleared. Iterating from the lowest cut upward, the first cut above them
+    // is that closest boundary.
+    for (let i = cuts.length - 1; i >= 0; i--) {
+      const cutRaw = (cuts[i]! / 100) * max;
+      if (cutRaw > raw) {
+        const marksBelow = cutRaw - raw;
+        if (marksBelow > 0 && marksBelow <= MARGINAL_MARK_THRESHOLD) {
+          return { marksToNext: round(marksBelow, 2), nextLevel: levels[i] ?? "" };
+        }
+        return null; // closest boundary above is farther than the threshold
+      }
+    }
+    return null; // already at/above the top cut — no grade up to miss
   }
   /**
    * The live ScoringConfig the engine reads — the item-quality thresholds
@@ -1456,13 +1517,12 @@ export class InMemoryDataProvider implements DataProvider {
     const perfLevels = this.grading.performanceLevels;
     const awardLevels = this.grading.awardLevels;
 
-    // per-assessment pct maps + effective cut-points
-    const pctMaps = new Map<string, Map<string, number>>();
+    // per-assessment score maps (full ParticipantScore, so we can flag marginal
+    // cells in raw marks) + effective cut-points
+    const scoreMaps = new Map<string, Map<string, ParticipantScore>>();
     const cutsByScope = new Map<string, number[]>();
     for (const a of this.seed.liveCycle.assessments) {
-      const m = new Map<string, number>();
-      for (const [pid, v] of this.pctByParticipant(cycleId, a)) m.set(pid, v.pct);
-      pctMaps.set(a.id, m);
+      scoreMaps.set(a.id, this.pctByParticipant(cycleId, a));
       cutsByScope.set(a.id, this.boundaryState(cycleId, a.id).cuts);
     }
     const overallScores = this.overallScoreByParticipant(cycleId);
@@ -1473,12 +1533,26 @@ export class InMemoryDataProvider implements DataProvider {
     const overrides = this.distinctionOverrides.get(cycleId);
 
     const rows = this.seed.liveCycle.participants.map((p) => {
-      const grades: Record<string, { level: string; stars: string }> = {};
+      const grades: Record<string, GradeCell> = {};
       const subjectLevels: string[] = [];
       for (const a of this.seed.liveCycle.assessments) {
-        const pct = pctMaps.get(a.id)?.get(p.id);
-        const level = pct === undefined ? "" : classify(pct, perfLevels, cutsByScope.get(a.id)!);
-        grades[a.id] = { level, stars: starsFor(level, this.grading.starMap) };
+        const sc = scoreMaps.get(a.id)?.get(p.id);
+        const cuts = cutsByScope.get(a.id)!;
+        const level = sc === undefined ? "" : classify(sc.pct, perfLevels, cuts);
+        const cell: GradeCell = { level, stars: starsFor(level, this.grading.starMap) };
+        if (sc) {
+          // Flag students within MARGINAL_MARK_THRESHOLD raw marks below the next
+          // grade-up cut — the small-adjustment-would-change-the-grade cases.
+          const marg = this.marginalInfo(sc, cuts, perfLevels);
+          if (marg) {
+            cell.marginal = true;
+            cell.marksToNext = marg.marksToNext;
+            cell.nextLevel = marg.nextLevel;
+          }
+          const adj = this.manualAdjustmentFor(cycleId, p.id, a.id);
+          if (adj) cell.adjustment = adj;
+        }
+        grades[a.id] = cell;
         subjectLevels.push(level);
       }
       const score = overallScores.get(p.id);
@@ -2507,6 +2581,7 @@ export class InMemoryDataProvider implements DataProvider {
           max: s.max,
           pct: s.pct,
           byDemand,
+          adjustment: this.manualAdjustmentFor(cycleId, pid, a.id) ?? null,
         });
         byP.set(pid, list);
       }
@@ -2749,6 +2824,84 @@ export class InMemoryDataProvider implements DataProvider {
       this.audit("safeguard", "Removed Distinction override", `${label} returned to its safeguard result`, cycleId);
       this.bump();
     }
+  }
+
+  // ── manual mark adjustment (Grades-stage, audited + reversible) ────────────
+  /**
+   * Manually adjust one student's subject MARK to `newMark` (not a direct grade
+   * flip), with a REQUIRED reason. The delta rides the existing Alterations input
+   * the engine consumes, so the grade recomputes through the full path (incl. the
+   * D3 distinction safeguard). At most one active adjustment per cell — re-adjusting
+   * supersedes the previous one (computed against the un-adjusted base so deltas
+   * never compound). Every change is audited (actor, student, subject, old → new,
+   * reason, time). Engine parity is unaffected: only the alterations INPUT changes.
+   */
+  adjustStudentMark(cycleId: string, participantId: string, assessmentId: string, newMark: number, reason: string): void {
+    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return; // reason is required
+    if (!Number.isFinite(newMark)) return;
+    const a = this.assessment(assessmentId);
+    if (!a) return;
+    const score = this.pctByParticipant(cycleId, a).get(participantId);
+    if (!score) return;
+
+    const list = this.manualAdjustmentsByCycle.get(cycleId) ?? [];
+    const existing = list.find((m) => m.participantId === participantId && m.assessmentId === assessmentId);
+    // `score.raw` already includes any existing manual delta for this cell, so the
+    // un-adjusted base is the displayed total minus that delta.
+    const displayedBefore = score.raw;
+    const baseRaw = round(displayedBefore - (existing?.delta ?? 0), 4);
+    const target = round(newMark, 4);
+    const delta = round(target - baseRaw, 4);
+
+    const next = list.filter((m) => !(m.participantId === participantId && m.assessmentId === assessmentId));
+    if (delta !== 0) {
+      this.manualAdjSeq += 1;
+      next.push({
+        id: `madj-${this.manualAdjSeq}`,
+        participantId,
+        assessmentId,
+        oldMark: baseRaw,
+        newMark: target,
+        delta,
+        reason: clean,
+        by: this.user.name,
+        ts: new Date().toISOString(),
+      });
+    }
+    this.manualAdjustmentsByCycle.set(cycleId, next);
+
+    const who = this.seed.liveCycle.participants.find((p) => p.id === participantId)?.label ?? participantId;
+    this.audit(
+      "student",
+      "Manual mark adjustment",
+      `${who} · ${a.name}: ${round(displayedBefore, 2)} → ${target} mark${target === 1 ? "" : "s"} (${delta >= 0 ? "+" : ""}${delta}) — ${clean}`,
+      cycleId,
+    );
+    this.bump();
+  }
+
+  /**
+   * Remove (undo) a manual mark adjustment by id — reverts the grade (the delta
+   * leaves the alterations input, so the engine recomputes the original grade) and
+   * audits the removal.
+   */
+  removeStudentMarkAdjustment(cycleId: string, adjustmentId: string): void {
+    if (this.locked.has(cycleId)) return;
+    const list = this.manualAdjustmentsByCycle.get(cycleId);
+    const adj = list?.find((m) => m.id === adjustmentId);
+    if (!list || !adj) return;
+    this.manualAdjustmentsByCycle.set(cycleId, list.filter((m) => m.id !== adjustmentId));
+    const who = this.seed.liveCycle.participants.find((p) => p.id === adj.participantId)?.label ?? adj.participantId;
+    const a = this.assessment(adj.assessmentId);
+    this.audit(
+      "student",
+      "Removed mark adjustment",
+      `${who} · ${a?.name ?? adj.assessmentId}: reverted ${adj.newMark} → ${adj.oldMark} (${adj.delta >= 0 ? "+" : ""}${adj.delta} undone) — was: ${adj.reason}`,
+      cycleId,
+    );
+    this.bump();
   }
 
   setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {

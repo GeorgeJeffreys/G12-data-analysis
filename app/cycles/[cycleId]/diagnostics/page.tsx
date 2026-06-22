@@ -68,7 +68,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
       actions={<ExportButtons onCsv={exportCsv} onXlsx={exportXlsx} disabled={!reliability} title={reliability ? undefined : "No reliability data"} />}
       primary={
         <Link href={`/cycles/${cycleId}/essays`}>
-          <Button variant="pri">Continue to essay marks<Icon name="arrow" color="#fff" /></Button>
+          <Button variant="pri" title="Continue to essay marks">Continue<Icon name="arrow" color="#fff" /></Button>
         </Link>
       }
     >

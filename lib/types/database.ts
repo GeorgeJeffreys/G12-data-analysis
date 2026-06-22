@@ -437,6 +437,8 @@ export interface Database {
       confirm_distinction_caps: { Args: { p_cycle: string }; Returns: undefined };
       override_distinction_cap: { Args: { p_cycle: string; p_participant: string; p_scope: string; p_reason: string }; Returns: undefined };
       undo_distinction_override: { Args: { p_cycle: string; p_participant: string; p_scope: string }; Returns: undefined };
+      adjust_participant_mark: { Args: { p_cycle: string; p_participant: string; p_assessment: string; p_new_mark: number; p_reason: string }; Returns: string | null };
+      remove_mark_adjustment: { Args: { p_cycle: string; p_participant: string; p_assessment: string }; Returns: undefined };
       set_document_settings: { Args: { p_cycle: string; p_settings: unknown }; Returns: undefined };
       record_documents: { Args: { p_cycle: string; p_detail: string }; Returns: undefined };
       set_workspace_setting: { Args: { p_key: string; p_value: unknown }; Returns: undefined };

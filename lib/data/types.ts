@@ -445,6 +445,12 @@ export interface SubjectComposition {
   pct: number;
   /** Retained-MCQ score split by demand level (D1/D2/D3), in fixed order. */
   byDemand: DemandScore[];
+  /**
+   * The active manual mark adjustment on this subject, if any — surfaced so the
+   * manual delta (already folded into `alterations`) and its reason are visible
+   * in the breakdown rather than hidden.
+   */
+  adjustment?: ManualMarkAdjustment | null;
 }
 export interface StudentComposition {
   participantId: string;
@@ -629,9 +635,47 @@ export interface BoundaryModel {
   d3Warning: D3HalfWarning;
 }
 
+/**
+ * A manual, audited mark adjustment on one student's subject. The delta flows
+ * through the existing Alterations input the scoring engine consumes (never by
+ * touching item-stats or engine logic), so the grade recomputes through the full
+ * path — including the D3 distinction safeguard. Surfaced in the score breakdown
+ * so the change (and its reason) is never hidden; reversible via its `id`.
+ */
+export interface ManualMarkAdjustment {
+  /** Stable id, for reversal. */
+  id: string;
+  participantId: string;
+  assessmentId: string;
+  /** Subject raw mark before the adjustment (the base, excluding this delta). */
+  oldMark: number;
+  /** Subject raw mark after the adjustment. */
+  newMark: number;
+  /** newMark − oldMark — the signed delta fed to the engine as an alteration. */
+  delta: number;
+  /** Required reason for the override (audited). */
+  reason: string;
+  /** Actor who made the adjustment (resolved server-side). */
+  by: string;
+  /** ISO timestamp. */
+  ts: string;
+}
+
 export interface GradeCell {
   level: string;
   stars: string;
+  /**
+   * True when the subject score is within MARGINAL_MARK_THRESHOLD raw marks below
+   * the cut for the next grade up — the student just missed it, and a small
+   * upward mark adjustment would change the grade.
+   */
+  marginal?: boolean;
+  /** Raw marks needed to reach the next grade up (present when `marginal`). */
+  marksToNext?: number;
+  /** The next grade up's performance level (for the marginal marker tooltip). */
+  nextLevel?: string;
+  /** The active manual mark adjustment on this subject cell, if any. */
+  adjustment?: ManualMarkAdjustment | null;
 }
 
 export interface GradeMatrixRow {
