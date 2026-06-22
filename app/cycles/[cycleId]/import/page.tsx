@@ -22,7 +22,7 @@ import { UploadStatusLine, ConfirmStep, type UploadStage } from "@/components/im
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { EssayMarksCard } from "@/components/cycle/EssayMarksCard";
 import { parseIncidentLog } from "@/lib/data/parse-incidents";
-import { parseExport, ingestAndClean } from "@/lib/ingest";
+import { ingestThreeExports, DetectionError } from "@/lib/ingest";
 import type { AdjustmentsModel, CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
 
 type Tone = "pass" | "warn" | "fail" | "neutral";
@@ -96,9 +96,10 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
         <div>
           <div className="hf-h1">Upload exam data</div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
-            Drop in <strong>one combined file</strong> with every subject in it — we detect each subject and split it for
-            you. Only the raw export is required (resolve its blocking issues to continue); essay marks and the incident
-            log are optional and never block progress.
+            Drop in the <strong>three Questionmark CSV exports</strong> — Items, Assessments and Topics. We detect each by
+            its columns (not its filename), join them on <span className="hf-mono">ResultId</span>, and split the subjects
+            for you. Only the raw export is required (resolve its blocking issues to continue); essay marks and the
+            incident log are optional and never block progress.
           </div>
         </div>
 
@@ -256,7 +257,7 @@ function ExportBody({
           <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{model.fileName} · {model.fileSizeMB} MB</span>
         </div>
         <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>uploaded {model.uploadedAgo}</span>
-        <RawExportUploader cycleId={cycleId} label="Replace file" variant="ghost" />
+        <RawExportUploader cycleId={cycleId} label="Replace files" variant="ghost" />
       </div>
 
       {/* validation report */}
@@ -309,27 +310,31 @@ function ExportBody({
   );
 }
 
-/** Empty-state for the raw export card before anything is ingested. The combined
- *  export is the one required input; uploading it parses + splits the subjects,
- *  persists assessments/items/responses, validates, and starts the pipeline. */
+/** Empty-state for the raw export card before anything is ingested. The three
+ *  Questionmark CSVs are the required input; uploading them joins on ResultId,
+ *  splits the subjects, persists the canonical model, validates, and starts the
+ *  pipeline. */
 function ExportEmpty({ cycleId }: { cycleId: string }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <div className="hf-sub" style={{ fontSize: 12, maxWidth: 640 }}>
-        Upload <b style={{ color: H.ink }}>one combined export</b> containing every subject. We detect each subject,
-        split it, persist it, and run validation automatically — no file is required for the optional essay-marks and
-        incident-log steps below.
+        Upload the <b style={{ color: H.ink }}>three Questionmark CSVs</b> — Items, Assessments and Topics — together
+        (drag all three, or multi-select). We auto-detect each by its header columns, join them on{" "}
+        <span className="hf-mono">ResultId</span>, split the subjects, persist the model, and run validation
+        automatically. No file is required for the optional essay-marks and incident-log steps below.
       </div>
-      <RawExportUploader cycleId={cycleId} label="Upload exam export" variant="pri" />
+      <RawExportUploader cycleId={cycleId} label="Upload the three QM CSVs" variant="pri" />
     </div>
   );
 }
 
 /**
- * Upload + ingest one combined raw export. Parses + cleans + validates in the
- * browser (reusing lib/ingest), then hands the cleaned responses to the provider,
- * which persists the split assessments/items/responses to Supabase (live) or
- * rebuilds them in memory (demo). Used for both the first upload and "Replace file".
+ * Upload + ingest the three Questionmark CSVs (Items, Assessments, Topics).
+ * Auto-detects each file by its header signature (not its filename), joins them
+ * on ResultId to build the canonical model + cleaned engine responses in the
+ * browser (reusing lib/ingest), then hands both to the provider, which persists
+ * the richer model to Supabase (live) or rebuilds it in memory (demo). Used for
+ * both the first upload and "Replace files".
  */
 function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label: string; variant: "pri" | "ghost" }) {
   const provider = useProvider();
@@ -345,47 +350,87 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
     setStage("failed");
   };
 
-  const onFile = async (file: File | null) => {
-    if (!file) return;
+  const onFiles = async (fileList: FileList | null) => {
+    const files = fileList ? [...fileList] : [];
+    if (files.length === 0) return;
     setError(null);
     setStage("uploading");
     try {
-      const buffer = await file.arrayBuffer();
-      const { rows } = parseExport(buffer);
-      if (rows.length === 0) {
-        fail("No rows found. Export from Questionmark with the standard column set (the “in” sheet).");
-        return;
-      }
-      const { cleanedResponses, validationReport } = ingestAndClean(rows);
+      // Read every dropped file; detection sorts out which is which by columns.
+      const named = await Promise.all(
+        files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() })),
+      );
+      const { canonical, cleanedResponses, validationReport } = ingestThreeExports(named);
       if (cleanedResponses.length === 0) {
-        fail("No MCQ responses after cleaning. Check this is the combined exam export (not a survey file).");
+        fail("No scored responses after cleaning. Check these are the graded G12++ exports (not just surveys).");
         return;
       }
-      // Browser parse/clean done; the server persist + split is the next stage.
+      // Browser parse/join/clean done; the server persist + split is the next stage.
       setStage("ingesting");
-      const sizeMB = Math.round((file.size / (1024 * 1024)) * 10) / 10;
-      await provider.ingestRawExport(cycleId, { name: file.name, sizeMB }, cleanedResponses, validationReport);
+      const totalBytes = files.reduce((n, f) => n + f.size, 0);
+      const sizeMB = Math.round((totalBytes / (1024 * 1024)) * 10) / 10;
+      // Resolve which source file became which export for the audit trail.
+      const fileNames = resolveSourceNames(named, canonical);
+      await provider.ingestRawExport(
+        cycleId,
+        { name: fileNames.assessments ?? files[0]!.name, sizeMB },
+        cleanedResponses,
+        validationReport,
+        { canonical, files: fileNames },
+      );
       setStage("done");
     } catch (e) {
-      fail(e instanceof Error ? e.message : "Couldn’t read that file. Use the Questionmark .xlsx combined export.");
+      if (e instanceof DetectionError) {
+        fail(e.message);
+      } else {
+        fail(e instanceof Error ? e.message : "Couldn’t read those files. Use the three Questionmark CSV exports.");
+      }
     } finally {
       if (fileRef.current) fileRef.current.value = "";
     }
   };
 
   // After a failure the control returns to a clearly retryable state: the primary
-  // upload button becomes "Try again"; "Replace file" already reads as retryable.
+  // upload button becomes "Try again"; "Replace files" already reads as retryable.
   // The in-flight stage names itself in the single UploadStatusLine indicator (one
   // spinner, one label), so the button no longer carries its own busy label/spinner.
   const buttonLabel = stage === "failed" && variant === "pri" ? "Try again" : label;
 
   return (
     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-      <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".csv"
+        multiple
+        style={{ display: "none" }}
+        onChange={(e) => onFiles(e.target.files)}
+      />
       <UploadButton busy={busy} label={buttonLabel} variant={variant} onClick={() => fileRef.current?.click()} />
       <UploadStatusLine stage={stage} error={error} />
     </div>
   );
+}
+
+/**
+ * Re-detect which uploaded filename maps to which export kind, so the import
+ * audit records the real source names (detection itself happens inside
+ * `ingestThreeExports`; here we just label for display).
+ */
+function resolveSourceNames(
+  named: { name: string }[],
+  _canonical: unknown,
+): { items?: string; assessments?: string; topics?: string } {
+  // Best-effort by conventional filename hints; falls back to undefined. The
+  // canonical join already validated the set, so this is display-only.
+  const out: { items?: string; assessments?: string; topics?: string } = {};
+  for (const f of named) {
+    const n = f.name.toLowerCase();
+    if (n.includes("item")) out.items = f.name;
+    else if (n.includes("assessment")) out.assessments = f.name;
+    else if (n.includes("topic")) out.topics = f.name;
+  }
+  return out;
 }
 
 function labelFor(s: DuplicateStrategy): string {

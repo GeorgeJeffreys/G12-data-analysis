@@ -17,6 +17,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestCleanResponses } from "@/lib/server/ingest-write";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
+import type { CanonicalModel } from "@/lib/ingest/qm";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +26,10 @@ interface IngestBody {
   clean: CleanResponse[];
   report?: ValidationReport;
   fileName?: string;
+  /** Faithful 3-CSV canonical model (persists the richer intake — migration 0006). */
+  canonical?: CanonicalModel;
+  /** Source filenames for the three QM exports. */
+  files?: { items?: string; assessments?: string; topics?: string };
 }
 
 export async function POST(req: Request, { params }: { params: { cycleId: string } }) {
@@ -57,6 +62,8 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
     const ingest = await ingestCleanResponses(admin, cycleId, body.clean, {
       fileRef: body.fileName,
       report: body.report,
+      canonical: body.canonical,
+      files: body.files,
       // Resolved from the session client above — the admin client has no session,
       // so import_batches.created_by must be set explicitly (NOT NULL).
       createdBy: user.id,

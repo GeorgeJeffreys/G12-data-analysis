@@ -40,6 +40,7 @@ import type {
   EssayUploadRow,
 } from "./provider";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
+import type { CanonicalModel } from "@/lib/ingest/qm";
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
@@ -369,11 +370,18 @@ export class SupabaseDataProvider implements DataProvider {
     file: { name: string; sizeMB: number },
     clean: CleanResponse[],
     report: ValidationReport,
+    extra?: { canonical?: CanonicalModel; files?: { items?: string; assessments?: string; topics?: string } },
   ): Promise<void> {
     const res = await fetch(`/api/cycles/${cycleId}/ingest`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ clean, report, fileName: file.name }),
+      body: JSON.stringify({
+        clean,
+        report,
+        fileName: file.name,
+        canonical: extra?.canonical,
+        files: extra?.files,
+      }),
     });
     if (!res.ok) {
       let message = `Ingest failed (${res.status}).`;
