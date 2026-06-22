@@ -11,7 +11,7 @@
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
-import { useProviderData } from "@/lib/data/context";
+import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
@@ -23,6 +23,7 @@ import type { RawDataModel } from "@/lib/data/types";
 
 export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
+  const provider = useProvider();
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const first = useProviderData((p) => p.getCycle(cycleId)?.assessments[0]?.id, [cycleId]);
   const [scope, setScope] = useState<string | undefined>(undefined);
@@ -43,7 +44,25 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
     return next;
   };
 
-  const after = useMemo(() => (model ? model.rowsBefore - selRows.size : 0), [model, selRows]);
+  // `rowsAfter` reflects the committed clean-stage removals; subtract the pending
+  // selection so the band previews the result of deleting it.
+  const after = useMemo(() => (model ? model.rowsAfter - selRows.size : 0), [model, selRows]);
+
+  // Commit the current selection as a non-destructive removal (rows = participant
+  // ids, cols = item ids), then clear the pending selection. The provider filters
+  // them out of the cleaned view + every downstream read; the raw data is untouched.
+  const deleteSelected = () => {
+    if (selRows.size === 0 && selCols.size === 0) return;
+    provider.setCleanRemoval(cycleId, assessmentId, { rows: [...selRows], cols: [...selCols] }, true);
+    setSelCols(new Set());
+    setSelRows(new Set());
+  };
+  // "Revert all": restore every clean-stage removal for this subject + drop selection.
+  const revertAll = () => {
+    provider.clearCleanRemovals(cycleId, assessmentId);
+    setSelCols(new Set());
+    setSelRows(new Set());
+  };
 
   if (!model) {
     return (
@@ -62,7 +81,7 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
       cycleName={cycleName}
       page="Clean data"
       stageIndex={1}
-      actions={<Button variant="ghost" onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}><Icon name="refresh" />Revert all</Button>}
+      actions={<Button variant="ghost" onClick={revertAll}><Icon name="refresh" />Revert all</Button>}
       primary={
         <Link href={blocked ? "#" : `/cycles/${cycleId}/raw-scores`} tabIndex={blocked ? -1 : undefined}>
           <Button variant="pri" disabled={blocked} title={blocked ? "Resolve the blocker first" : undefined}>
@@ -107,7 +126,7 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
             </span>
             <div style={{ flex: 1 }} />
             <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}>Clear</Button>
-            <Button variant="danger" disabled={selCount === 0} style={{ fontSize: 11.5, background: H.paper }}>
+            <Button variant="danger" disabled={selCount === 0} onClick={deleteSelected} style={{ fontSize: 11.5, background: H.paper }}>
               <Icon name="trash" size={12} color={H.bad} />Delete selected
             </Button>
           </div>

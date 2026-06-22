@@ -276,6 +276,22 @@ export interface DataProvider {
    * Cycle-scoped, audited, lead/admin only.
    */
   deleteSitting(cycleId: string): Promise<void>;
+  /**
+   * Clean-stage, non-destructive removal of rows (participant ids) and/or columns
+   * (item ids) from the working (cleaned) set for one subject. The raw data is
+   * never touched — this is a recorded decision (like an item exclusion) that the
+   * cleaned view and every downstream read (raw scores, scoring) honour. Pass
+   * `removed=false` to restore the listed targets. Persisted by the Supabase
+   * provider so it survives a reload; in-memory in the demo.
+   */
+  setCleanRemoval(
+    cycleId: string,
+    assessmentId: string,
+    target: { rows?: string[]; cols?: string[] },
+    removed: boolean,
+  ): void;
+  /** Restore every clean-stage removal for one subject ("Revert all"). */
+  clearCleanRemovals(cycleId: string, assessmentId: string): void;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;
   /** Edit the engine's item-quality Good/Review/Flag thresholds (Lead/Admin only). */

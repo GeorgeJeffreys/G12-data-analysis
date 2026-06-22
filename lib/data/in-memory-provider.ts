@@ -269,6 +269,12 @@ export class InMemoryDataProvider implements DataProvider {
   // mutable decision state
   private exclusions = new Map<string, Set<string>>(); // cycle:assessment -> itemIds
   private reasons = new Map<string, string>(); // cycle:assessment:item -> reason
+  // Clean-stage, non-destructive removals (distinct from item-review exclusions):
+  // rows = participant ids dropped from the cohort, cols = item ids dropped from
+  // the analysis. Keyed cycle:assessment. The raw data is never mutated — these
+  // sets filter the cleaned view and fold into the engine-facing reads.
+  private cleanRows = new Map<string, Set<string>>(); // cycle:assessment -> participantIds
+  private cleanCols = new Map<string, Set<string>>(); // cycle:assessment -> itemIds
   private boundaries = new Map<string, BoundaryState>(); // cycle:scope -> state
   private locked = new Set<string>();
   private grading: GradingConfig = defaultGradingConfig();
@@ -390,10 +396,26 @@ export class InMemoryDataProvider implements DataProvider {
     return this.seed.liveCycle.assessments.find((a) => a.id === assessmentId);
   }
   private excludedSet(cycleId: string, assessmentId: string): Set<string> {
-    return this.exclusions.get(`${cycleId}:${assessmentId}`) ?? new Set();
+    const itemEx = this.exclusions.get(`${cycleId}:${assessmentId}`);
+    // Columns removed at the Clean stage are not scored either — fold them into
+    // the same set the engine reads, so a removed column propagates downstream
+    // through the existing exclusion path (no engine change). With no clean
+    // removals (the default) this is byte-identical to the item-review set.
+    const cleanCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
+    if (!cleanCols || cleanCols.size === 0) return itemEx ?? new Set();
+    return new Set([...(itemEx ?? []), ...cleanCols]);
+  }
+  /** Participant ids removed at the Clean stage for one subject (live cycle). */
+  private cleanRowSet(assessmentId: string): Set<string> | undefined {
+    return this.cleanRows.get(`${this.seed.liveCycle.id}:${assessmentId}`);
   }
   private responsesOf(a: SeedAssessment): ResponseRecord[] {
-    return a.responses.map((r) => ({
+    // Drop the responses of any participant removed at the Clean stage, so the
+    // cohort the engine scores already reflects the cleaned set. Only the single
+    // live cycle has real data, so keying by liveCycle.id is sufficient.
+    const removed = this.cleanRowSet(a.id);
+    const src = removed && removed.size ? a.responses.filter((r) => !removed.has(r.p)) : a.responses;
+    return src.map((r) => ({
       participantId: r.p,
       itemId: r.i,
       assessmentId: a.id,
@@ -748,8 +770,12 @@ export class InMemoryDataProvider implements DataProvider {
   }
   /** Distinct major elements in an assessment, in first-appearance order. */
   private majorsOf(a: SeedAssessment): string[] {
+    return this.majorsOfItems(a.items);
+  }
+  /** Distinct major elements across a set of items, in first-appearance order. */
+  private majorsOfItems(items: SeedAssessment["items"]): string[] {
     const seen: string[] = [];
-    for (const it of a.items) if (it.major && !seen.includes(it.major)) seen.push(it.major);
+    for (const it of items) if (it.major && !seen.includes(it.major)) seen.push(it.major);
     return seen;
   }
   private demandCounts(a: SeedAssessment): { D1: number; D2: number; D3: number } {
@@ -867,16 +893,27 @@ export class InMemoryDataProvider implements DataProvider {
       fail: checks.filter((c) => c.status === "fail").length,
     };
     const { columns, rows } = this.rawMatrix(a);
+    // Apply the non-destructive clean-stage removals: drop removed columns (and
+    // their cells) and removed rows from the CLEANED view. `rawMatrix` itself is
+    // untouched, so getRawData (the "exactly what you uploaded" overview) still
+    // shows the full raw file.
+    const remRows = this.cleanRows.get(`${cycleId}:${assessmentId}`);
+    const remCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
+    const colKeep = columns.map((c, i) => ({ c, i })).filter((x) => !remCols?.has(x.c.id));
+    const cleanedColumns = colKeep.map((x) => x.c);
+    const cleanedRows = rows
+      .filter((r) => !remRows?.has(r.id))
+      .map((r) => (remCols && remCols.size ? { ...r, cells: colKeep.map((x) => r.cells[x.i] ?? null) } : r));
     return {
       assessment: refs.find((r) => r.id === assessmentId)!,
       assessments: refs,
       checks,
       counts,
       rowsBefore: rows.length,
-      rowsAfter: rows.length,
+      rowsAfter: cleanedRows.length,
       canProceed: counts.fail === 0,
-      columns,
-      rows,
+      columns: cleanedColumns,
+      rows: cleanedRows,
     };
   }
 
@@ -884,23 +921,29 @@ export class InMemoryDataProvider implements DataProvider {
     const a = this.assessment(assessmentId);
     if (cycleId !== this.seed.liveCycle.id || !a) return null;
     const refs = this.assessmentRefs(cycleId);
-    const majors = this.majorsOf(a);
+    // Honour the Clean stage: columns/rows removed there are CLEANED OUT of the
+    // data (distinct from item-review exclusions, which are applied later). The
+    // raw-scores view therefore works over the cleaned item/participant set.
+    const remCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
+    const remRows = this.cleanRows.get(`${cycleId}:${assessmentId}`);
+    const cleanItems = remCols && remCols.size ? a.items.filter((it) => !remCols.has(it.id)) : a.items;
+    const majors = this.majorsOfItems(cleanItems);
     const elements: NaiveElementCol[] = majors.map((major, i) => ({
       major,
       shortId: String.fromCharCode(65 + i), // A, B, C…
-      items: a.items.filter((it) => it.major === major).length,
+      items: cleanItems.filter((it) => it.major === major).length,
     }));
     // Pre-exclusion raw score = sum of scores over scored (maxScore≥1) items.
-    // NO item exclusions applied — this is the as-submitted view, distinct from
-    // the post-exclusion scoring used downstream (parity untouched).
-    const scoredItems = a.items.filter((it) => (it.maxScore ?? 1) >= 1);
+    // NO item-review exclusions applied — this is the as-submitted view, distinct
+    // from the post-exclusion scoring used downstream (parity untouched).
+    const scoredItems = cleanItems.filter((it) => (it.maxScore ?? 1) >= 1);
     const mcqMax = scoredItems.length;
     const itemsByMajor = new Map<string, Set<string>>();
-    for (const major of majors) itemsByMajor.set(major, new Set(a.items.filter((it) => it.major === major).map((it) => it.id)));
+    for (const major of majors) itemsByMajor.set(major, new Set(cleanItems.filter((it) => it.major === major).map((it) => it.id)));
 
     const present = this.participantsIn(a);
     const students: NaiveStudentRow[] = this.seed.liveCycle.participants
-      .filter((p) => present.has(p.id))
+      .filter((p) => present.has(p.id) && !remRows?.has(p.id))
       .map((p) => {
         const myScores = a.responses.filter((r) => r.p === p.id);
         const byId = new Map(myScores.map((r) => [r.i, r.s]));
@@ -2861,6 +2904,49 @@ export class InMemoryDataProvider implements DataProvider {
       this.audit("exclude", "Restored item", `${a?.name ?? assessmentId} — item returned to scoring`, cycleId);
     }
     this.exclusions.set(key, set);
+    this.bump();
+  }
+
+  setCleanRemoval(
+    cycleId: string,
+    assessmentId: string,
+    target: { rows?: string[]; cols?: string[] },
+    removed: boolean,
+  ): void {
+    if (this.locked.has(cycleId)) return;
+    const key = `${cycleId}:${assessmentId}`;
+    const rows = this.cleanRows.get(key) ?? new Set<string>();
+    const cols = this.cleanCols.get(key) ?? new Set<string>();
+    for (const id of target.rows ?? []) (removed ? rows.add(id) : rows.delete(id));
+    for (const id of target.cols ?? []) (removed ? cols.add(id) : cols.delete(id));
+    this.cleanRows.set(key, rows);
+    this.cleanCols.set(key, cols);
+    const nR = target.rows?.length ?? 0;
+    const nC = target.cols?.length ?? 0;
+    if (nR || nC) {
+      const a = this.assessment(assessmentId);
+      const parts = [nR ? `${nR} row${nR === 1 ? "" : "s"}` : null, nC ? `${nC} column${nC === 1 ? "" : "s"}` : null].filter(Boolean).join(" + ");
+      this.audit(
+        "exclude",
+        removed ? "Removed in cleaning" : "Restored in cleaning",
+        `${a?.name ?? assessmentId} — ${parts} ${removed ? "removed from" : "restored to"} the cleaned set (raw data untouched)`,
+        cycleId,
+      );
+    }
+    this.bump();
+  }
+
+  clearCleanRemovals(cycleId: string, assessmentId: string): void {
+    if (this.locked.has(cycleId)) return;
+    const key = `${cycleId}:${assessmentId}`;
+    const hadR = this.cleanRows.get(key)?.size ?? 0;
+    const hadC = this.cleanCols.get(key)?.size ?? 0;
+    this.cleanRows.delete(key);
+    this.cleanCols.delete(key);
+    if (hadR || hadC) {
+      const a = this.assessment(assessmentId);
+      this.audit("exclude", "Reverted cleaning", `${a?.name ?? assessmentId} — all clean-stage removals reverted`, cycleId);
+    }
     this.bump();
   }
 

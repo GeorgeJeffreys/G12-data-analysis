@@ -142,6 +142,17 @@ export interface ItemReviewRow {
   decided_at: string;
 }
 
+/** Clean-stage non-destructive removal of a row (participant) or column (item). */
+export interface CleanExclusionRow {
+  id: string;
+  cycle_id: string;
+  assessment_id: string;
+  kind: "row" | "col";
+  target_id: string;
+  decided_by: string;
+  decided_at: string;
+}
+
 export interface ScoreRunRow {
   id: string;
   cycle_id: string;
@@ -349,6 +360,8 @@ export interface Database {
           Partial<Pick<ItemReviewRow, "reason" | "notes">>,
         Partial<Pick<ItemReviewRow, "exclude" | "reason" | "notes">>
       >;
+      // 0008 — clean-stage removals. All writes flow through SECURITY DEFINER RPCs.
+      clean_exclusions: TableDef<CleanExclusionRow, never, never>;
       score_runs: TableDef<
         ScoreRunRow,
         Pick<ScoreRunRow, "cycle_id" | "assessment_id" | "engine_version"> &
@@ -406,6 +419,8 @@ export interface Database {
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };
       decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };
+      set_clean_removal: { Args: { p_cycle: string; p_assessment: string; p_kind: string; p_targets: string[]; p_remove: boolean }; Returns: undefined };
+      clear_clean_removals: { Args: { p_cycle: string; p_assessment: string }; Returns: undefined };
       write_item_stats: { Args: { p_cycle: string; p_engine_version: string; p_stats: unknown }; Returns: undefined };
       lock_grades: { Args: { p_cycle: string }; Returns: undefined };
       unlock_grades: { Args: { p_cycle: string; p_reason: string }; Returns: undefined };

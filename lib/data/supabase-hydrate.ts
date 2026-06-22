@@ -24,6 +24,7 @@ import type {
   ParticipantRow,
   ResponseRow,
   ItemReviewRow,
+  CleanExclusionRow,
   GradeSchemeRow,
   GradeRow,
   EssayMarkRow,
@@ -127,6 +128,8 @@ export async function fetchSessionUser(supabase: DB): Promise<SessionUser> {
 // ── decision state replayed into the inner provider ─────────────────────────
 export interface DecisionState {
   exclusions: { assessmentId: string; itemId: string; reason: string | null }[];
+  /** Clean-stage non-destructive removals, grouped per subject. */
+  cleanRemovals: { assessmentId: string; rows: string[]; cols: string[] }[];
   schemes: { scope: string; method: string; bands: { label: string; min: number; max: number }[] }[];
   locked: boolean;
   essays: EssayUploadRow[];
@@ -194,6 +197,9 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       sel<DistinctionOverrideRow>(supabase.from("distinction_overrides").select("*").eq("cycle_id", cycleId)),
       sel<WorkspaceSettingRow>(supabase.from("workspace_settings").select("*")),
     ]);
+  const cleanExclusionRows = await sel<CleanExclusionRow>(
+    supabase.from("clean_exclusions").select("*").eq("cycle_id", cycleId),
+  );
   const distState = await selOne<DistinctionStateRow>(
     supabase.from("distinction_state").select("*").eq("cycle_id", cycleId).maybeSingle(),
   );
@@ -391,8 +397,18 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     return { applyTo: al.apply_to, studentId: al.participant_id, subjectId: al.assessment_id, marks: Number(al.marks), reason: al.reason };
   });
 
+  // Clean-stage removals, grouped per subject (rows = participants, cols = items).
+  const cleanByAssessment = new Map<string, { rows: string[]; cols: string[] }>();
+  for (const r of cleanExclusionRows) {
+    const g = cleanByAssessment.get(r.assessment_id) ?? { rows: [], cols: [] };
+    (r.kind === "row" ? g.rows : g.cols).push(r.target_id);
+    cleanByAssessment.set(r.assessment_id, g);
+  }
+  const cleanRemovals = [...cleanByAssessment.entries()].map(([assessmentId, g]) => ({ assessmentId, ...g }));
+
   const decisions: DecisionState = {
     exclusions,
+    cleanRemovals,
     schemes: schemes.map((s) => ({ scope: s.scope, method: s.method, bands: s.bands })),
     locked: grades.some((g) => g.locked),
     essays,

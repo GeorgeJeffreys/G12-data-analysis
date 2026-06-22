@@ -201,6 +201,10 @@ export class SupabaseDataProvider implements DataProvider {
 
   private replay(p: InMemoryDataProvider, cid: string, d: DecisionState): void {
     for (const e of d.exclusions) p.setItemExcluded(cid, e.assessmentId, e.itemId, true, e.reason);
+    for (const c of d.cleanRemovals) {
+      if (c.rows.length) p.setCleanRemoval(cid, c.assessmentId, { rows: c.rows }, true);
+      if (c.cols.length) p.setCleanRemoval(cid, c.assessmentId, { cols: c.cols }, true);
+    }
     for (const s of d.schemes) {
       const cuts = s.bands.slice(0, -1).map((b) => b.min);
       p.setBoundary(cid, s.scope, { mode: s.method === "fixed_pct" ? "pct" : "cuts", cuts });
@@ -319,6 +323,26 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.setItemExcluded(cycleId, assessmentId, itemId, excluded, reason);
     this.bump();
     this.rpc("decide_item_exclusion", { p_item: itemId, p_exclude: excluded, p_reason: reason ?? null });
+  }
+
+  setCleanRemoval(
+    cycleId: string,
+    assessmentId: string,
+    target: { rows?: string[]; cols?: string[] },
+    removed: boolean,
+  ): void {
+    this.inner.setCleanRemoval(cycleId, assessmentId, target, removed);
+    this.bump();
+    const rows = target.rows ?? [];
+    const cols = target.cols ?? [];
+    if (rows.length) this.rpc("set_clean_removal", { p_cycle: cycleId, p_assessment: assessmentId, p_kind: "row", p_targets: rows, p_remove: removed });
+    if (cols.length) this.rpc("set_clean_removal", { p_cycle: cycleId, p_assessment: assessmentId, p_kind: "col", p_targets: cols, p_remove: removed });
+  }
+
+  clearCleanRemovals(cycleId: string, assessmentId: string): void {
+    this.inner.clearCleanRemovals(cycleId, assessmentId);
+    this.bump();
+    this.rpc("clear_clean_removals", { p_cycle: cycleId, p_assessment: assessmentId });
   }
 
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void {

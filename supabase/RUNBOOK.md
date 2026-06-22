@@ -4,10 +4,20 @@ This is the **provider built blind** (no DB access from the build environment).
 Run these steps from your own machine to seed the database and verify the
 round-trip, RLS, and the privileged transitions. Everything is reversible.
 
-Prereqs: migrations `0001`–`0007` applied in the Supabase SQL editor (run any you
+Prereqs: migrations `0001`–`0008` applied in the Supabase SQL editor (run any you
 haven't, in order — `0003_adjustments_essays_config.sql`,
 `0004_create_cycle_with_assessments.sql`, `0005_year_sitting_structure.sql`,
-`0006_qm_3csv_model.sql`, `0007_ingest_idempotent_topic_id.sql`), and Node ≥ 20.
+`0006_qm_3csv_model.sql`, `0007_ingest_idempotent_topic_id.sql`,
+`0008_clean_exclusions.sql`), and Node ≥ 20.
+
+> **`0008` persists Clean-stage removals.** The Clean step removes rows
+> (participants) and columns (items) from the working set non-destructively — the
+> raw `responses`/`items`/`participants` are never touched. `0008` adds the
+> `clean_exclusions` table + `set_clean_removal(...)` / `clear_clean_removals(...)`
+> RPCs (audited, lead/admin + reviewer only), which the live provider writes and
+> replays on hydrate so a removal propagates downstream (raw scores, scoring) and
+> survives a reload. Without it, removals still work in-session but reset on
+> refresh. Roll back with `0008_clean_exclusions.rollback.sql`.
 
 > **`0007` fixes the 3-CSV ingest.** It re-keys `topic_rollups` onto the topic's
 > ID — `unique (cycle_id, qm_result_id, qm_topic_id)` instead of the old
