@@ -395,6 +395,22 @@ export class SupabaseDataProvider implements DataProvider {
     }
     await this.rehydrate();
   }
+
+  // Destructive sitting controls (0007). Both go through SECURITY DEFINER RPCs
+  // that authorize lead/admin and audit with the resolved session user
+  // (auth.uid() — the session client is present here, unlike the ingest path).
+  // We await + re-hydrate so the UI reflects the new state immediately.
+  async clearSittingData(cycleId: string): Promise<void> {
+    const { error } = await this.rpcFn("clear_sitting_data", { p_cycle: cycleId });
+    if (error) throw new Error(error.message);
+    await this.rehydrate();
+  }
+  async deleteSitting(cycleId: string): Promise<void> {
+    const { error } = await this.rpcFn("delete_sitting", { p_cycle: cycleId });
+    if (error) throw new Error(error.message);
+    await this.rehydrate();
+  }
+
   lockCycle(cycleId: string): void {
     this.inner.lockCycle(cycleId);
     this.bump();

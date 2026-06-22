@@ -263,6 +263,19 @@ export interface DataProvider {
      */
     extra?: { canonical?: CanonicalModel; files?: { items?: string; assessments?: string; topics?: string } },
   ): Promise<void>;
+  /**
+   * Empty a sitting's ingested data while KEEPING the sitting shell, returning
+   * it to the empty Upload state so a fresh upload can run ("start from clean").
+   * Cycle-scoped, audited, lead/admin only. Resolves once the DB clear completes
+   * (live) or the in-memory state is reset (demo).
+   */
+  clearSittingData(cycleId: string): Promise<void>;
+  /**
+   * Delete a sitting AND all its ingested data (every related table, scoped by
+   * cycle_id). Irreversible — the UI gates it behind an explicit confirm step.
+   * Cycle-scoped, audited, lead/admin only.
+   */
+  deleteSitting(cycleId: string): Promise<void>;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;
   /** Edit the engine's item-quality Good/Review/Flag thresholds (Lead/Admin only). */

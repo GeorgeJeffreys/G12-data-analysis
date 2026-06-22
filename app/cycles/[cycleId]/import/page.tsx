@@ -21,6 +21,7 @@ import { UploadButton } from "@/components/import/UploadButton";
 import { UploadStatusLine, ConfirmStep, type UploadStage } from "@/components/import/UploadFlow";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { EssayMarksCard } from "@/components/cycle/EssayMarksCard";
+import { SittingDangerZone } from "@/components/cycle/SittingDangerZone";
 import { parseIncidentLog } from "@/lib/data/parse-incidents";
 import { ingestThreeExports, DetectionError } from "@/lib/ingest";
 import type { AdjustmentsModel, CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
@@ -123,6 +124,8 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
           hint={confirmHint}
           href={`/cycles/${cycleId}/clean`}
         />
+
+        <SittingDangerZone cycleId={cycleId} uploaded={model.uploaded} />
       </div>
     </CycleShell>
   );

@@ -5,22 +5,32 @@ import "server-only";
  *
  * Persists a cleaned, split combined export (the per-subject assessments, their
  * items, the participants, and the long-format response matrix the engine
- * consumes) into Supabase. Like the engine write path (engine-write.ts) these
- * tables are not client-writable (`assessments.status`, `items.status`, the
- * immutable `responses` facts), so the writes go through the secret-key admin
- * client, which bypasses RLS and is the sanctioned privileged writer. The HTTP
- * route in front of this authorizes the caller as a lead_admin of the cycle via
- * the RLS-scoped session client before handing over.
+ * consumes — plus the richer 3-CSV intake: result totals + topic rollups) into
+ * Supabase. These tables are not client-writable (`assessments.status`,
+ * `items.status`, the immutable `responses` facts), so the write goes through
+ * the secret-key admin client, which bypasses RLS. The HTTP route in front of
+ * this authorizes the caller as a lead_admin of the cycle via the RLS-scoped
+ * session client before handing over.
  *
- * This is a full REPLACE of the cycle's data set: re-uploading a corrected export
- * clears the prior assessments/items/participants/responses for the cycle and
- * re-ingests, so the stored data always matches the latest upload. Ingest is the
- * first pipeline stage, so there is no downstream scored/graded data to preserve.
+ * TRANSACTIONAL + IDEMPOTENT (migration 0007). The whole persist for one upload
+ * runs as a SINGLE call to the `ingest_persist` SQL function: it clears the
+ * sitting's existing ingested rows and re-inserts the fresh set inside one
+ * transaction (a plpgsql body is atomic). Two consequences:
+ *   * Re-uploading a sitting cleanly REPLACES it (clear-before-insert) instead
+ *     of colliding with leftover rows — row counts stay stable.
+ *   * A mid-ingest failure rolls back WHOLE — there is no multi-statement REST
+ *     sequence that could leave partial rows behind. (The old path inserted
+ *     assessments/items first and stranded them when topic_rollups blew up.)
  *
- * The engine is untouched — this only persists the same response-matrix shape the
- * engine already reads; recompute (item_stats/participant_scores) runs afterwards
- * through the existing engine write path.
+ * To wire the foreign keys without reading ids back (which is what forced the
+ * old non-atomic, statement-by-statement REST writes), we generate the row ids
+ * client-side here and hand the SQL function the fully-formed payload.
+ *
+ * The engine is untouched — this only persists the same response-matrix shape
+ * the engine already reads; recompute (item_stats/participant_scores) runs
+ * afterwards through the existing engine write path.
  */
+import { randomUUID } from "node:crypto";
 import type { SupabaseAdminClient } from "@/lib/supabase/admin";
 import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
@@ -28,30 +38,18 @@ import type { CanonicalModel } from "@/lib/ingest/qm";
 
 type Admin = SupabaseAdminClient;
 
-interface LooseTable {
-  insert(rows: unknown): {
-    select(c?: string): PromiseLike<{ data: unknown; error: { message: string } | null }>;
-  } & PromiseLike<{ error: { message: string } | null; data: unknown }>;
-  delete(): { eq(col: string, val: string): Promise<{ error: { message: string } | null }> };
-}
-function table(admin: Admin, name: string): LooseTable {
-  return (admin.from as unknown as (n: string) => LooseTable)(name);
-}
-
-async function insertReturning<T>(admin: Admin, name: string, rows: unknown, returning: string): Promise<T[]> {
-  const { data, error } = await table(admin, name).insert(rows).select(returning);
-  if (error) throw new Error(`insert ${name}: ${error.message}`);
-  return (data ?? []) as T[];
-}
-async function insertMany(admin: Admin, name: string, rows: unknown[]): Promise<void> {
-  if (rows.length === 0) return;
-  for (const chunk of chunks(rows, 1000)) {
-    const { error } = await table(admin, name).insert(chunk);
-    if (error) throw new Error(`insert ${name}: ${error.message}`);
-  }
-}
-function* chunks<T>(arr: readonly T[], size: number): Generator<T[]> {
-  for (let i = 0; i < arr.length; i += size) yield arr.slice(i, i + size);
+/** Loose view of `.rpc` — the dynamic function name defeats the typed client's
+ *  per-function inference; the name/args are checked against the `Functions`
+ *  map in lib/types/database.ts at the (single) call site below. */
+function callRpc(
+  admin: Admin,
+  name: string,
+  args: unknown,
+): Promise<{ data: unknown; error: { message: string } | null }> {
+  return (admin.rpc as unknown as (
+    n: string,
+    a: unknown,
+  ) => Promise<{ data: unknown; error: { message: string } | null }>)(name, args);
 }
 
 export interface IngestWriteResult {
@@ -63,11 +61,11 @@ export interface IngestWriteResult {
 
 export interface IngestWriteOptions {
   /**
-   * Authenticated user id recorded as `import_batches.created_by` (audit column).
-   * REQUIRED: this write goes through the secret-key admin client, which has no
-   * session, so the `auth.uid()` column default always resolves to null and would
-   * violate the NOT NULL constraint. The caller resolves the user from the
-   * session-aware server client and passes it explicitly.
+   * Authenticated user id recorded as `import_batches.created_by` + the audit
+   * actor. REQUIRED: this write goes through the secret-key admin client, which
+   * has no session, so the DB's `auth.uid()` always resolves to null and would
+   * violate NOT NULL. The caller resolves the user from the session-aware server
+   * client and passes it explicitly.
    */
   createdBy: string;
   /** File name / reference recorded on the import_batches row. */
@@ -88,8 +86,8 @@ export interface IngestWriteOptions {
 }
 
 /**
- * Persist cleaned responses for a cycle (full replace). Returns row counts.
- * Throws on any write error so the caller can surface it.
+ * Persist cleaned responses for a cycle (atomic full replace). Returns row
+ * counts. Throws on any write error so the caller can surface it.
  */
 export async function ingestCleanResponses(
   admin: Admin,
@@ -105,39 +103,28 @@ export async function ingestCleanResponses(
   // Subject (canonical name) → its QmSubject, for the qm_max_score + sitting columns.
   const subjectByName = new Map(canonical?.subjects.map((s) => [s.name, s]) ?? []);
 
-  // ── 1. Clear any prior data for this cycle (FK-safe order) ────────────────
-  // result_totals/topic_rollups → responses → items (cascades item_stats/
-  // item_reviews) → participants (cascades participant_scores/grades) →
-  // assessments (cascades score_runs).
-  for (const t of ["result_totals", "topic_rollups", "responses", "items", "participants", "assessments"]) {
-    const { error } = await table(admin, t).delete().eq("cycle_id", cycleId);
-    if (error) throw new Error(`clear ${t}: ${error.message}`);
-  }
-
-  // ── 2. Assessments (distinct, in first-appearance order) ──────────────────
+  // ── 1. Assessments (distinct, in first-appearance order) — client ids ─────
   const assessmentNames: string[] = [];
   for (const r of recs) if (!assessmentNames.includes(r.assessmentName)) assessmentNames.push(r.assessmentName);
   const assessmentId = new Map<string, string>();
+  const assessmentRows: Record<string, unknown>[] = [];
   for (const name of assessmentNames) {
+    const id = randomUUID();
+    assessmentId.set(name, id);
     const itemCount = new Set(recs.filter((r) => r.assessmentName === name).map((r) => r.qmQuestionId)).size;
     const subj = subjectByName.get(name);
-    const [a] = await insertReturning<{ id: string }>(
-      admin,
-      "assessments",
-      {
-        cycle_id: cycleId,
-        name,
-        item_count: itemCount,
-        // Richer intake (0006): QM subject max + sitting tag, when available.
-        qm_max_score: subj?.qmMaximumScore ?? null,
-        sitting: canonical?.sitting?.code ?? null,
-      },
-      "id",
-    );
-    if (a) assessmentId.set(name, a.id);
+    assessmentRows.push({
+      id,
+      cycle_id: cycleId,
+      name,
+      item_count: itemCount,
+      // Richer intake (0006): QM subject max + sitting tag, when available.
+      qm_max_score: subj?.qmMaximumScore ?? null,
+      sitting: canonical?.sitting?.code ?? null,
+    });
   }
 
-  // ── 3. Items (distinct per assessment) ────────────────────────────────────
+  // ── 2. Items (distinct per assessment) — client ids ───────────────────────
   // Canonical item metadata (type / status / topic) keyed by `${subject}|${qid}`.
   const canonItem = new Map(canonical?.items.map((it) => [`${it.subject}|${it.questionId}`, it]) ?? []);
   const itemId = new Map<string, string>(); // `${assessment}|${qmQuestionId}` → uuid
@@ -147,8 +134,11 @@ export async function ingestCleanResponses(
     const key = `${r.assessmentName}|${r.qmQuestionId}`;
     if (seenItem.has(key)) continue;
     seenItem.add(key);
+    const id = randomUUID();
+    itemId.set(key, id);
     const ci = canonItem.get(key);
     itemRows.push({
+      id,
       cycle_id: cycleId,
       assessment_id: assessmentId.get(r.assessmentName),
       qm_question_id: r.qmQuestionId,
@@ -165,21 +155,8 @@ export async function ingestCleanResponses(
       topic_path: ci?.topicPath ?? null,
     });
   }
-  const assessmentNameById = new Map([...assessmentId.entries()].map(([n, id]) => [id, n]));
-  for (const chunk of chunks(itemRows, 500)) {
-    const inserted = await insertReturning<{ id: string; qm_question_id: string; assessment_id: string }>(
-      admin,
-      "items",
-      chunk,
-      "id,qm_question_id,assessment_id",
-    );
-    for (const it of inserted) {
-      const name = assessmentNameById.get(it.assessment_id);
-      if (name) itemId.set(`${name}|${it.qm_question_id}`, it.id);
-    }
-  }
 
-  // ── 4. Participants (distinct) — retain every personal field ──────────────
+  // ── 3. Participants (distinct) — client ids; retain every personal field ──
   // Canonical participant by email (lowercased), to enrich the personal fields.
   const canonPart = new Map(canonical?.participants.map((p) => [p.email, p]) ?? []);
   const participantId = new Map<string, string>(); // qmParticipantId → uuid
@@ -189,8 +166,12 @@ export async function ingestCleanResponses(
   for (const r of recs) {
     if (seenPart.has(r.qmParticipantId)) continue;
     seenPart.add(r.qmParticipantId);
+    const id = randomUUID();
+    participantId.set(r.qmParticipantId, id);
+    emailToParticipantId.set(r.qmParticipantId.toLowerCase(), id);
     const cp = canonPart.get(r.qmParticipantId.toLowerCase());
     partRows.push({
+      id,
       cycle_id: cycleId,
       qm_participant_id: r.qmParticipantId,
       pseudonym_id: r.participantPseudonym,
@@ -204,20 +185,8 @@ export async function ingestCleanResponses(
       group_name: cp?.groupNames[0] ?? null,
     });
   }
-  for (const chunk of chunks(partRows, 500)) {
-    const inserted = await insertReturning<{ id: string; qm_participant_id: string }>(
-      admin,
-      "participants",
-      chunk,
-      "id,qm_participant_id",
-    );
-    for (const p of inserted) {
-      participantId.set(p.qm_participant_id, p.id);
-      emailToParticipantId.set(p.qm_participant_id.toLowerCase(), p.id);
-    }
-  }
 
-  // ── 5. Responses (long-format facts; dedupe to keep the unique(participant,item)) ──
+  // ── 4. Responses (long-format facts; dedupe to keep unique(participant,item)) ──
   const respRows: Record<string, unknown>[] = [];
   const seenResp = new Set<string>();
   for (const r of recs) {
@@ -241,15 +210,16 @@ export async function ingestCleanResponses(
       question_status: ci?.status ?? null,
     });
   }
-  await insertMany(admin, "responses", respRows);
 
-  // ── 5b. Richer intake (0006): per-result QM totals + per-topic rollups ────
+  // ── 5. Richer intake (0006): per-result QM totals + per-topic rollups ─────
   // These hold QM's TRUSTED totals across EVERY question type (essays/Likert/…),
-  // not just the MCQ engine matrix above. Written only when a canonical model is
+  // not just the MCQ engine matrix above. Built only when a canonical model is
   // supplied; results whose participant/subject didn't map are skipped silently.
+  // topic_rollups are keyed on the topic's ID (0007) — same display name at
+  // different TopicIds within one result is preserved, not collapsed.
+  const resultRows: Record<string, unknown>[] = [];
+  const topicRows: Record<string, unknown>[] = [];
   if (canonical) {
-    const resultRows: Record<string, unknown>[] = [];
-    const topicRows: Record<string, unknown>[] = [];
     for (const res of canonical.results) {
       const aId = assessmentId.get(res.subject);
       const pId = emailToParticipantId.get(res.participantEmail);
@@ -275,7 +245,7 @@ export async function ingestCleanResponses(
           assessment_id: aId,
           participant_id: pId,
           qm_result_id: res.resultId,
-          qm_topic_id: t.topicId,
+          qm_topic_id: t.topicId, // the natural key (0007) — never the name
           topic_name: t.name,
           topic_path: t.path,
           score: t.score,
@@ -285,30 +255,42 @@ export async function ingestCleanResponses(
         });
       }
     }
-    await insertMany(admin, "result_totals", resultRows);
-    await insertMany(admin, "topic_rollups", topicRows);
   }
 
-  // ── 6. Import batch (file refs + validation report; read back on refresh) ──
-  const { error: batchErr } = await table(admin, "import_batches").insert({
-    cycle_id: cycleId,
+  // ── 6. Import batch row (file refs + validation report; read back on refresh) ──
+  const importBatch: Record<string, unknown> = {
     file_ref: opts.fileRef ?? opts.files?.assessments ?? null,
     parsed_rows: opts.report?.stats.rawRows ?? recs.length,
     validation_passed: opts.report?.passed ?? true,
     report_json: opts.report ?? null,
-    // Richer intake (0006): the three source filenames + reconciliation summary.
     items_file: opts.files?.items ?? null,
     assessments_file: opts.files?.assessments ?? null,
     topics_file: opts.files?.topics ?? null,
     results_total: canonical?.integrity.resultsChecked ?? null,
     results_reconciled: canonical?.integrity.reconciled ?? null,
-    // Explicit — the service client has no auth.uid() to default from (NOT NULL).
-    created_by: opts.createdBy,
+  };
+
+  // ── 7. Persist atomically: clear-then-insert inside ONE transaction. ──────
+  // A single call — so a failure cannot leave partial rows, and a re-upload
+  // replaces the prior set cleanly (the function clears the cycle first).
+  const payload = {
+    assessments: assessmentRows,
+    items: itemRows,
+    participants: partRows,
+    responses: respRows,
+    result_totals: resultRows,
+    topic_rollups: topicRows,
+    import_batch: importBatch,
+  };
+  const { error } = await callRpc(admin, "ingest_persist", {
+    p_cycle: cycleId,
+    p_payload: payload,
+    p_actor: opts.createdBy,
   });
-  if (batchErr) throw new Error(`insert import_batches: ${batchErr.message}`);
+  if (error) throw new Error(`ingest_persist: ${error.message}`);
 
   return {
-    assessments: assessmentNames.length,
+    assessments: assessmentRows.length,
     items: itemRows.length,
     participants: partRows.length,
     responses: respRows.length,

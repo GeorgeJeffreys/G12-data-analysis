@@ -425,6 +425,10 @@ export interface Database {
       set_document_settings: { Args: { p_cycle: string; p_settings: unknown }; Returns: undefined };
       record_documents: { Args: { p_cycle: string; p_detail: string }; Returns: undefined };
       set_workspace_setting: { Args: { p_key: string; p_value: unknown }; Returns: undefined };
+      // 0007 — atomic, idempotent 3-CSV persist + destructive sitting controls.
+      ingest_persist: { Args: { p_cycle: string; p_payload: unknown; p_actor: string }; Returns: unknown };
+      clear_sitting_data: { Args: { p_cycle: string }; Returns: undefined };
+      delete_sitting: { Args: { p_cycle: string }; Returns: undefined };
     };
     Enums: {
       cycle_status: CycleStatus;

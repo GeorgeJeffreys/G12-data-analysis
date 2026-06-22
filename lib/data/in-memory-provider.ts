@@ -3057,6 +3057,23 @@ export class InMemoryDataProvider implements DataProvider {
     return Promise.resolve();
   }
 
+  // Destructive sitting controls (0007). The demo has a single seeded live
+  // cycle with no database, so — like createCycle / resolveDuplicates — these
+  // record the audited intent and resolve; the real cycle-scoped delete runs in
+  // the Supabase provider via the SECURITY DEFINER RPCs. Kept async to match the
+  // interface (and the live provider, which awaits the DB).
+  clearSittingData(cycleId: string): Promise<void> {
+    this.audit("upload", "Cleared sitting data", "Emptied ingested data — sitting returned to the Upload state", cycleId);
+    this.bump();
+    return Promise.resolve();
+  }
+  deleteSitting(cycleId: string): Promise<void> {
+    const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
+    this.audit("cycle", "Deleted sitting", `Removed sitting "${name}" and all its ingested data`, null);
+    this.bump();
+    return Promise.resolve();
+  }
+
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void {
     // MOCK: records the choice in memory only; no DB write and no row mutation.
     // The real provider will call a server action that rewrites the response set.

@@ -4,11 +4,21 @@ This is the **provider built blind** (no DB access from the build environment).
 Run these steps from your own machine to seed the database and verify the
 round-trip, RLS, and the privileged transitions. Everything is reversible.
 
-Prereqs: migrations `0001`, `0002`, `0003`, `0004`, **and `0005`** applied in
-the Supabase SQL editor (run `supabase/migrations/0003_adjustments_essays_config.sql`,
-`supabase/migrations/0004_create_cycle_with_assessments.sql` and
-`supabase/migrations/0005_year_sitting_structure.sql` if you haven't), and
-Node ≥ 20.
+Prereqs: migrations `0001`–`0007` applied in the Supabase SQL editor (run any you
+haven't, in order — `0003_adjustments_essays_config.sql`,
+`0004_create_cycle_with_assessments.sql`, `0005_year_sitting_structure.sql`,
+`0006_qm_3csv_model.sql`, `0007_ingest_idempotent_topic_id.sql`), and Node ≥ 20.
+
+> **`0007` fixes the 3-CSV ingest.** It re-keys `topic_rollups` onto the topic's
+> ID — `unique (cycle_id, qm_result_id, qm_topic_id)` instead of the old
+> name-based key, which collided on the FIRST upload (QM has distinct topics
+> sharing one display name within a result). It also adds `ingest_persist(...)`
+> (the whole upload persists as ONE atomic clear-then-insert — re-uploads replace
+> cleanly, a failure rolls back whole), plus `clear_sitting_data(...)` and
+> `delete_sitting(...)` for the Upload-screen danger zone (both audited).
+> **One-time unblock:** if an earlier failed upload left partial rows, run
+> `scripts/wipe-cycle-ingest.sql` (set the cycle id) once to clear them. Roll back
+> with `0007_ingest_idempotent_topic_id.rollback.sql`.
 
 > **`0004` is required for the new-cycle flow.** It adds
 > `create_cycle_with_assessments(p_name, p_region, p_assessments)`, which the
