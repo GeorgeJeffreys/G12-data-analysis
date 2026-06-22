@@ -30,6 +30,11 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
   const perf = useProviderData((p) => p.getPerformanceReport(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Cycle";
+  // A sitting's year-Overall surface, where certificates/reports are generated from
+  // the best-of-two award. The year id mirrors the provider's `year-${YYYY}` scheme
+  // (derived from the cycle name); fall back to the years home if no year is present.
+  const yearMatch = cycleName.match(/(19|20)\d{2}/);
+  const overallHref = yearMatch ? `/years/year-${yearMatch[0]}/overall` : "/";
   const provisional = useProvisionalNotice(cycleId);
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -64,10 +69,14 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       }
       primary={
         model.locked ? (
-          <Link href={`/cycles/${cycleId}/documents`}>
+          // Certificates & performance reports issue from the cycle/overall
+          // best-of-two award, not a single sitting — so a locked sitting points
+          // onward to its year's Overall surface (where document generation lives)
+          // rather than generating documents here.
+          <Link href={overallHref}>
             <Button variant="pri">
               <Icon name="award" color="#fff" />
-              Generate documents
+              Go to Overall &amp; certificates
             </Button>
           </Link>
         ) : (

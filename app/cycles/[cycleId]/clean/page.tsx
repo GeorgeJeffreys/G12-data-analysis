@@ -165,36 +165,53 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
 
 /**
  * Read-only raw-data overview, folded in from the old standalone Raw data step:
- * exactly what was uploaded, before any cleaning — a summary band plus the
+ * exactly what was uploaded, before any cleaning — a compact summary band plus the
  * by-element and by-demand breakdowns. The editable spreadsheet below is the
  * cleaning surface; this block is purely "show me my data".
+ *
+ * The breakdown panels are COLLAPSED BY DEFAULT so the overview keeps a small
+ * vertical footprint and the selectable table below stays reachable within the
+ * viewport (even at full screen on a laptop). The key figures stay visible in the
+ * always-on summary band; the per-element / per-demand detail expands on demand.
  */
 function RawOverview({ model }: { model: RawDataModel }) {
+  const [showBreakdown, setShowBreakdown] = useState(false);
   const stat = (n: string | number, label: string, accent?: boolean) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
-      <span className="hf-mono" style={{ fontSize: String(n).length > 6 ? 17 : 21, fontWeight: 600, color: accent ? H.pink : H.ink }}>{n}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 16px", borderLeft: `1px solid ${H.line}` }}>
+      <span className="hf-mono" style={{ fontSize: String(n).length > 6 ? 15 : 18, fontWeight: 600, color: accent ? H.pink : H.ink }}>{n}</span>
       <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
     </div>
   );
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div className="hf-sub" style={{ fontSize: 12 }}>
-        This is exactly what you uploaded, <b style={{ color: H.ink }}>before any cleaning</b> — review it, then remove rows/columns and work any flagged values below.
-      </div>
-
-      {/* summary band */}
-      <div style={{ display: "flex", alignItems: "stretch", border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper, padding: "12px 0" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 18px" }}>
-          <span className="hf-mono" style={{ fontSize: 21, fontWeight: 600 }}>{model.participants}</span>
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {/* summary band — always on, compact. Carries the headline figures and the
+          single toggle that reveals the (taller) per-element / per-demand panels. */}
+      <div style={{ display: "flex", alignItems: "center", border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper, padding: "9px 0", flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 16px" }}>
+          <span className="hf-mono" style={{ fontSize: 18, fontWeight: 600 }}>{model.participants}</span>
           <span className="hf-lbl" style={{ fontSize: 9.5 }}>Participants</span>
         </div>
         {stat(model.items, "Items", true)}
         {stat(model.elementsCount, "Major elements")}
         {stat(model.subElementsCount, "Sub-elements")}
         {stat(`${model.demand.D1}·${model.demand.D2}·${model.demand.D3}`, "D1·D2·D3")}
+        <div style={{ flex: 1, minWidth: 12 }} />
+        <button
+          type="button"
+          onClick={() => setShowBreakdown((v) => !v)}
+          aria-expanded={showBreakdown}
+          className="hf-btn ghost"
+          style={{ fontSize: 11.5, margin: "0 14px", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
+        >
+          {showBreakdown ? "Hide breakdown" : "Show breakdown"}
+          <span style={{ display: "inline-flex", transform: showBreakdown ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+            <Icon name="chev" size={12} color={H.ink3} />
+          </span>
+        </button>
       </div>
 
-      {/* breakdowns: by major element + by demand */}
+      {/* breakdowns: by major element + by demand — collapsed by default */}
+      {showBreakdown && (
       <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "14px 18px", border: `1px solid ${H.line}`, borderRadius: 10, background: H.paper }}>
         <div style={{ flex: 2, minWidth: 280, display: "flex", flexDirection: "column", gap: 9 }}>
           <span className="hf-lbl">Items by major element &amp; sub-element</span>
@@ -227,6 +244,7 @@ function RawOverview({ model }: { model: RawDataModel }) {
           })}
         </div>
       </div>
+      )}
     </div>
   );
 }

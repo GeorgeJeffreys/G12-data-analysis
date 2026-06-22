@@ -39,7 +39,7 @@ function seedAtStage(stageIndex: number): Seed {
 }
 
 describe("stageRoute / doNextForStage", () => {
-  it("routes each stage index to its screen (11-stage pipeline)", () => {
+  it("routes each stage index to its screen (10-stage pipeline, ending at Grades)", () => {
     expect(stageRoute("c", 0)).toBe("/cycles/c/import"); // Upload
     expect(stageRoute("c", 1)).toBe("/cycles/c/clean"); // Clean (raw data folded in)
     expect(stageRoute("c", 2)).toBe("/cycles/c/raw-scores"); // Raw scores
@@ -49,13 +49,18 @@ describe("stageRoute / doNextForStage", () => {
     expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments"); // Technical adjustments
     expect(stageRoute("c", 7)).toBe("/cycles/c/score"); // Score
     expect(stageRoute("c", 8)).toBe("/cycles/c/boundaries"); // Cut scores
-    expect(stageRoute("c", 9)).toBe("/cycles/c/grades"); // Grades
-    expect(stageRoute("c", 10)).toBe("/cycles/c/documents"); // Export
+    expect(stageRoute("c", 9)).toBe("/cycles/c/grades"); // Grades (final per-sitting step)
+  });
+
+  it("document generation is NOT a per-sitting pipeline step", () => {
+    // Certificates/reports issue from the cycle/overall best-of-two award, not a
+    // single sitting — so no stage index routes to a per-sitting /documents screen.
+    for (let i = 0; i <= 12; i++) expect(stageRoute("c", i)).not.toContain("/documents");
   });
 
   it("there is no standalone Raw data route — it is folded into Clean", () => {
     // No stage index maps to the old /raw-data screen.
-    for (let i = 0; i <= 10; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
+    for (let i = 0; i <= 9; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
   });
 
   it("doNext for an empty cycle lands on Upload, not a late screen", () => {

@@ -419,9 +419,10 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
 }
 
 function stageIndexFromStatus(status: string): number {
-  // 11-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
+  // 10-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
   // Diagnostics(4) Essay marks(5) Technical adjustments(6) Score(7)
-  // Cut scores(8) Grades(9) Export(10).
+  // Cut scores(8) Grades(9). Grades is the final per-sitting step — document
+  // generation lives at the cycle/overall level, not on a sitting.
   switch (status) {
     case "draft":
     case "ingested": return 0;
@@ -429,7 +430,7 @@ function stageIndexFromStatus(status: string): number {
     case "in_review": return 3; // Question review
     case "scored": return 7; // Score (computed post-adjustment)
     case "graded": return 9; // Grades
-    case "locked": return 10; // Export
+    case "locked": return 9; // Grades (signed off) — terminal per-sitting step
     default: return 1;
   }
 }

@@ -28,12 +28,14 @@ const EXPECTED_ORDER = [
   "Score",
   "Cut scores",
   "Grades",
-  "Export",
 ];
 
 describe("stepper order + labels", () => {
-  it("PIPELINE_STAGES is the new 11-step order", () => {
+  it("PIPELINE_STAGES is the 10-step order, ending at Grades (no per-sitting Export)", () => {
     expect([...PIPELINE_STAGES]).toEqual(EXPECTED_ORDER);
+    // Document/certificate generation is not a per-sitting step — it lives at the
+    // cycle/overall level — so the stepper no longer carries an "Export" stage.
+    expect(PIPELINE_STAGES).not.toContain("Export");
   });
 
   it("the provider's PIPELINE labels match the stepper", () => {
@@ -50,10 +52,12 @@ describe("stepper order + labels", () => {
 });
 
 describe("top cycle tab bar", () => {
-  it("no longer carries a standalone Diagnostics tab", () => {
+  it("no longer carries a standalone Diagnostics tab, nor a per-sitting Certificates tab", () => {
     const labels = cyclesSubnav("c", "pipeline").map((t) => t.label);
-    expect(labels).toEqual(["Pipeline", "Audit log", "Certificates"]);
+    expect(labels).toEqual(["Pipeline", "Audit log"]);
     expect(labels).not.toContain("Diagnostics");
+    // Document generation moved to the cycle/overall level — no per-sitting tab.
+    expect(labels).not.toContain("Certificates");
   });
 });
 
@@ -64,7 +68,7 @@ describe("routing follows the new order with nothing skipped", () => {
     expect(stageRoute("c", 5)).toBe("/cycles/c/essays");
     expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments");
     expect(stageRoute("c", 8)).toBe("/cycles/c/boundaries");
-    for (let i = 0; i <= 10; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
+    for (let i = 0; i <= 9; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
   });
 });
 
@@ -92,10 +96,13 @@ describe("Clean step holds the raw-data view + cleaning controls", () => {
     active = new InMemoryDataProvider();
     const { default: CleanPage } = await import("@/app/cycles/[cycleId]/clean/page");
     const out = html(e(CleanPage, { params: { cycleId: CYCLE } }));
-    // raw-data view (folded in)
-    expect(out).toContain("before any cleaning");
+    // raw-data view (folded in) — the always-on summary band keeps the headline
+    // figures visible; the per-element / per-demand breakdown is collapsed by
+    // default (toggled via "Show breakdown") so the selectable table below stays
+    // reachable within the viewport.
     expect(out).toContain("Participants");
-    expect(out).toContain("Items by major element");
+    expect(out).toContain("Major elements");
+    expect(out).toContain("Show breakdown");
     // cleaning controls
     expect(out).toContain("Validation report");
     expect(out).toContain("Clean &amp; continue");

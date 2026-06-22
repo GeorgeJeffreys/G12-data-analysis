@@ -19,6 +19,11 @@ export interface CurrentUser {
   role: Role;
 }
 
+// Document/certificate generation is NOT a per-sitting pipeline step: certificates
+// and performance reports issue from the cycle/overall best-of-two award
+// (app/years/[yearId]/overall/documents), not a single sitting. The per-sitting
+// pipeline therefore ends at Grades. (Per-page CSV/Excel data exports remain — they
+// are legitimately per-sitting, but they are page actions, not a pipeline stage.)
 export const PIPELINE = [
   "Upload",
   "Clean",
@@ -30,7 +35,6 @@ export const PIPELINE = [
   "Score",
   "Cut scores",
   "Grades",
-  "Export",
 ] as const;
 export type PipelineStage = (typeof PIPELINE)[number];
 

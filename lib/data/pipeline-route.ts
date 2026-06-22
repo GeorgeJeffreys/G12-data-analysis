@@ -36,10 +36,10 @@ export function stageRoute(cycleId: string, index: number): string {
       return `${base}/score`;
     case 8: // Cut scores
       return `${base}/boundaries`;
-    case 9: // Grades
+    case 9: // Grades — final per-sitting step. Document/certificate generation is
+            // NOT a per-sitting step: it issues from the cycle/overall best-of-two
+            // award (app/years/[yearId]/overall/documents), not a single sitting.
       return `${base}/grades`;
-    case 10: // Export
-      return `${base}/documents`;
     default:
       return base;
   }
@@ -58,7 +58,6 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },
   { title: "Set cut scores", body: "Scores are confirmed — set cut scores for each subject to derive grades.", cta: "Go to cut scores" },
   { title: "Confirm grades", body: "Cut scores are set — review and confirm the resulting grades.", cta: "Go to grades" },
-  { title: "Generate documents", body: "Grades are signed off. Generate certificates and performance reports for every student.", cta: "Generate documents" },
 ];
 
 /** The "do next" action for a cycle sitting at `stageIndex` (its first

@@ -47,6 +47,9 @@ export function ratingColor(rating: "Good" | "Review" | "Flag"): string {
   return rating === "Good" ? H.good : rating === "Review" ? H.warn : H.bad;
 }
 
+// Mirrors `PIPELINE` in lib/data/types.ts. Document/certificate generation is not a
+// per-sitting step — it lives at the cycle/overall level — so the per-sitting
+// stepper ends at Grades.
 export const PIPELINE_STAGES = [
   "Upload",
   "Clean",
@@ -58,5 +61,4 @@ export const PIPELINE_STAGES = [
   "Score",
   "Cut scores",
   "Grades",
-  "Export",
 ] as const;

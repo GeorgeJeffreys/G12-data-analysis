@@ -4,11 +4,13 @@
  */
 import type { SubnavItem } from "@/components/shell/Shell";
 
+// No per-sitting "Certificates" tab: certificates & performance reports issue from
+// the cycle/overall best-of-two award (app/years/[yearId]/overall/documents), not an
+// individual sitting. The `documents` area is retained in the type only for back-compat.
 export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "documents"): SubnavItem[] {
   return [
     { label: "Pipeline", href: `/cycles/${cycleId}`, on: active === "pipeline" },
     { label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" },
-    { label: "Certificates", href: `/cycles/${cycleId}/documents`, on: active === "documents" },
   ];
 }
 

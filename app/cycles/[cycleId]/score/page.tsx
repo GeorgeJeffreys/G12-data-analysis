@@ -37,7 +37,21 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
 
   if (!comp || comp.students.length === 0) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Score" stageIndex={7}>
+      <CycleShell
+        cycleId={cycleId}
+        cycleName={cycleName}
+        page="Score"
+        stageIndex={7}
+        // Keep the forward CTA present but disabled in the empty state — the step
+        // should never look broken/incomplete, but you can't advance to cut scores
+        // with nothing to cut. (Enabled once `participant_scores` exist, below.)
+        primary={
+          <Button variant="pri" disabled title="Compute scores first">
+            Continue to cut scores
+            <Icon name="arrow" color="#fff" />
+          </Button>
+        }
+      >
         <div style={{ padding: 32 }} className="hf-sub">No computed scores for this cycle yet.</div>
       </CycleShell>
     );
@@ -55,7 +69,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
       primary={
         <Link href={`/cycles/${cycleId}/boundaries`}>
           <Button variant="pri">
-            Set boundaries
+            Continue to cut scores
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>
