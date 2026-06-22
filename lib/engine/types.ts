@@ -89,11 +89,16 @@ export interface ParticipantScore {
   itemsSeen: number;
 }
 
-/** An offline-marked essay mark (English/Arabic only), out of the essay max (20). */
+/**
+ * An offline-marked essay mark (English/Arabic only). `mark` is the student's
+ * per-subject essay mark on the HALF-WEIGHTED /20 scale — the average of their
+ * essays out of 20, which equals (essay 1 + essay 2) / 2, i.e. their raw essay
+ * marks half-weighted. It is added to the numerator as-is.
+ */
 export interface EssayMark {
   participantId: string;
   assessmentId: string;
-  /** Essay mark out of the essay max (default 20). */
+  /** Half-weighted essay mark out of the reserved essay max (20). */
   mark: number;
 }
 
@@ -113,7 +118,11 @@ export interface ScoreOptions {
   alterations?: readonly Alteration[];
   /** Assessment ids that carry an essay — their max includes the essay max. */
   essayAssessmentIds?: readonly string[];
-  /** Essay max marks (default 20). */
+  /**
+   * Half-weighted essay max to reserve in an essay subject's denominator —
+   * already `sum of essay item max / 2` (derived by the caller, never hard-coded
+   * here). Defaults to 0 (no essay reservation).
+   */
   essayMax?: number;
   /** Item metadata, for per-item max scores (defaults to 1 per item). */
   items?: readonly ItemMeta[];

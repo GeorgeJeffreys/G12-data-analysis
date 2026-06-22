@@ -32,6 +32,7 @@ import {
   type EssayMark,
   type Alteration,
 } from "@/lib/engine";
+import { isEssaySubject, ESSAY_MAX_RESERVED } from "@/lib/data/essays";
 
 type Admin = SupabaseAdminClient;
 
@@ -49,10 +50,6 @@ interface LooseWrite {
 }
 function table(admin: Admin, name: string): LooseWrite {
   return (admin.from as unknown as (n: string) => LooseWrite)(name);
-}
-
-function isEssaySubject(name: string): boolean {
-  return /arabic/i.test(name) || /english/i.test(name) || /[؀-ۿ]/.test(name);
 }
 
 export interface RecomputeResult {
@@ -125,7 +122,9 @@ export async function recomputeAndWrite(admin: Admin, cycleId: string): Promise<
   }
 
   // ── participant scores (three-component) ────────────────────────────────
-  const essayAssessmentIds = assessments.filter((a) => isEssaySubject(a.name)).map((a) => a.id);
+  const essayAssessmentIds = assessments
+    .filter((a) => isEssaySubject({ name: a.name, items: itemMetas.filter((m) => m.assessmentId === a.id) }))
+    .map((a) => a.id);
   const essayMarks: EssayMark[] = essayRows.map((e) => ({
     participantId: e.participant_id,
     assessmentId: e.assessment_id,
@@ -153,7 +152,8 @@ export async function recomputeAndWrite(admin: Admin, cycleId: string): Promise<
     essayMarks,
     alterations,
     essayAssessmentIds,
-    essayMax: 20,
+    // Half-weighted essay max (sum of essay item max / 2), derived — not 20.
+    essayMax: ESSAY_MAX_RESERVED,
     items: itemMetas,
   });
 

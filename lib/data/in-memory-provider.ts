@@ -38,6 +38,7 @@ import { doNextForStage } from "./pipeline-route";
 import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
 import { SUBJECT_CATALOG } from "./subject-catalog";
+import { isEssaySubject, reservedEssayMax } from "./essays";
 import type {
   AssembleScoreAnalysisArgs,
   AssembleItemAnalysisArgs,
@@ -410,14 +411,21 @@ export class InMemoryDataProvider implements DataProvider {
       essayMarks: this.essayMarksFor(cycleId, a.id),
       alterations: this.alterationsFor(cycleId, a.id),
       essayAssessmentIds: this.essaySubjectIds(),
+      // Half-weighted essay max, derived from the subject's essay block (never the
+      // hard-coded 20). 0 for non-essay subjects, so nothing is reserved there.
+      essayMax: reservedEssayMax(a),
       items: this.itemMetasFor(a),
     });
     return new Map(scores.map((s) => [s.participantId, s]));
   }
 
-  /** Assessment ids that carry an essay component (English + Arabic). */
+  /**
+   * Assessment ids that carry an essay component (English + Arabic). Uses the one
+   * shared, script-aware detector (lib/data/essays) so the Arabic-script subject
+   * is recognised from its item data / name — not the old Latin-only regex.
+   */
   private essaySubjectIds(): string[] {
-    return this.seed.liveCycle.assessments.filter((a) => /arabic|english/i.test(a.name)).map((a) => a.id);
+    return this.seed.liveCycle.assessments.filter((a) => isEssaySubject(a)).map((a) => a.id);
   }
   private itemMetasFor(a: SeedAssessment): ItemMeta[] {
     return a.items.map((it) => ({
@@ -433,10 +441,15 @@ export class InMemoryDataProvider implements DataProvider {
     const all = this.essayMarksByCycle.get(cycleId)?.marks ?? [];
     return assessmentId ? all.filter((e) => e.assessmentId === assessmentId) : all;
   }
-  /** The Arabic/English assessment for an essay subject code (AFL/ESL). */
+  /**
+   * The Arabic/English assessment for an essay subject code (AFL/ESL). Resolves
+   * the Arabic subject as the essay subject that is not English, so it matches
+   * whether the subject name is Latin ("Arabic…") or Arabic script.
+   */
   private essayAssessmentForCode(code: string): SeedAssessment | undefined {
-    if (/afl|arabic/i.test(code)) return this.seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name));
-    if (/esl|english/i.test(code)) return this.seed.liveCycle.assessments.find((a) => /english/i.test(a.name));
+    const A = this.seed.liveCycle.assessments;
+    if (/esl|english/i.test(code)) return A.find((a) => /english/i.test(a.name));
+    if (/afl|arabic/i.test(code)) return A.find((a) => isEssaySubject(a) && !/english/i.test(a.name));
     return undefined;
   }
   private alterationsFor(cycleId: string, assessmentId?: string): Alteration[] {
@@ -2058,7 +2071,9 @@ export class InMemoryDataProvider implements DataProvider {
       .filter((a) => essayIds.has(a.id))
       .map((a) => ({
         assessmentId: a.id,
-        code: /arabic/i.test(a.name) ? "AFL" : "ESL",
+        // Only essay subjects reach here; the non-English one is Arabic (matches
+        // whether the name is Latin "Arabic…" or Arabic script).
+        code: /english/i.test(a.name) ? "ESL" : "AFL",
         name: a.name,
         count: st ? new Set(st.marks.filter((m) => m.assessmentId === a.id).map((m) => m.participantId)).size : 0,
       }));

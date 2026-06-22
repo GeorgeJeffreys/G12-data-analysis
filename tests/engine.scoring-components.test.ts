@@ -4,7 +4,10 @@
  * count + (essay max when the subject has an essay).
  *
  * Also pins that removing the old per-student-exclusion path leaves item stats
- * untouched — the parity gate (tests/engine.parity.test.ts) stays 177/177.
+ * untouched — the parity gate (tests/engine.parity.test.ts) stays 183/183.
+ *
+ * `essayMax` here is the HALF-WEIGHTED reserved essay max (20) the caller derives
+ * (sum of essay item max / 2); the engine adds exactly what it is given.
  */
 import { describe, it, expect } from "vitest";
 import { getEngine } from "@/lib/engine";
