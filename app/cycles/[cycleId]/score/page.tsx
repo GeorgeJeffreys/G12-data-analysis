@@ -47,7 +47,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
         // with nothing to cut. (Enabled once `participant_scores` exist, below.)
         primary={
           <Button variant="pri" disabled title="Compute scores first">
-            Continue to cut scores
+            Continue
             <Icon name="arrow" color="#fff" />
           </Button>
         }
@@ -68,8 +68,8 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
       stageIndex={7}
       primary={
         <Link href={`/cycles/${cycleId}/boundaries`}>
-          <Button variant="pri">
-            Continue to cut scores
+          <Button variant="pri" title="Continue to cut scores">
+            Continue
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

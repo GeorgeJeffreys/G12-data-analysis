@@ -34,7 +34,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
       // Technical adjustments → Score (step 8) → Cut scores (step 9): the next
       // step is the computed-scores screen, not cut scores (no step is skipped).
       <Link href={`/cycles/${cycleId}/score`}>
-        <Button variant="pri">Continue to scoring<Icon name="arrow" color="#fff" /></Button>
+        <Button variant="pri" title="Continue to scoring">Continue<Icon name="arrow" color="#fff" /></Button>
       </Link>
     ),
   };

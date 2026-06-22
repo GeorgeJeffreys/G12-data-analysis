@@ -65,8 +65,8 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
       actions={<Button variant="ghost" onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}><Icon name="refresh" />Revert all</Button>}
       primary={
         <Link href={blocked ? "#" : `/cycles/${cycleId}/raw-scores`} tabIndex={blocked ? -1 : undefined}>
-          <Button variant="pri" disabled={blocked} title={blocked ? "Resolve the blocker first" : undefined}>
-            {blocked ? "Resolve blockers to continue" : "Clean & continue"}
+          <Button variant="pri" disabled={blocked} title={blocked ? "Resolve the blocker first" : "Clean & continue"}>
+            Continue
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

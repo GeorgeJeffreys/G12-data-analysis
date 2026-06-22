@@ -141,8 +141,8 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       actions={<ExportButtons onCsv={exportBoundariesCsv} onXlsx={exportBoundariesXlsx} />}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
-          <Button variant="pri">
-            Confirm cut scores
+          <Button variant="pri" title="Confirm cut scores">
+            Continue
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

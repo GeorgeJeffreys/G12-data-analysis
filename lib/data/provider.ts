@@ -326,6 +326,14 @@ export interface DataProvider {
   overrideDistinctionCap(cycleId: string, studentId: string, reason: string): void;
   undoDistinctionOverride(cycleId: string, studentId: string): void;
 
+  // manual mark adjustment (Grades stage — audited, reversible; rides Alterations)
+  /** Adjust a student's subject MARK to `newMark` with a required `reason`; the
+   *  delta flows through the engine's existing alterations input and recomputes
+   *  the grade (incl. the D3 safeguard). Audited. */
+  adjustStudentMark(cycleId: string, participantId: string, assessmentId: string, newMark: number, reason: string): void;
+  /** Remove a manual mark adjustment by id — reverts the grade; audited. */
+  removeStudentMarkAdjustment(cycleId: string, adjustmentId: string): void;
+
   // configuration mutations
   setRetention(patch: Partial<RetentionConfig>): void;
   setBranding(patch: Partial<BrandingConfig>): void;

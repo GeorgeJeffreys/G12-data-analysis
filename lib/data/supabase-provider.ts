@@ -565,6 +565,34 @@ export class SupabaseDataProvider implements DataProvider {
     this.rpc("undo_distinction_override", { p_cycle: cycleId, p_participant: studentId, p_scope: "overall" });
   }
 
+  // manual mark adjustment (rides the existing alterations table server-side; the
+  // RPC resolves the actor via auth.uid() and writes the audit entry)
+  adjustStudentMark(cycleId: string, participantId: string, assessmentId: string, newMark: number, reason: string): void {
+    this.inner.adjustStudentMark(cycleId, participantId, assessmentId, newMark, reason);
+    this.bump();
+    this.rpc("adjust_participant_mark", {
+      p_cycle: cycleId,
+      p_participant: participantId,
+      p_assessment: assessmentId,
+      p_new_mark: newMark,
+      p_reason: reason,
+    });
+  }
+  removeStudentMarkAdjustment(cycleId: string, adjustmentId: string): void {
+    // Capture the cell before the optimistic remove so the RPC can key the DB
+    // alteration row by (cycle, participant, assessment).
+    const rec = this.inner.findManualAdjustment(cycleId, adjustmentId);
+    this.inner.removeStudentMarkAdjustment(cycleId, adjustmentId);
+    this.bump();
+    if (rec) {
+      this.rpc("remove_mark_adjustment", {
+        p_cycle: cycleId,
+        p_participant: rec.participantId,
+        p_assessment: rec.assessmentId,
+      });
+    }
+  }
+
   // configuration blobs
   setRetention(patch: Partial<RetentionConfig>): void {
     this.inner.setRetention(patch);

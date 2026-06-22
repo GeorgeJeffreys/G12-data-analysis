@@ -31,7 +31,7 @@ export default function EssaysPage({ params }: { params: { cycleId: string } }) 
       stageIndex={5}
       primary={
         <Link href={`/cycles/${cycleId}/adjustments`}>
-          <Button variant="pri">Continue to technical adjustments<Icon name="arrow" color="#fff" /></Button>
+          <Button variant="pri" title="Continue to technical adjustments">Continue<Icon name="arrow" color="#fff" /></Button>
         </Link>
       }
     >

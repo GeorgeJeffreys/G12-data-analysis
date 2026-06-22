@@ -26,6 +26,18 @@ export const PERFORMANCE_LEVELS = performanceLabels(DEFAULT_SCORING_CONFIG);
 
 export const AWARD_LEVELS = awardLabels(DEFAULT_SCORING_CONFIG);
 
+/**
+ * Marginal-student flag threshold (single source of truth — change here to retune).
+ *
+ * A student's subject score is flagged "marginal" when it sits within this many
+ * **raw marks** below the cut score for the next grade up — i.e. they just missed
+ * it, and a small upward mark adjustment would change the grade. The unit is raw
+ * marks: cut scores are stored as percentages, so the call site converts per
+ * subject (this many marks of that subject's max) before comparing, so "2 marks"
+ * always means marks, not percentage points.
+ */
+export const MARGINAL_MARK_THRESHOLD: number = 2;
+
 /** Star mapping used in the performance reports (derived from level, never typed). */
 export const DEFAULT_STAR_MAP: Record<string, string> = starMapOf(DEFAULT_SCORING_CONFIG);
 

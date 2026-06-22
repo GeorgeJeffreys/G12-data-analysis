@@ -86,8 +86,12 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
       stageIndex={0}
       primary={
         <Link href={model.canContinue ? `/cycles/${cycleId}/clean` : "#"} tabIndex={model.canContinue ? undefined : -1}>
-          <Button variant="pri" disabled={!model.canContinue}>
-            {split ? `Confirm ${split.subjects.length} subjects & continue` : "Continue to clean"}
+          <Button
+            variant="pri"
+            disabled={!model.canContinue}
+            title={split ? `Confirm ${split.subjects.length} subjects & continue` : undefined}
+          >
+            Continue
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>

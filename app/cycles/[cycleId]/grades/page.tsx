@@ -20,8 +20,8 @@ import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { InlineComposition } from "@/components/ui/composition";
-import { AWARD_SHORT } from "@/lib/data/grading";
-import type { GradeCell, GradesModel, StudentComposition, PerfReportStudent, PerfReportSubject, PerfElementResult, DemandScore } from "@/lib/data/types";
+import { AWARD_SHORT, MARGINAL_MARK_THRESHOLD } from "@/lib/data/grading";
+import type { GradeCell, GradesModel, StudentComposition, SubjectComposition, PerfReportStudent, PerfReportSubject, PerfElementResult, DemandScore } from "@/lib/data/types";
 
 export default function GradesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -38,6 +38,9 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const provisional = useProvisionalNotice(cycleId);
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Marginal-student review: filter to "just-missed" rows, and the open adjust dialog.
+  const [onlyMarginal, setOnlyMarginal] = useState(false);
+  const [adjust, setAdjust] = useState<{ participantId: string; assessmentId: string } | null>(null);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   if (!model) {
@@ -53,6 +56,10 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
     setConfirming(false);
   };
   const compById = new Map((comp?.students ?? []).map((s) => [s.participantId, s]));
+  // A row is marginal when any subject cell sits just below its next grade-up cut.
+  const isMarginalRow = (r: GradesModel["rows"][number]) => model.assessments.some((a) => r.grades[a.id]?.marginal);
+  const marginalCount = model.rows.filter(isMarginalRow).length;
+  const visibleRows = onlyMarginal ? model.rows.filter(isMarginalRow) : model.rows;
 
   return (
     <CycleShell
@@ -145,6 +152,29 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             </span>
           ))}
           <div style={{ flex: 1, minWidth: 12 }} />
+          {/* marginal-student filter — the just-missed-a-boundary cases */}
+          <button
+            type="button"
+            onClick={() => setOnlyMarginal((v) => !v)}
+            aria-pressed={onlyMarginal}
+            title={`Show only students within ${MARGINAL_MARK_THRESHOLD} marks below a grade boundary`}
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 11.5,
+              fontWeight: 600,
+              padding: "4px 10px",
+              borderRadius: 999,
+              cursor: "pointer",
+              border: `1px solid ${onlyMarginal ? H.pink : H.line2}`,
+              background: onlyMarginal ? H.pinkSoft : H.paper,
+              color: onlyMarginal ? H.pink : H.ink2,
+            }}
+          >
+            <MarginalGlyph color={onlyMarginal ? H.pink : H.ink3} />
+            Marginal{marginalCount ? ` · ${marginalCount}` : ""}
+          </button>
           <ZoomControl zoom={zoom} onZoom={setZoom} />
         </div>
 
@@ -163,7 +193,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                 </tr>
               </thead>
               <tbody>
-                {model.rows.map((r) => {
+                {visibleRows.map((r) => {
                   const on = selectedId === r.id;
                   return (
                     <tr
@@ -184,7 +214,11 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                         const cell = r.grades[a.id];
                         return (
                           <td key={a.id} className="hf-td" style={{ textAlign: "center" }}>
-                            <StarBadge cell={cell} />
+                            <GradeCellView
+                              cell={cell}
+                              locked={model.locked}
+                              onAdjust={() => setAdjust({ participantId: r.id, assessmentId: a.id })}
+                            />
                           </td>
                         );
                       })}
@@ -215,6 +249,13 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                     </tr>
                   );
                 })}
+                {visibleRows.length === 0 && (
+                  <tr>
+                    <td className="hf-td" colSpan={model.assessments.length + 2} style={{ textAlign: "center", color: H.ink3, padding: 18 }}>
+                      No marginal students — nobody is within {MARGINAL_MARK_THRESHOLD} mark{MARGINAL_MARK_THRESHOLD === 1 ? "" : "s"} below a grade boundary.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
             </div>
@@ -255,7 +296,166 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           </div>
         </div>
       )}
+
+      {/* manual mark adjustment modal — opened from a (flagged) Grades cell */}
+      {adjust && !model.locked && (() => {
+        const cell = model.rows.find((r) => r.id === adjust.participantId)?.grades[adjust.assessmentId];
+        const subj = compById.get(adjust.participantId)?.subjects.find((s) => s.assessmentId === adjust.assessmentId);
+        const aName = subjectHeader(model.assessments.find((a) => a.id === adjust.assessmentId)?.shortName ?? "");
+        const who = model.rows.find((r) => r.id === adjust.participantId)?.label ?? "";
+        if (!subj) return null;
+        return (
+          <AdjustMarkModal
+            studentName={who}
+            subjectName={aName}
+            subject={subj}
+            cell={cell}
+            onSave={(newMark, reason) => { provider.adjustStudentMark(cycleId, adjust.participantId, adjust.assessmentId, newMark, reason); setAdjust(null); }}
+            onRemove={subj.adjustment ? () => { provider.removeStudentMarkAdjustment(cycleId, subj.adjustment!.id); setAdjust(null); } : undefined}
+            onClose={() => setAdjust(null)}
+          />
+        );
+      })()}
     </CycleShell>
+  );
+}
+
+/**
+ * Manual mark-adjustment dialog. Adjusts the subject MARK (not a direct grade
+ * flip), with a required reason; the delta rides the existing Alterations input
+ * the engine consumes, so the grade recomputes through the full path (incl. the
+ * D3 safeguard). Reversible — an existing adjustment can be removed (also audited).
+ */
+function AdjustMarkModal({ studentName, subjectName, subject, cell, onSave, onRemove, onClose }: {
+  studentName: string;
+  subjectName: string;
+  subject: SubjectComposition;
+  cell?: GradeCell;
+  onSave: (newMark: number, reason: string) => void;
+  onRemove?: () => void;
+  onClose: () => void;
+}) {
+  // The un-adjusted base is the current total minus any existing manual delta, so
+  // the input reads as the true mark and re-adjusting never compounds.
+  const base = subject.adjustment ? round1(subject.total - subject.adjustment.delta) : subject.total;
+  const suggested = cell?.marginal && cell.marksToNext != null ? round1(base + cell.marksToNext) : base;
+  const [mark, setMark] = useState<string>(String(suggested));
+  const [reason, setReason] = useState<string>(subject.adjustment?.reason ?? "");
+  const newMark = Number(mark);
+  const valid = mark.trim() !== "" && Number.isFinite(newMark) && newMark >= 0 && newMark <= subject.max && reason.trim() !== "";
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.32)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 20 }}
+      onClick={onClose}
+    >
+      <div className="hf-card" style={{ padding: "22px 24px", maxWidth: 460, width: "100%", background: H.paper }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <MarginalGlyph color={H.pink} />
+          <span className="hf-h2">Adjust mark</span>
+        </div>
+        <div className="hf-sub" style={{ fontSize: 12.5, lineHeight: 1.5, marginBottom: 14 }}>
+          <b style={{ color: H.ink }}>{studentName}</b> · {subjectName}. The adjusted mark flows through the
+          existing scoring + grade path (including the Distinction D3 safeguard) and recomputes the grade.
+          {cell?.marginal && cell.marksToNext != null && (
+            <> Currently <b style={{ color: H.ink }}>{round1(cell.marksToNext)}</b> mark{cell.marksToNext === 1 ? "" : "s"} below {cell.nextLevel}.</>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 12, alignItems: "flex-end", marginBottom: 12 }}>
+          <label style={{ fontSize: 12, color: H.ink2 }}>
+            Current mark
+            <div className="hf-mono" style={{ fontSize: 15, color: H.ink, fontWeight: 700, marginTop: 4 }}>{round1(base)} / {fmtNum(subject.max)}</div>
+          </label>
+          <span style={{ color: H.ink3, paddingBottom: 4 }}>→</span>
+          <label style={{ fontSize: 12, color: H.ink2 }}>
+            New mark
+            <input
+              type="number"
+              value={mark}
+              min={0}
+              max={subject.max}
+              step="0.5"
+              onChange={(e) => setMark(e.target.value)}
+              style={{ display: "block", marginTop: 4, width: 90, padding: "6px 8px", border: `1px solid ${H.line2}`, borderRadius: 7, fontSize: 14 }}
+            />
+          </label>
+        </div>
+        <label style={{ fontSize: 12, color: H.ink2, display: "block", marginBottom: 16 }}>
+          Reason <span style={{ color: H.pink }}>*</span> (required — recorded in the audit log)
+          <textarea
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            rows={2}
+            placeholder="e.g. Remarked Q14 essay after appeal"
+            style={{ display: "block", marginTop: 4, width: "100%", padding: "7px 9px", border: `1px solid ${H.line2}`, borderRadius: 7, fontSize: 13, resize: "vertical" }}
+          />
+        </label>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+          <span>
+            {onRemove && (
+              <Button variant="ghost" onClick={onRemove} title="Remove this adjustment and revert the grade">
+                Remove adjustment
+              </Button>
+            )}
+          </span>
+          <span style={{ display: "flex", gap: 8 }}>
+            <Button variant="ghost" onClick={onClose}>Cancel</Button>
+            <Button variant="pri" disabled={!valid} onClick={() => onSave(newMark, reason.trim())}>Save adjustment</Button>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** One-decimal rounding for display. */
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+/** Small up-triangle glyph marking a marginal (just-below-boundary) state. */
+function MarginalGlyph({ color }: { color: string }) {
+  return (
+    <svg width="11" height="11" viewBox="0 0 12 12" aria-hidden style={{ flex: "0 0 auto" }}>
+      <path d="M6 1.5l4.5 8.5h-9z" fill={color} />
+    </svg>
+  );
+}
+
+/**
+ * One grade cell: the star badge, with a marginal marker (just below the next
+ * boundary) and/or a manual-adjustment marker. When the sitting is open the cell
+ * is a button that opens the mark-adjustment dialog.
+ */
+function GradeCellView({ cell, locked, onAdjust }: { cell?: GradeCell; locked: boolean; onAdjust: () => void }) {
+  const marginal = !!cell?.marginal;
+  const adjusted = !!cell?.adjustment;
+  const title = adjusted
+    ? `Manual mark adjustment: ${cell!.adjustment!.oldMark} → ${cell!.adjustment!.newMark} (${cell!.adjustment!.delta >= 0 ? "+" : ""}${cell!.adjustment!.delta}) — ${cell!.adjustment!.reason}.${locked ? "" : " Click to edit."}`
+    : marginal
+    ? `Marginal — ${round1(cell!.marksToNext ?? 0)} mark${cell!.marksToNext === 1 ? "" : "s"} below ${cell!.nextLevel}.${locked ? "" : " Click to adjust the mark."}`
+    : locked ? cell?.level ?? "—" : "Click to adjust the mark";
+  const inner = (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+      <StarBadge cell={cell} flagged={marginal || adjusted} />
+      {adjusted ? (
+        <span title={title} style={{ fontSize: 10, fontWeight: 800, color: H.pink }}>±</span>
+      ) : marginal ? (
+        <MarginalGlyph color={H.pink} />
+      ) : null}
+    </span>
+  );
+  if (locked) {
+    return <span title={title}>{inner}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onAdjust(); }}
+      title={title}
+      style={{ background: "transparent", border: "none", padding: 2, cursor: "pointer", display: "inline-flex", alignItems: "center" }}
+    >
+      {inner}
+    </button>
   );
 }
 
@@ -315,6 +515,14 @@ function CompositionPanel({ student, award, perf, perfSubjects, starMap, onBack 
                 <div>Alterations <span style={{ float: "right", color: c.alterations ? H.pink : H.ink3 }}>{c.alterations >= 0 ? "+" : ""}{c.alterations}</span></div>
                 <div style={{ borderTop: `1px solid ${H.line2}`, marginTop: 4, paddingTop: 4, fontWeight: 700 }}>Total <span style={{ float: "right", color: H.ink }}>{c.total}/{c.max}</span></div>
               </div>
+              {c.adjustment && (
+                <div style={{ marginTop: 7, padding: "6px 8px", borderRadius: 7, background: H.pinkSoft, fontSize: 11, color: H.ink2, lineHeight: 1.5 }}>
+                  <span style={{ fontWeight: 700, color: H.pink }}>Manual adjustment</span>{" "}
+                  <span className="hf-mono">{c.adjustment.oldMark} → {c.adjustment.newMark} ({c.adjustment.delta >= 0 ? "+" : ""}{c.adjustment.delta})</span>
+                  <div style={{ marginTop: 2 }}>{c.adjustment.reason}</div>
+                  <div style={{ marginTop: 2, color: H.ink3, fontSize: 10 }}>by {c.adjustment.by} · {new Date(c.adjustment.ts).toLocaleString()}</div>
+                </div>
+              )}
               <DemandBreakdown rows={c.byDemand} />
               <ElementBreakdown
                 subjectMeta={perfSubjects.find((s) => s.assessmentId === c.assessmentId)}
@@ -415,8 +623,9 @@ function ElementBreakdown({ subjectMeta, result, starMap }: {
   );
 }
 
-/** Per-assessment cell: the star rating, with the full level as a tooltip. */
-function StarBadge({ cell }: { cell?: GradeCell }) {
+/** Per-assessment cell: the star rating, with the full level as a tooltip. A
+ *  `flagged` cell (marginal or manually adjusted) gets a pink outline. */
+function StarBadge({ cell, flagged }: { cell?: GradeCell; flagged?: boolean }) {
   const stars = cell?.stars ?? "";
   const level = cell?.level ?? "—";
   return (
@@ -430,8 +639,8 @@ function StarBadge({ cell }: { cell?: GradeCell }) {
         minWidth: 34,
         height: 23,
         borderRadius: 7,
-        border: `1px solid ${H.line2}`,
-        background: H.paper,
+        border: `1px solid ${flagged ? H.pink : H.line2}`,
+        background: flagged ? H.pinkSoft : H.paper,
         color: stars ? H.pink : H.ink3,
         fontWeight: 700,
         fontSize: 12,
