@@ -198,9 +198,17 @@ export interface ImportBatchRow {
   id: string;
   cycle_id: string;
   file_ref: string | null;
+  /** Combined size (MB) of the uploaded export set — migration 0009. */
+  file_size_mb: number | null;
   parsed_rows: number | null;
   validation_passed: boolean;
   report_json: unknown | null;
+  // 3-CSV source filenames + reconciliation counts — migration 0006.
+  items_file: string | null;
+  assessments_file: string | null;
+  topics_file: string | null;
+  results_total: number | null;
+  results_reconciled: number | null;
   created_by: string;
   created_at: string;
 }

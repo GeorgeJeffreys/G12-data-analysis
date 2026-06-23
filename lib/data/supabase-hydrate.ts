@@ -322,7 +322,17 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const ingestReport =
     (importBatch?.report_json as ValidationReport | null | undefined) ?? null;
   const ingestValidation: ValidationReport = ingestReport ?? EMPTY_VALIDATION;
-  const ingestFileName = importBatch?.file_ref || "exam_export.xlsx";
+  // Name the upload from the real 3-CSV source filenames (the assessments export
+  // is the representative); fall back through the others, then to a neutral
+  // 3-CSV label. NOT the legacy single-file "exam_export.xlsx" default.
+  const ingestFileName =
+    importBatch?.file_ref ||
+    importBatch?.assessments_file ||
+    importBatch?.items_file ||
+    importBatch?.topics_file ||
+    "Questionmark CSV exports";
+  // Real combined size persisted at ingest (migration 0009); 0 when unknown.
+  const ingestFileSizeMB = importBatch?.file_size_mb ?? 0;
   const ingestDuplicates = ingestReport?.checks.find((c) => c.id === "duplicates")?.count ?? 0;
 
   const priorCycles: SeedPriorCycle[] = cycles.slice(1).map((c) => ({
@@ -348,7 +358,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       lastActivity: new Date(live.updated_at).toLocaleString(),
       stageIndex: stageIndexFromStatus(live.status),
       fileName: ingestFileName,
-      fileSizeMB: 0,
+      fileSizeMB: ingestFileSizeMB,
       uploadedAgo: importBatch ? new Date(importBatch.created_at).toLocaleString() : new Date(live.created_at).toLocaleDateString(),
       validation: ingestValidation,
       preview: { headers: [], rows: [] },
