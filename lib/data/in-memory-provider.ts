@@ -1068,6 +1068,7 @@ export class InMemoryDataProvider implements DataProvider {
         qualityIndex: s?.qualityIndex ?? it.qualityIndex,
         excluded: excluded.has(it.id),
         reason: this.reasons.get(`${cycleId}:${assessmentId}:${it.id}`) ?? null,
+        options: it.options ?? null,
       };
     });
 
@@ -1176,6 +1177,7 @@ export class InMemoryDataProvider implements DataProvider {
       demand: item.demand,
       excluded: this.excludedSet(cycleId, assessmentId).has(itemId),
       reason: this.reasons.get(`${cycleId}:${assessmentId}:${itemId}`) ?? null,
+      options: item.options ?? null,
       answered,
       presented,
       notAnswered,

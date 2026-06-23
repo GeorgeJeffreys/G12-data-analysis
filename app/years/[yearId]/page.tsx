@@ -12,7 +12,7 @@ import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Badge } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
-import type { SittingRef } from "@/lib/data/types";
+import { PIPELINE, type SittingRef } from "@/lib/data/types";
 
 function SittingCard({ s }: { s: SittingRef }) {
   return (
@@ -45,8 +45,10 @@ function SittingCard({ s }: { s: SittingRef }) {
               <div className="hf-sub" style={{ fontSize: 11 }}>Assessments</div>
             </div>
             <div>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>{s.stageLabel}</div>
-              <div className="hf-sub" style={{ fontSize: 11 }}>{s.stepsDone}/8 steps</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }} title="Current pipeline stage">{s.stageLabel}</div>
+              <div className="hf-sub" style={{ fontSize: 11 }} title={`Progress through the ${PIPELINE.length}-step pipeline (Upload → Grades)`}>
+                Step {Math.min(s.stepsDone, PIPELINE.length)} of {PIPELINE.length}
+              </div>
             </div>
           </div>
           <Link href={`/cycles/${s.cycleId}`}>

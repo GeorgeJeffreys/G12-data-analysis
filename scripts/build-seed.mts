@@ -11,11 +11,13 @@
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseExport, ingestAndClean } from "../lib/ingest/index";
+import { stripHtml } from "../lib/ingest/normalize";
 import type { CleanResponse } from "../lib/ingest/types";
 import { getEngine, ENGINE_VERSION } from "../lib/engine/index";
 import type { ItemMeta, QualityRating, ResponseRecord } from "../lib/engine";
 import type {
   Seed,
+  SeedAnswerOption,
   SeedAssessment,
   SeedAssessmentDiagnostics,
   SeedDiagGroup,
@@ -64,10 +66,51 @@ function qualityIndex(stat: {
   return Math.round(avg * 100);
 }
 
+/**
+ * Parse the QM `QuestionPossibleAnswers` / `QuestionCorrectAnswers` fields into
+ * clean answer options. Possible answers arrive as `"1==Foo||2==Bar||3==Baz"`;
+ * the correct field is the option text (occasionally several, `||`-joined).
+ * Returns null when there are no real options (e.g. essays carry
+ * "1==<Not applicable>", which stripHtml reduces to nothing).
+ */
+function parseAnswerOptions(possibleRaw: unknown, correctRaw: unknown): SeedAnswerOption[] | null {
+  const possible = typeof possibleRaw === "string" ? possibleRaw : "";
+  if (!possible.trim()) return null;
+  const correctSet = new Set(
+    (typeof correctRaw === "string" ? correctRaw : "")
+      .split("||")
+      .map((c) => stripHtml(c))
+      .filter((c): c is string => !!c)
+      .map((c) => c.toLowerCase()),
+  );
+  const options: SeedAnswerOption[] = [];
+  for (const part of possible.split("||")) {
+    const eq = part.indexOf("==");
+    const text = stripHtml(eq >= 0 ? part.slice(eq + 2) : part);
+    if (!text) continue; // drops "<Not applicable>" and other empty/markup-only entries
+    options.push({
+      label: String.fromCharCode(65 + options.length), // A, B, C…
+      text,
+      correct: correctSet.has(text.toLowerCase()),
+    });
+  }
+  return options.length >= 2 ? options : null;
+}
+
 function main() {
   const file = readFileSync("data/sample_qm_export.xlsx");
   const { rows } = parseExport(file);
   const { cleanedResponses, validationReport } = ingestAndClean(rows);
+
+  // Answer options per question id (first occurrence), straight from the raw
+  // export. Item metadata only — never feeds the engine, so parity is untouched.
+  const optionsByQid = new Map<string, SeedAnswerOption[]>();
+  for (const row of rows) {
+    const qid = String(row["QuestionId"] ?? "").trim();
+    if (!qid || optionsByQid.has(qid)) continue;
+    const options = parseAnswerOptions(row["QuestionPossibleAnswers"], row["QuestionCorrectAnswers"]);
+    if (options) optionsByQid.set(qid, options);
+  }
 
   // Group cleaned responses by raw assessment name.
   const byRaw = new Map<string, CleanResponse[]>();
@@ -172,6 +215,7 @@ function main() {
         sub: m.subElement ?? null,
         demand: m.demandLevel ?? null,
         maxScore: m.maxScore ?? 1,
+        options: optionsByQid.get(m.itemId) ?? null,
         participantsAnswered: a?.answered ?? s.n,
         participantsPresented: a?.presented ?? s.n,
         avgResponseTime: a && a.timeCount > 0 ? Math.round((a.timeSum / a.timeCount) * 10) / 10 : null,

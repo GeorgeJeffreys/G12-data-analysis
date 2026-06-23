@@ -8,7 +8,10 @@ import type { QualityRating } from "@/lib/engine";
 import type { PerCutSuggestion } from "@/lib/engine/cut-scores";
 import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
-import type { SeedPreview } from "./seed-types";
+import type { SeedAnswerOption, SeedPreview } from "./seed-types";
+
+/** A question's multiple-choice answer option, surfaced to the review UI. */
+export type AnswerOption = SeedAnswerOption;
 
 export type Role = "lead_admin" | "reviewer" | "viewer";
 
@@ -281,6 +284,8 @@ export interface ItemRow {
   qualityIndex: number;
   excluded: boolean;
   reason: string | null;
+  /** Multiple-choice answer options (null when not available for this item). */
+  options: AnswerOption[] | null;
 }
 
 export interface BreakItem {
@@ -511,6 +516,8 @@ export interface ItemDetailModel {
   demand: string | null;
   excluded: boolean;
   reason: string | null;
+  /** Multiple-choice answer options (null when not available for this item). */
+  options: AnswerOption[] | null;
   /** Participants who answered (engine n) and were presented the item. */
   answered: number;
   presented: number;
