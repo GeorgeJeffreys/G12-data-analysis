@@ -8,7 +8,7 @@
 import { normalizeResponses } from "../normalize";
 import { validate } from "../validate";
 import type { CleanResponse, ValidationReport } from "../types";
-import { detectThreeExports, type NamedInput } from "./detect";
+import { detectThreeExports, type NamedInput, type QmFileKind } from "./detect";
 import { buildCanonicalModelFromTables } from "./canonical";
 import { toCombinedRows } from "./bridge";
 import type { CanonicalModel } from "./model";
@@ -33,6 +33,12 @@ export interface ThreeExportIngest {
   cleanedResponses: CleanResponse[];
   /** Validation report, with the QM reconciliation + sitting checks appended. */
   validationReport: ValidationReport;
+  /**
+   * Which uploaded filename was recognised as each export — detected by columns,
+   * not filename. The upload UI shows this so the user sees all three CSVs and
+   * what each was identified as.
+   */
+  sources: Record<QmFileKind, string>;
 }
 
 /**
@@ -81,7 +87,7 @@ function augmentReport(report: ValidationReport, model: CanonicalModel): Validat
 }
 
 export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIngest {
-  const { items, assessments, topics } = detectThreeExports(files);
+  const { items, assessments, topics, sources } = detectThreeExports(files);
   const canonical = buildCanonicalModelFromTables(items, assessments, topics);
   const combined = toCombinedRows(items, assessments);
   const { clean, droppedSurveyRows, droppedNonMcqRows } = normalizeResponses(combined);
@@ -90,5 +96,6 @@ export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIng
     canonical,
     cleanedResponses: clean,
     validationReport: augmentReport(validationReport, canonical),
+    sources,
   };
 }

@@ -68,6 +68,18 @@ describe("header-signature detection", () => {
       ]),
     ).toThrowError(DetectionError);
   });
+
+  it("reports which source filename was recognised as each kind (by columns, not name)", () => {
+    // `files()` uses deliberately misleading names; the recognition must follow
+    // the columns. This is what the Upload step shows as the three detected files.
+    const { sources } = detectThreeExports(files());
+    expect(sources).toEqual({
+      items: "export_b.csv",
+      assessments: "export_c.csv",
+      topics: "export_a.csv",
+    });
+    expect(ingestThreeExports(files()).sources).toEqual(sources);
+  });
 });
 
 describe("subject-name normalisation", () => {

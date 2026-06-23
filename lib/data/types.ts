@@ -150,6 +150,14 @@ export interface IngestModel {
   fileName: string;
   fileSizeMB: number;
   uploadedAgo: string;
+  /**
+   * The three Questionmark CSVs recognised at ingest — what each uploaded file was
+   * detected as, by its columns (not its filename). A value is null when that kind
+   * wasn't recognised in the upload (e.g. a legacy single-file row, or a re-upload
+   * that predates the 3-CSV intake). Drives the per-file recognition display, and
+   * the "missing / unrecognised" message, on the Upload step.
+   */
+  files: { items: string | null; assessments: string | null; topics: string | null };
   report: ValidationReport;
   preview: SeedPreview;
   duplicates: number;

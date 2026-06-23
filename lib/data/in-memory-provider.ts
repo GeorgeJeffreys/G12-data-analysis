@@ -846,6 +846,7 @@ export class InMemoryDataProvider implements DataProvider {
       fileName: live.fileName,
       fileSizeMB: live.fileSizeMB,
       uploadedAgo: live.uploadedAgo,
+      files: live.files ?? { items: null, assessments: null, topics: null },
       report: live.validation,
       preview: live.preview,
       duplicates: live.duplicates,
@@ -3352,6 +3353,11 @@ export class InMemoryDataProvider implements DataProvider {
 
     lc.fileName = file.name;
     lc.fileSizeMB = file.sizeMB;
+    lc.files = {
+      items: extra?.files?.items ?? null,
+      assessments: extra?.files?.assessments ?? null,
+      topics: extra?.files?.topics ?? null,
+    };
     lc.uploadedAgo = "just now";
     lc.lastActivity = "just now";
     lc.validation = report;

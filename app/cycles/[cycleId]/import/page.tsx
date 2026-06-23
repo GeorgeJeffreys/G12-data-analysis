@@ -258,14 +258,8 @@ function ExportBody({
   if (!model.uploaded) return <ExportEmpty cycleId={cycleId} />;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* file meta */}
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 280px", minWidth: 220, height: 52, border: `1.5px dashed ${H.line2}`, borderRadius: 10, background: "repeating-linear-gradient(135deg, transparent 0 9px, var(--tint2) 9px 10px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{model.fileName}{model.fileSizeMB > 0 ? ` · ${model.fileSizeMB} MB` : ""}</span>
-        </div>
-        <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>uploaded {model.uploadedAgo}</span>
-        <RawExportUploader cycleId={cycleId} label="Replace files" variant="ghost" />
-      </div>
+      {/* recognised files: the three QM CSVs, each labelled by what it was detected as */}
+      <RecognisedFiles files={model.files} sizeMB={model.fileSizeMB} uploadedAgo={model.uploadedAgo} cycleId={cycleId} />
 
       {/* validation report */}
       <div>
@@ -312,6 +306,89 @@ function ExportBody({
 
       <div className="hf-sub" style={{ fontSize: 11.5 }}>
         MCQ-only rows after cleaning: <span className="hf-mono">{(model.report.stats?.mcqRows ?? 0).toLocaleString()}</span>. Surveys and non-MCQ rows removed; Arabic encoding repaired.
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The three Questionmark CSVs as recognised at ingest — one row per kind (Items /
+ * Assessments / Topics) showing the source filename each was detected as (by its
+ * columns, not its name), or a clear "missing / unrecognised" state when a kind
+ * wasn't present. Replaces the legacy single-file `exam_export.xlsx` chip.
+ */
+const QM_KINDS = [
+  { key: "items", label: "Items", hint: "questions + per-answer scores" },
+  { key: "assessments", label: "Assessments", hint: "result totals + participants" },
+  { key: "topics", label: "Topics", hint: "topic-level rollups" },
+] as const;
+
+function RecognisedFiles({
+  files,
+  sizeMB,
+  uploadedAgo,
+  cycleId,
+}: {
+  files: IngestModel["files"];
+  sizeMB: number;
+  uploadedAgo: string;
+  cycleId: string;
+}) {
+  const missing = QM_KINDS.filter((k) => !files[k.key]);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+        <span className="hf-lbl">Recognised files</span>
+        <span className="hf-sub" style={{ fontSize: 11.5 }}>
+          The three Questionmark CSVs, auto-detected by their columns and joined on{" "}
+          <span className="hf-mono">ResultId</span>
+          {sizeMB > 0 ? ` · ${sizeMB} MB total` : ""} · uploaded {uploadedAgo}
+        </span>
+      </div>
+
+      <div className="hf-card" style={{ overflow: "hidden" }}>
+        {QM_KINDS.map((k, i) => {
+          const name = files[k.key];
+          return (
+            <div
+              key={k.key}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 12,
+                padding: "11px 14px",
+                borderBottom: i < QM_KINDS.length - 1 ? `1px solid ${H.line}` : "none",
+                background: name ? "transparent" : H.warnSoft,
+              }}
+            >
+              <Mark kind={name ? "pass" : "warn"} size={16} />
+              <span style={{ display: "flex", alignItems: "center", gap: 7, flex: "0 0 auto", minWidth: 116 }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600 }}>{k.label}</span>
+                <span className="hf-sub" style={{ fontSize: 11 }}>{k.hint}</span>
+              </span>
+              <div style={{ flex: 1 }} />
+              {name ? (
+                <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{name}</span>
+              ) : (
+                <span className="hf-mono" style={{ fontSize: 11, color: H.warn }}>missing / unrecognised</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {missing.length > 0 && (
+        <div style={{ display: "flex", gap: 10, padding: "10px 14px", borderRadius: 10, background: H.warnSoft, alignItems: "center" }}>
+          <Mark kind="warn" size={15} />
+          <span style={{ fontSize: 12, color: H.ink, flex: 1 }}>
+            {missing.map((k) => k.label).join(", ")} {missing.length === 1 ? "was" : "were"} not recognised in this upload. Re-upload all
+            three CSVs together so each can be detected by its columns.
+          </span>
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
+        <RawExportUploader cycleId={cycleId} label="Replace files" variant="ghost" />
       </div>
     </div>
   );
@@ -367,7 +444,7 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
       const named = await Promise.all(
         files.map(async (f) => ({ name: f.name, data: await f.arrayBuffer() })),
       );
-      const { canonical, cleanedResponses, validationReport } = ingestThreeExports(named);
+      const { canonical, cleanedResponses, validationReport, sources } = ingestThreeExports(named);
       if (cleanedResponses.length === 0) {
         fail("No scored responses after cleaning. Check these are the graded G12++ exports (not just surveys).");
         return;
@@ -376,14 +453,15 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
       setStage("ingesting");
       const totalBytes = files.reduce((n, f) => n + f.size, 0);
       const sizeMB = Math.round((totalBytes / (1024 * 1024)) * 10) / 10;
-      // Resolve which source file became which export for the audit trail.
-      const fileNames = resolveSourceNames(named, canonical);
+      // `sources` is the REAL recognition (by columns) of which uploaded file became
+      // which export — not a filename guess. Persisted for the audit trail + the
+      // per-file recognition display.
       await provider.ingestRawExport(
         cycleId,
-        { name: fileNames.assessments ?? files[0]!.name, sizeMB },
+        { name: sources.assessments, sizeMB },
         cleanedResponses,
         validationReport,
-        { canonical, files: fileNames },
+        { canonical, files: sources },
       );
       setStage("done");
     } catch (e) {
@@ -417,27 +495,6 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
       <UploadStatusLine stage={stage} error={error} />
     </div>
   );
-}
-
-/**
- * Re-detect which uploaded filename maps to which export kind, so the import
- * audit records the real source names (detection itself happens inside
- * `ingestThreeExports`; here we just label for display).
- */
-function resolveSourceNames(
-  named: { name: string }[],
-  _canonical: unknown,
-): { items?: string; assessments?: string; topics?: string } {
-  // Best-effort by conventional filename hints; falls back to undefined. The
-  // canonical join already validated the set, so this is display-only.
-  const out: { items?: string; assessments?: string; topics?: string } = {};
-  for (const f of named) {
-    const n = f.name.toLowerCase();
-    if (n.includes("item")) out.items = f.name;
-    else if (n.includes("assessment")) out.assessments = f.name;
-    else if (n.includes("topic")) out.topics = f.name;
-  }
-  return out;
 }
 
 function labelFor(s: DuplicateStrategy): string {

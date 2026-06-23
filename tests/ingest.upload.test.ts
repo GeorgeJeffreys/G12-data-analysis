@@ -66,6 +66,9 @@ describe("raw-export ingest → provider read path", () => {
     expect(ingest?.uploaded).toBe(true);
     expect(ingest?.fileName).toBe("export.xlsx");
     expect(ingest?.report.passed).toBe(validationReport.passed);
+    // No 3-CSV recognition was supplied on this legacy single-file path, so each
+    // kind is null — the Upload step shows them as missing/unrecognised.
+    expect(ingest?.files).toEqual({ items: null, assessments: null, topics: null });
 
     const split = p.getCombinedSplit("new-cycle");
     expect(split).not.toBeNull();
@@ -85,6 +88,23 @@ describe("raw-export ingest → provider read path", () => {
     expect(raw!.items).toBe(first.items);
     expect(raw!.columns.length).toBe(first.items);
     expect(raw!.rows.length).toBe(first.participants);
+  });
+
+  it("surfaces the three recognised QM CSVs when the 3-CSV intake supplies them", async () => {
+    const p = new InMemoryDataProvider(emptySeed());
+    const { cleanedResponses, validationReport } = load();
+    await p.ingestRawExport(
+      "new-cycle",
+      { name: "Assessments.csv", sizeMB: 3.1 },
+      cleanedResponses,
+      validationReport,
+      { files: { items: "Items.csv", assessments: "Assessments.csv", topics: "Topics.csv" } },
+    );
+    expect(p.getIngest("new-cycle")?.files).toEqual({
+      items: "Items.csv",
+      assessments: "Assessments.csv",
+      topics: "Topics.csv",
+    });
   });
 
   it("buildLiveCycleData groups every cleaned response into a subject (no loss)", () => {

@@ -49,6 +49,12 @@ export interface DetectionResult {
   items: CsvTable;
   assessments: CsvTable;
   topics: CsvTable;
+  /**
+   * The source filename recognised as each kind — by header columns, not by the
+   * filename itself. Lets the upload UI show what each dropped file was detected
+   * as (Items / Assessments / Topics) rather than guessing from its name.
+   */
+  sources: Record<QmFileKind, string>;
 }
 
 export class DetectionError extends Error {}
@@ -96,5 +102,10 @@ export function detectThreeExports(files: readonly NamedInput[]): DetectionResul
     items: found.items!.table,
     assessments: found.assessments!.table,
     topics: found.topics!.table,
+    sources: {
+      items: found.items!.name,
+      assessments: found.assessments!.name,
+      topics: found.topics!.name,
+    },
   };
 }

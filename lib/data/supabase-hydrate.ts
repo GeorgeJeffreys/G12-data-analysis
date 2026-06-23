@@ -349,6 +349,14 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     "Questionmark CSV exports";
   // Real combined size persisted at ingest (migration 0009); 0 when unknown.
   const ingestFileSizeMB = importBatch?.file_size_mb ?? 0;
+  // The three QM CSVs recognised at ingest (migration 0006 columns). null per kind
+  // when absent (legacy single-file rows) — the Upload step then shows that kind as
+  // missing/unrecognised rather than inventing a filename.
+  const ingestFiles = {
+    items: importBatch?.items_file ?? null,
+    assessments: importBatch?.assessments_file ?? null,
+    topics: importBatch?.topics_file ?? null,
+  };
   const ingestDuplicates = ingestReport?.checks.find((c) => c.id === "duplicates")?.count ?? 0;
 
   const priorCycles: SeedPriorCycle[] = cycles.slice(1).map((c) => ({
@@ -375,6 +383,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       stageIndex: stageIndexFromStatus(live.status),
       fileName: ingestFileName,
       fileSizeMB: ingestFileSizeMB,
+      files: ingestFiles,
       uploadedAgo: importBatch ? new Date(importBatch.created_at).toLocaleString() : new Date(live.created_at).toLocaleDateString(),
       validation: ingestValidation,
       preview: { headers: [], rows: [] },

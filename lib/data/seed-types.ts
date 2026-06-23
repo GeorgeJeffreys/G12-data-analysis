@@ -110,6 +110,12 @@ export interface SeedLiveCycle {
   stageIndex: number;
   fileName: string;
   fileSizeMB: number;
+  /**
+   * The three Questionmark CSVs recognised at ingest (by columns). Optional so
+   * legacy seeds / generated data without it still load; the provider defaults the
+   * absent kinds to null.
+   */
+  files?: { items: string | null; assessments: string | null; topics: string | null };
   uploadedAgo: string;
   validation: ValidationReport;
   preview: SeedPreview;
