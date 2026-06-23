@@ -417,6 +417,38 @@ export class InMemoryDataProvider implements DataProvider {
   private cleanRowSet(assessmentId: string): Set<string> | undefined {
     return this.cleanRows.get(`${this.seed.liveCycle.id}:${assessmentId}`);
   }
+  /**
+   * Participants removed from the COHORT entirely — those cleaned out (Clean-stage
+   * row removal) of EVERY subject in which they have responses. The test/staff
+   * account, deleted on every subject tab, lands here and so drops out of the
+   * cohort-wide views (grades, overall award, the reliability participant count)
+   * and the headline participant counts — not just the per-subject scores. A
+   * participant still present in even one subject is NOT cohort-removed: they keep
+   * their cohort row and simply carry a blank cell for the subject(s) they left.
+   */
+  private cohortRemovedParticipants(): Set<string> {
+    const out = new Set<string>();
+    const assessments = this.seed.liveCycle.assessments;
+    const presence = assessments.map((a) => this.participantsIn(a));
+    for (const p of this.seed.liveCycle.participants) {
+      let appears = false;
+      let allRemoved = true;
+      for (let i = 0; i < assessments.length; i++) {
+        if (!presence[i]!.has(p.id)) continue;
+        appears = true;
+        if (!this.cleanRowSet(assessments[i]!.id)?.has(p.id)) {
+          allRemoved = false;
+          break;
+        }
+      }
+      if (appears && allRemoved) out.add(p.id);
+    }
+    return out;
+  }
+  /** Live participant headcount after cohort-wide Clean removals. */
+  private cohortParticipantCount(): number {
+    return this.seed.liveCycle.participants.length - this.cohortRemovedParticipants().size;
+  }
   private responsesOf(a: SeedAssessment): ResponseRecord[] {
     // Drop the responses of any participant removed at the Clean stage, so the
     // cohort the engine scores already reflects the cleaned set. Only the single
@@ -605,7 +637,7 @@ export class InMemoryDataProvider implements DataProvider {
       stageIndex: live.stageIndex,
       stageLabel: this.locked.has(live.id) ? "Locked & exported" : PIPELINE[live.stageIndex] ?? "Draft",
       stepsDone: this.locked.has(live.id) ? PIPELINE.length : live.stageIndex,
-      participants: live.participants.length,
+      participants: this.cohortParticipantCount(),
       assessments: live.assessments.length,
       lastActivity: live.lastActivity,
       locked: this.locked.has(live.id),
@@ -635,7 +667,7 @@ export class InMemoryDataProvider implements DataProvider {
       return {
         id: live.id,
         name: live.name,
-        participants: live.participants.length,
+        participants: this.cohortParticipantCount(),
         assessmentCount: refs.length,
         startedAt: live.startedAt,
         stageIndex: this.locked.has(live.id) ? PIPELINE.length - 1 : live.stageIndex,
@@ -1532,7 +1564,12 @@ export class InMemoryDataProvider implements DataProvider {
     const d3Cap = this.d3CapByParticipant(cycleId);
     const overrides = this.distinctionOverrides.get(cycleId);
 
-    const rows = this.seed.liveCycle.participants.map((p) => {
+    // A participant cleaned out of every subject (e.g. the test/staff account
+    // removed on each subject tab) leaves the cohort — they get no grades row at
+    // all, rather than a blank one. Their per-subject scores already vanished via
+    // responsesOf; this drops the empty shell so counts reflect the cleaned set.
+    const cohortRemoved = this.cohortRemovedParticipants();
+    const rows = this.seed.liveCycle.participants.filter((p) => !cohortRemoved.has(p.id)).map((p) => {
       const grades: Record<string, GradeCell> = {};
       const subjectLevels: string[] = [];
       for (const a of this.seed.liveCycle.assessments) {
@@ -2415,9 +2452,13 @@ export class InMemoryDataProvider implements DataProvider {
     const items: ItemMeta[] = [];
     for (const a of this.seed.liveCycle.assessments) {
       const excluded = this.excludedSet(cycleId, a.id);
-      for (const r of a.responses) {
-        if (excluded.has(r.i)) continue;
-        responses.push({ participantId: r.p, itemId: r.i, assessmentId: a.id, score: r.s });
+      // responsesOf already drops participants removed at the Clean stage, so the
+      // cohort α is computed over reflects the cleaned set — the same way scoring
+      // does. (excludedSet also folds in Clean-stage column removals.) This is what
+      // makes a Clean change propagate into the reliability output.
+      for (const r of this.responsesOf(a)) {
+        if (excluded.has(r.itemId)) continue;
+        responses.push(r);
       }
       for (const it of a.items) {
         if (excluded.has(it.id)) continue;
@@ -2459,7 +2500,7 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       cycleId,
       engineVersion: result.engineVersion,
-      participants: this.seed.liveCycle.participants.length,
+      participants: this.cohortParticipantCount(),
       lowItemsThreshold: LOW_ITEMS_THRESHOLD,
       smallSampleThreshold: SMALL_SAMPLE_THRESHOLD,
       overall,
