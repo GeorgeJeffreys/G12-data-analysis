@@ -452,11 +452,28 @@ export interface SubjectComposition {
    */
   adjustment?: ManualMarkAdjustment | null;
 }
+/**
+ * Display-only per-student attempt + technical signals, alongside the score
+ * composition. Both are aggregations of data already held (demand tags +
+ * result-status flags); neither changes any score or grade.
+ */
+export interface StudentSignals {
+  /**
+   * The student's engagement with the top-difficulty (D3) items: how many of the
+   * D3 items presented to them (across all subjects) they actually attempted.
+   * `pct` is null when the student had no D3 items.
+   */
+  d3: { attempted: number; available: number; pct: number | null };
+  /** Number of the student's sittings flagged with a technical result status. */
+  incidents: number;
+}
 export interface StudentComposition {
   participantId: string;
   name: string;
   subjects: SubjectComposition[];
   overall: { total: number; max: number; pct: number };
+  /** Display-only attempt/technical signals (D3-answered share + incident count). */
+  signals: StudentSignals;
 }
 export interface CompositionModel {
   cycleId: string;

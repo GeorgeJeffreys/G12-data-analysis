@@ -47,7 +47,9 @@ import type {
   SeedAssessmentDiagnostics,
   SeedDiagGroup,
   SeedPriorCycle,
+  SeedTechnicalIncident,
 } from "./seed-types";
+import { isTechnicalIncidentStatus } from "./result-status";
 import { ENGINE_VERSION, type QualityRating } from "@/lib/engine";
 import { speededness, timingPerformance, groupBy, type DiagResponse } from "@/lib/diagnostics";
 import type { EssayUploadRow, IncidentInput, IncidentDecisionInput } from "./provider";
@@ -281,7 +283,20 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       };
     });
 
-    const seedResponses: SeedResponse[] = aResp.map((r) => ({ p: r.participant_id, i: r.item_id, s: Number(r.answer_score) }));
+    const seedResponses: SeedResponse[] = aResp.map((r) => {
+      const resp: SeedResponse = { p: r.participant_id, i: r.item_id, s: Number(r.answer_score) };
+      if (r.answer_given == null) resp.a = false;
+      return resp;
+    });
+
+    // Per-participant technical incidents from the sitting's result_status flag.
+    const statusByP = new Map<string, string>();
+    for (const r of aResp) {
+      if (r.result_status && !statusByP.has(r.participant_id)) statusByP.set(r.participant_id, r.result_status);
+    }
+    const technicalIncidents: SeedTechnicalIncident[] = [...statusByP.entries()]
+      .filter(([, status]) => isTechnicalIncidentStatus(status))
+      .map(([p, status]) => ({ p, status }));
 
     const ordered = [...aResp].sort((x, y) => (x.created_at < y.created_at ? -1 : 1));
     const order = new Map<string, number>();
@@ -310,6 +325,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       stageIndex: 1,
       items: seedItems,
       responses: seedResponses,
+      technicalIncidents,
       _order: info.order,
     });
   }

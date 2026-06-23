@@ -3,9 +3,12 @@
  *
  * Smoke-renders the real page with the live provider via renderToStaticMarkup to
  * lock the design: a single all-subjects participant table (one row per student),
- * a column per subject + an Overall column, each showing the computed score as
- * raw/max · % with the MCQ + Essay + Alterations composition — the same
- * composition the Grades screen renders, reused. It reads already-computed
+ * a column per subject, each showing the computed score as raw/max · % with the
+ * MCQ + Essay + Alterations composition — the same composition the Grades screen
+ * renders, reused. There is deliberately NO per-sitting "Overall" column here (the
+ * meaningful Overall is the best-of-two at the year level); instead the table ends
+ * with two display-only signal columns: D3 questions attempted and technical
+ * incidents. It reads already-computed
  * `participant_scores` (getComposition), so it is independent of boundaries and is
  * a DISTINCT page from Boundaries (no cut-point UI). Consumes provider read-models
  * only; engine parity is unaffected (covered by engine.parity.test.ts).
@@ -36,14 +39,17 @@ async function renderScore(cycleId: string): Promise<string> {
 }
 
 describe("Score page — per-student post-adjustment computed scores", () => {
-  it("renders a per-student table with every subject + an Overall column", async () => {
+  it("renders a per-student table with every subject + the two signal columns, and no per-sitting Overall", async () => {
     activeProvider = live;
     const comp = live.getComposition(liveId)!;
     const html = await renderScore(liveId);
 
     expect(html).toContain("Computed scores");
-    // Every subject is a column, plus Overall.
-    expect(html).toContain("Overall");
+    // The display-only per-student signal columns are present…
+    expect(html).toContain("D3 answered");
+    expect(html).toContain("Incidents");
+    // …and there is no per-sitting "Overall" column masquerading as the final result.
+    expect(html).not.toMatch(/<th[^>]*>[^<]*Overall/);
     // One row per participant — the student names reach the markup.
     expect(comp.students.length).toBeGreaterThan(0);
     for (const st of comp.students.slice(0, 5)) {
@@ -63,7 +69,7 @@ describe("Score page — per-student post-adjustment computed scores", () => {
     activeProvider = live;
     const html = await renderScore(liveId);
     // Column headers read the clean subject names, the same as the Grades screen.
-    for (const h of ["Applicable Math", "English", "Scientific", "Arabic", "Life", "Overall"]) {
+    for (const h of ["Applicable Math", "English", "Scientific", "Arabic", "Life"]) {
       expect(html).toContain(`>${h}<`);
     }
     // The "G12++ " data prefix must never appear as a column header label. (The

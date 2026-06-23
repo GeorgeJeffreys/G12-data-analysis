@@ -41,6 +41,21 @@ export interface SeedResponse {
   p: string; // participant id
   i: string; // item id
   s: number; // score
+  /**
+   * Whether the participant actually attempted the item. Omitted (treated as
+   * answered) for the common case; set to `false` only when the item was
+   * presented but left blank. Read as `answered = r.a !== false`. Used for the
+   * display-only "% of D3 questions answered" per-student metric.
+   */
+  a?: boolean;
+}
+
+/** A participant whose sitting of this assessment finished with a technical-fault status. */
+export interface SeedTechnicalIncident {
+  /** participant id */
+  p: string;
+  /** the raw result_status flag, e.g. 'Finished Abnormally' / 'Time Limit Exceeded'. */
+  status: string;
 }
 
 export interface SeedAssessment {
@@ -51,6 +66,12 @@ export interface SeedAssessment {
   stageIndex: number;
   items: SeedItem[];
   responses: SeedResponse[];
+  /**
+   * Participants whose sitting of this assessment finished with a technical-fault
+   * result status (non-normal). Display-only — feeds the per-student technical-
+   * incident count; never affects scoring. Absent/empty when all finished OK.
+   */
+  technicalIncidents?: SeedTechnicalIncident[];
 }
 
 export interface SeedParticipant {

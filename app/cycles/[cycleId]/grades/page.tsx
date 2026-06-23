@@ -189,7 +189,14 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                   {model.assessments.map((a) => (
                     <th key={a.id} className="hf-th" style={{ textAlign: "center" }}>{subjectHeader(a.shortName)}</th>
                   ))}
-                  <th className="hf-th" style={{ textAlign: "center" }}>Overall</th>
+                  <th
+                    className="hf-th"
+                    style={{ textAlign: "center" }}
+                    title="This sitting's provisional award only. The final Overall is the best of February + May, decided at the year level — not here."
+                  >
+                    Sitting award
+                    <div style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: H.ink3, fontSize: 9 }}>provisional · not the final Overall</div>
+                  </th>
                 </tr>
               </thead>
               <tbody>

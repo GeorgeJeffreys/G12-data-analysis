@@ -24,8 +24,10 @@ import type {
   SeedParticipant,
   SeedPreview,
   SeedResponse,
+  SeedTechnicalIncident,
 } from "./seed-types";
 import type { CleanResponse } from "@/lib/ingest/types";
+import { isTechnicalIncidentStatus } from "./result-status";
 
 const RATING_SCORE: Record<QualityRating, number> = { Good: 1, Review: 0.55, Flag: 0.12 };
 /** Transparent 0–100 quality index: mean of the four per-stat rating scores. */
@@ -160,7 +162,22 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       };
     });
 
-    const seedResponses: SeedResponse[] = responses.map((r) => ({ p: r.participantId, i: r.itemId, s: r.score }));
+    // Responses straight from the cleaned rows so the answered flag rides along
+    // (answered unless explicitly blank) — feeds the display-only D3% metric.
+    const seedResponses: SeedResponse[] = recs.map((r) => {
+      const resp: SeedResponse = { p: r.participantPseudonym, i: r.qmQuestionId, s: r.answerScore };
+      if (!r.answerGiven) resp.a = false;
+      return resp;
+    });
+
+    // Per-participant technical incidents from the sitting's result_status flag.
+    const statusByP = new Map<string, string>();
+    for (const r of recs) {
+      if (r.resultStatus && !statusByP.has(r.participantPseudonym)) statusByP.set(r.participantPseudonym, r.resultStatus);
+    }
+    const technicalIncidents: SeedTechnicalIncident[] = [...statusByP.entries()]
+      .filter(([, status]) => isTechnicalIncidentStatus(status))
+      .map(([p, status]) => ({ p, status }));
 
     // Speededness & timing diagnostics over the RAW sitting (export order proxy).
     const itemOrder = new Map<string, number>();
@@ -188,6 +205,7 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       stageIndex: 1, // freshly ingested → next action is Clean
       items,
       responses: seedResponses,
+      technicalIncidents,
     });
   }
 

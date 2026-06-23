@@ -2542,6 +2542,17 @@ export class InMemoryDataProvider implements DataProvider {
 
     // participant -> assessment -> ParticipantScore
     const byP = new Map<string, SubjectComposition[]>();
+    // Per-student top-difficulty (D3) attempt tally, accumulated across subjects:
+    // of the D3 items presented to a student, how many they actually attempted.
+    // Display-only; reads the answered flag carried on each response.
+    const d3ByP = new Map<string, { attempted: number; available: number }>();
+    // Per-student technical-incident count, from each sitting's result_status flag.
+    const incidentsByP = new Map<string, number>();
+    for (const a of this.seed.liveCycle.assessments) {
+      for (const inc of a.technicalIncidents ?? []) {
+        incidentsByP.set(inc.p, (incidentsByP.get(inc.p) ?? 0) + 1);
+      }
+    }
     for (const a of this.seed.liveCycle.assessments) {
       // Per-demand rollup over the SAME retained MCQ items the engine scores
       // (cohort-excluded items dropped). Fixed demand levels D1/D2/D3, only those
@@ -2558,9 +2569,25 @@ export class InMemoryDataProvider implements DataProvider {
         g.max += it.maxScore ?? 1;
       }
       const scoreByPI = new Map<string, number>(); // `${pid}␟${itemId}` -> score
-      for (const r of a.responses) scoreByPI.set(`${r.p}␟${r.i}`, r.s);
+      const answeredByPI = new Map<string, boolean>(); // `${pid}␟${itemId}` -> attempted?
+      for (const r of a.responses) {
+        scoreByPI.set(`${r.p}␟${r.i}`, r.s);
+        answeredByPI.set(`${r.p}␟${r.i}`, r.a !== false);
+      }
+      const d3Group = demandItems.get("D3");
 
       for (const [pid, s] of this.pctByParticipant(cycleId, a)) {
+        // Tally this student's D3 engagement on this subject they sat: of all the
+        // retained D3 items on the exam, how many they attempted (answered). Items
+        // never reached (no response) or left blank count as not attempted.
+        if (d3Group) {
+          const tally = d3ByP.get(pid) ?? { attempted: 0, available: 0 };
+          for (const id of d3Group.ids) {
+            tally.available += 1;
+            if (answeredByPI.get(`${pid}␟${id}`)) tally.attempted += 1;
+          }
+          d3ByP.set(pid, tally);
+        }
         const byDemand: DemandScore[] = demandLevels
           .filter((d) => demandItems.has(d))
           .map((d) => {
@@ -2590,11 +2617,20 @@ export class InMemoryDataProvider implements DataProvider {
     const students: StudentComposition[] = [...byP.entries()].map(([pid, subs]) => {
       const total = subs.reduce((t, s) => t + s.total, 0);
       const max = subs.reduce((t, s) => t + s.max, 0);
+      const d3 = d3ByP.get(pid) ?? { attempted: 0, available: 0 };
       return {
         participantId: pid,
         name: labelOf(pid),
         subjects: subs,
         overall: { total: round(total, 2), max, pct: max ? round((total / max) * 100, 1) : 0 },
+        signals: {
+          d3: {
+            attempted: d3.attempted,
+            available: d3.available,
+            pct: d3.available ? round((d3.attempted / d3.available) * 100, 1) : null,
+          },
+          incidents: incidentsByP.get(pid) ?? 0,
+        },
       };
     });
     students.sort((a, b) => b.overall.pct - a.overall.pct);

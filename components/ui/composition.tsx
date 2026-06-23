@@ -85,14 +85,6 @@ export function compositionTitle(c: {
   return `MCQ ${r1(c.mcq)} + Essay ${r1(c.essay)} ${alt} → ${fmtNum(c.total)}/${fmtNum(c.max)} · ${c.pct.toFixed(1)}%`;
 }
 
-/** Overall (subject-summed) composition tooltip for one student. */
-export function overallCompositionTitle(cs: StudentComposition): string {
-  const mcq = cs.subjects.reduce((t, s) => t + s.mcq, 0);
-  const essay = cs.subjects.reduce((t, s) => t + s.essay, 0);
-  const alt = cs.subjects.reduce((t, s) => t + s.alterations, 0);
-  return compositionTitle({ mcq, essay, alterations: alt, total: cs.overall.total, max: cs.overall.max, pct: cs.overall.pct });
-}
-
 /**
  * Per-subject computed score for the Score screen — a single compact, right-
  * aligned figure (raw/max · %), Excel-style. The MCQ + Essay + Alterations
@@ -107,22 +99,6 @@ export function SubjectScoreCell({ s }: { s: SubjectComposition }) {
       title={compositionTitle(s)}
     >
       {fmtNum(s.total)}/{fmtNum(s.max)} · {Math.round(s.pct)}%
-    </span>
-  );
-}
-
-/**
- * Overall computed score for the Score screen — the bold single figure for a
- * student's total, with the subject-summed composition on hover.
- */
-export function OverallScoreCell({ cs }: { cs: StudentComposition }) {
-  return (
-    <span
-      className="hf-mono"
-      style={{ fontSize: 12.5, color: H.ink, fontWeight: 700, whiteSpace: "nowrap" }}
-      title={overallCompositionTitle(cs)}
-    >
-      {fmtNum(cs.overall.total)}/{fmtNum(cs.overall.max)} · {Math.round(cs.overall.pct)}%
     </span>
   );
 }

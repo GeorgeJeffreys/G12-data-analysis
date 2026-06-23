@@ -21,8 +21,10 @@ import type {
   SeedDiagGroup,
   SeedItem,
   SeedResponse,
+  SeedTechnicalIncident,
 } from "../lib/data/seed-types";
 import { speededness, timingPerformance, groupBy, type DiagResponse } from "../lib/diagnostics";
+import { isTechnicalIncidentStatus } from "../lib/data/result-status";
 
 const engine = getEngine();
 
@@ -188,11 +190,23 @@ function main() {
       };
     });
 
-    const seedResponses: SeedResponse[] = responses.map((r) => ({
-      p: r.participantId,
-      i: r.itemId,
-      s: r.score,
-    }));
+    // Build responses straight from the cleaned rows so the answered flag rides
+    // along (answered unless explicitly blank) — feeds the display-only D3% metric.
+    const seedResponses: SeedResponse[] = recs.map((r) => {
+      const resp: SeedResponse = { p: r.participantPseudonym, i: r.qmQuestionId, s: r.answerScore };
+      if (!r.answerGiven) resp.a = false;
+      return resp;
+    });
+
+    // Per-participant technical incidents from the sitting's result_status flag
+    // (one status per participant-assessment). Display-only; no scoring impact.
+    const statusByP = new Map<string, string>();
+    for (const r of recs) {
+      if (r.resultStatus && !statusByP.has(r.participantPseudonym)) statusByP.set(r.participantPseudonym, r.resultStatus);
+    }
+    const technicalIncidents: SeedTechnicalIncident[] = [...statusByP.entries()]
+      .filter(([, status]) => isTechnicalIncidentStatus(status))
+      .map(([p, status]) => ({ p, status }));
 
     assessments.push({
       id: assessmentId,
@@ -202,6 +216,7 @@ function main() {
       stageIndex: 3, // Question review (Upload → Clean → Raw scores done)
       items,
       responses: seedResponses,
+      technicalIncidents,
       // carry order for sorting below
       ...( { _order: info.order } as object ),
     } as SeedAssessment & { _order: number });
