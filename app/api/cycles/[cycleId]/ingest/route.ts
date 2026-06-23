@@ -26,6 +26,8 @@ interface IngestBody {
   clean: CleanResponse[];
   report?: ValidationReport;
   fileName?: string;
+  /** Combined size (MB) of the uploaded export set — recorded for the file-meta chip. */
+  fileSizeMB?: number;
   /** Faithful 3-CSV canonical model (persists the richer intake — migration 0006). */
   canonical?: CanonicalModel;
   /** Source filenames for the three QM exports. */
@@ -61,6 +63,7 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
     const admin = createAdminClient();
     const ingest = await ingestCleanResponses(admin, cycleId, body.clean, {
       fileRef: body.fileName,
+      fileSizeMB: body.fileSizeMB,
       report: body.report,
       canonical: body.canonical,
       files: body.files,

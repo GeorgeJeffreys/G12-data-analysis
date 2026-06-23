@@ -403,6 +403,7 @@ export class SupabaseDataProvider implements DataProvider {
         clean,
         report,
         fileName: file.name,
+        fileSizeMB: file.sizeMB,
         canonical: extra?.canonical,
         files: extra?.files,
       }),

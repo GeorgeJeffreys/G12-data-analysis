@@ -70,6 +70,8 @@ export interface IngestWriteOptions {
   createdBy: string;
   /** File name / reference recorded on the import_batches row. */
   fileRef?: string;
+  /** Combined size (MB) of the uploaded export set — migration 0009. */
+  fileSizeMB?: number;
   /** Validation report stored alongside the batch (surfaced on refresh). */
   report?: ValidationReport;
   /**
@@ -260,6 +262,7 @@ export async function ingestCleanResponses(
   // ── 6. Import batch row (file refs + validation report; read back on refresh) ──
   const importBatch: Record<string, unknown> = {
     file_ref: opts.fileRef ?? opts.files?.assessments ?? null,
+    file_size_mb: opts.fileSizeMB ?? null,
     parsed_rows: opts.report?.stats.rawRows ?? recs.length,
     validation_passed: opts.report?.passed ?? true,
     report_json: opts.report ?? null,

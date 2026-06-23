@@ -261,7 +261,7 @@ function ExportBody({
       {/* file meta */}
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px", minWidth: 220, height: 52, border: `1.5px dashed ${H.line2}`, borderRadius: 10, background: "repeating-linear-gradient(135deg, transparent 0 9px, var(--tint2) 9px 10px)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{model.fileName} · {model.fileSizeMB} MB</span>
+          <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{model.fileName}{model.fileSizeMB > 0 ? ` · ${model.fileSizeMB} MB` : ""}</span>
         </div>
         <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>uploaded {model.uploadedAgo}</span>
         <RawExportUploader cycleId={cycleId} label="Replace files" variant="ghost" />

@@ -263,7 +263,9 @@ function main() {
       startedAt: "2026-05-14",
       lastActivity: "2h ago",
       stageIndex: 3, // Question review
-      fileName: "exam_export_may26.xlsx",
+      // The demo sitting was ingested via the 3-CSV upload; the assessments
+      // export is the representative source name (matching the live path).
+      fileName: "qm_assessments_may26.csv",
       fileSizeMB: 1.3,
       uploadedAgo: "2h ago",
       validation: validationReport,
