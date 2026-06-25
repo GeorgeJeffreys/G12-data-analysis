@@ -22,6 +22,8 @@ export interface DiagResponse {
   itemId: string;
   /** Demand level (D1/D2/D3) of the item, or null when untagged. */
   demandLevel: string | null;
+  /** Item-set / shared-stimulus name of the item, or null when ungrouped. */
+  itemSet: string | null;
   /** Presentation order (lower = earlier). */
   order: number;
   /** Whether a (non-blank) answer was given. */
@@ -237,6 +239,25 @@ export function speededByDemand(records: readonly DiagResponse[]): DemandSpeeded
   return DEMAND_ORDER.filter((d) => groups.has(d)).map((d) => ({ demand: d, speeded: speededness(groups.get(d)!) }));
 }
 
+/** Speededness/omission for one item set (a shared stimulus/passage). */
+export interface ItemSetSpeeded {
+  itemSet: string;
+  speeded: SpeededResult;
+}
+
+/**
+ * Speededness/omission/completion split by item set (shared stimulus/passage).
+ * A passage with high omission/speededness is too long or hard to work through
+ * in the time given — actionable: shorten or simplify the stimulus. Item sets are
+ * listed alphabetically; ungrouped (null) items are ignored.
+ */
+export function speededByItemSet(records: readonly DiagResponse[]): ItemSetSpeeded[] {
+  const groups = groupBy(records, (r) => r.itemSet);
+  return [...groups.keys()]
+    .sort((a, b) => a.localeCompare(b))
+    .map((set) => ({ itemSet: set, speeded: speededness(groups.get(set)!) }));
+}
+
 /** Omission rate for the item at one presentation position. */
 export interface PositionOmission {
   /** 1-based item position by earliest presented order. */
@@ -301,6 +322,7 @@ export interface WholeDiagnostics {
 export interface AssessmentDiagnostics {
   whole: WholeDiagnostics;
   byDemand: DemandSpeeded[];
+  byItemSet: ItemSetSpeeded[];
   omissionByPosition: PositionOmission[];
 }
 
@@ -308,6 +330,7 @@ export function buildAssessmentDiagnostics(records: readonly DiagResponse[]): As
   return {
     whole: { speeded: speededness(records), timing: timingPerformance(records) },
     byDemand: speededByDemand(records),
+    byItemSet: speededByItemSet(records),
     omissionByPosition: omissionByPosition(records),
   };
 }

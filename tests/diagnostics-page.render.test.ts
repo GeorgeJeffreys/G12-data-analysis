@@ -45,6 +45,8 @@ describe("Diagnostics page — actionable-only diagnostics", () => {
     // demand-level lens replaces the old per-element rows
     expect(html).toContain("By demand level");
     expect(html).toMatch(/top-difficulty/);
+    // item-set lens is shown where the subject has shared-stimulus groupings
+    expect(html).toContain("By item set");
     // the removed construct/element breakdown header must be gone
     expect(html).not.toContain("Major curriculum elements");
   });

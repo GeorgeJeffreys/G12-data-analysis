@@ -10,6 +10,7 @@ import {
   ingestAndClean,
   normalizeRemoveColumnHeader,
   parseDemandLevel,
+  parseItemSet,
   deriveElements,
   isSurveyAssessment,
   repairText,
@@ -120,6 +121,14 @@ describe("helpers", () => {
     expect(parseDemandLevel("AM Context==Academic||Demand Level==D2||x==y")).toBe("D2");
     expect(parseDemandLevel("Demand Level==Essay")).toBeNull();
     expect(parseDemandLevel(null)).toBeNull();
+  });
+
+  it("parses the item set (shared stimulus) from MetaTags, treating None/absent as null", () => {
+    expect(parseItemSet("Demand Level==D1||ESL Item Sets==Calm your mind book review||May exam 2026==MAY2026")).toBe("Calm your mind book review");
+    expect(parseItemSet("Demand Level==D2||ST Item Sets==Koch-curve")).toBe("Koch-curve");
+    expect(parseItemSet("Demand Level==D1||ESL Item Sets==None||x==y")).toBeNull();
+    expect(parseItemSet("Demand Level==D1")).toBeNull();
+    expect(parseItemSet(null)).toBeNull();
   });
 
   it("derives elements from a backslash path", () => {

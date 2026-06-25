@@ -2573,6 +2573,7 @@ export class InMemoryDataProvider implements DataProvider {
         shortName: shortOf.get(d.assessmentId) ?? d.assessmentName,
         whole: d.whole,
         byDemand: d.byDemand,
+        byItemSet: d.byItemSet,
         omissionByPosition: d.omissionByPosition,
       })),
     };

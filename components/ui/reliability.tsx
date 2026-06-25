@@ -95,7 +95,6 @@ export function ReliabilityPanel({ model, assessmentId }: { model: ReliabilityMo
     model.rows.filter((r) => r.level === level && r.assessmentId === assessmentId);
   const subject = forSubject("subject")[0];
   const majors = forSubject("majorElement");
-  const subs = forSubject("subElement");
   const demands = [...forSubject("demandLevel")].sort(demandOrder);
   const contexts = forSubject("context");
 
@@ -121,7 +120,7 @@ export function ReliabilityPanel({ model, assessmentId }: { model: ReliabilityMo
       <div style={{ display: "flex", gap: 9, alignItems: "center", padding: "9px 18px", background: H.warnSoft, borderBottom: `1px solid ${H.warn}33` }}>
         <span style={{ fontSize: 11.5, color: H.ink }}>
           Reliability is unstable with only {model.participants} students; α over a handful of items (k &lt; {model.lowItemsThreshold})
-          is essentially noise. Treat sub-element and demand α as indicative, not authoritative.
+          is essentially noise. Treat demand-level α as indicative, not authoritative.
         </span>
       </div>
 
@@ -150,9 +149,6 @@ export function ReliabilityPanel({ model, assessmentId }: { model: ReliabilityMo
 
           {majors.length > 0 && <SectionHead>By major element</SectionHead>}
           {majors.map((r) => <Row key={r.key} label={r.label} row={r} />)}
-
-          {subs.length > 0 && <SectionHead>By sub-element</SectionHead>}
-          {subs.map((r) => <Row key={r.key} label={r.label} row={r} />)}
 
           {demands.length > 0 && <SectionHead>By demand level</SectionHead>}
           {demands.map((r) => <Row key={r.key} label={r.label} row={r} />)}

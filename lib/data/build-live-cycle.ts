@@ -185,6 +185,7 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       participantId: r.participantPseudonym,
       itemId: r.qmQuestionId,
       demandLevel: r.demandLevel,
+      itemSet: r.itemSet,
       order: itemOrder.get(r.qmQuestionId)!,
       answered: !!r.answerGiven,
       correct: r.answerScore === 1,

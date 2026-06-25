@@ -137,6 +137,10 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                   {a.byDemand.map((d) => (
                     <SpeededRow key={d.demand} label={demandLabel[d.demand] ?? d.demand} s={d.speeded} demand={d.demand} />
                   ))}
+                  {a.byItemSet.length > 0 && <SectionHead cols={5}>By item set (shared stimulus / passage)</SectionHead>}
+                  {a.byItemSet.map((it) => (
+                    <SpeededRow key={it.itemSet} label={it.itemSet} s={it.speeded} />
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -149,6 +153,8 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                   <b> Omission rate</b> is the share of presented questions left blank; <b>completion</b> is its mirror.
                   If the <b>D3 (top-difficulty)</b> row omits far more than D1/D2, the hardest items are eating the clock —
                   consider trimming their count, simplifying their wording, or moving them earlier so students reach them.
+                  A single <b>item set</b> (shared stimulus/passage) with a much higher rate points at that passage being
+                  too long or dense to work through in time — shorten or simplify it.
                 </>
               }
             />

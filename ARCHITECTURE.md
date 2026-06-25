@@ -544,8 +544,8 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
 columns, the team's notebook metrics — never affecting grading. Only
 **actionable** lenses are surfaced; the old per-major-element / sub-element
 ("construct-level") breakdowns were removed as non-actionable. `getDiagnostics`
-returns, per assessment, a `{ whole, byDemand, omissionByPosition }` shape
-(`AssessmentDiagnostics`):
+returns, per assessment, a `{ whole, byDemand, byItemSet, omissionByPosition }`
+shape (`AssessmentDiagnostics`):
 
 - **Speededness / omission / completion — whole assessment** (`whole.speeded`):
   omission = blank-answer presentations ÷ total; completion = 1 − omission; late
@@ -558,6 +558,12 @@ returns, per assessment, a `{ whole, byDemand, omissionByPosition }` shape
   that replaces the construct breakdown (e.g. high omission concentrated in D3
   flags time pressure on the hardest items). Fixed D1→D3 order, present levels
   only; untagged items are ignored.
+- **By item set** (`byItemSet`): the same measures split by shared
+  stimulus/passage (the `… Item Sets==<name>` MetaTag, `None`/absent → null,
+  parsed by `parseItemSet`, persisted to `items.item_set` — migration
+  `0010_items_item_set.sql`). A passage with high omission is too long/dense to
+  work through in time — shorten or simplify it. Alphabetical, ungrouped items
+  ignored; the section only renders for subjects that use item sets.
 - **Omission rate by item position** (`omissionByPosition`): one row per item in
   presented order, carrying the item's demand level, with omission = blank ÷
   presentations. A rising tail is the classic speededness signature.

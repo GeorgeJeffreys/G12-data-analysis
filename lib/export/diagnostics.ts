@@ -102,6 +102,7 @@ function speedednessSheet(input: DiagnosticsExportInput): XLSX.WorkSheet {
   for (const a of input.diagnostics?.assessments ?? []) {
     pushRow(a.assessmentName, "Whole assessment", a.whole.speeded);
     for (const d of a.byDemand) pushRow(a.assessmentName, d.demand, d.speeded);
+    for (const it of a.byItemSet) pushRow(a.assessmentName, `Item set: ${it.itemSet}`, it.speeded);
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   styleRow(ws, 0, 1, TITLE_STYLE);

@@ -88,6 +88,8 @@ export interface ItemRow {
   major_element: string | null;
   sub_element: string | null;
   demand_level: DemandLevel | null;
+  /** Item-set / shared-stimulus name (e.g. a reading passage), or null. */
+  item_set: string | null;
   max_score: number;
   status: ItemStatus;
   created_at: string;

@@ -141,10 +141,10 @@ function main() {
     const m = itemMeta.get(k)!;
     const clean = rawToClean.get(m.assessmentName)!;
     iValues.push(
-      `  ('${id}', '${CYCLE_ID}', '${assessmentId.get(clean)}', ${q(m.qmQuestionId)}, ${q(m.wording)}, ${q(m.majorElement)}, ${q(m.subElement)}, ${enumLit(m.demandLevel)}, ${m.maxScore ?? 1}, 'active')`,
+      `  ('${id}', '${CYCLE_ID}', '${assessmentId.get(clean)}', ${q(m.qmQuestionId)}, ${q(m.wording)}, ${q(m.majorElement)}, ${q(m.subElement)}, ${enumLit(m.demandLevel)}, ${q(m.itemSet)}, ${m.maxScore ?? 1}, 'active')`,
     );
   }
-  emitInsert(w, `insert into items (id, cycle_id, assessment_id, qm_question_id, wording, major_element, sub_element, demand_level, max_score, status) values`, iValues, 200);
+  emitInsert(w, `insert into items (id, cycle_id, assessment_id, qm_question_id, wording, major_element, sub_element, demand_level, item_set, max_score, status) values`, iValues, 200);
   w();
 
   // 5. responses

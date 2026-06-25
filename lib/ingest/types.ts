@@ -17,6 +17,8 @@ export interface CleanResponse {
   majorElement: string | null;
   subElement: string | null;
   demandLevel: DemandLevel | null;
+  /** Item-set / shared-stimulus name (e.g. a reading passage), or null. */
+  itemSet: string | null;
   questionType: string;
   maxScore: number;
   answerGiven: string | null;

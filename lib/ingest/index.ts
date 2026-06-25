@@ -16,6 +16,7 @@ export type { ParseResult } from "./parse";
 export {
   normalizeResponses,
   parseDemandLevel,
+  parseItemSet,
   deriveElements,
   isSurveyAssessment,
   normalizeRemoveColumnHeader,

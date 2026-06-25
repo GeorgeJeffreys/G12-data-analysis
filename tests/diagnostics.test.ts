@@ -11,14 +11,15 @@ import {
   spearman,
   correlationStrength,
   speededByDemand,
+  speededByItemSet,
   omissionByPosition,
   buildAssessmentDiagnostics,
   type DiagResponse,
 } from "@/lib/diagnostics";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 
-function r(participantId: string, itemId: string, order: number, answered: boolean, correct: boolean, responseTime: number | null, demandLevel: string | null = null): DiagResponse {
-  return { participantId, itemId, demandLevel, order, answered, correct, responseTime };
+function r(participantId: string, itemId: string, order: number, answered: boolean, correct: boolean, responseTime: number | null, demandLevel: string | null = null, itemSet: string | null = null): DiagResponse {
+  return { participantId, itemId, demandLevel, itemSet, order, answered, correct, responseTime };
 }
 
 describe("late-item selection", () => {
@@ -120,6 +121,21 @@ describe("speededness by demand level", () => {
   });
 });
 
+describe("speededness by item set", () => {
+  it("splits speededness by shared-stimulus name, alphabetical, ignoring ungrouped items", () => {
+    const recs: DiagResponse[] = [];
+    for (const p of ["s1", "s2"]) {
+      recs.push(r(p, "Q1", 0, true, true, 20, "D1", "Zebra passage"));
+      recs.push(r(p, "Q2", 1, false, false, null, "D2", "Apple passage")); // omitted
+      recs.push(r(p, "Q3", 2, true, true, 20, "D1", null)); // ungrouped — ignored
+    }
+    const sets = speededByItemSet(recs);
+    expect(sets.map((s) => s.itemSet)).toEqual(["Apple passage", "Zebra passage"]); // alphabetical, no null
+    expect(sets.find((s) => s.itemSet === "Apple passage")!.speeded.omissionRate).toBe(1);
+    expect(sets.find((s) => s.itemSet === "Zebra passage")!.speeded.omissionRate).toBe(0);
+  });
+});
+
 describe("omission rate by position", () => {
   it("orders items by earliest presented order, 1-based, carrying demand", () => {
     // Q1 (D1) answered by both; Q2 (D3) omitted by one of two.
@@ -135,15 +151,16 @@ describe("omission rate by position", () => {
 });
 
 describe("buildAssessmentDiagnostics", () => {
-  it("bundles whole-assessment speeded+timing, by-demand, and omission-by-position", () => {
+  it("bundles whole-assessment speeded+timing, by-demand, by-item-set, and omission-by-position", () => {
     const recs: DiagResponse[] = [
-      r("s1", "Q1", 0, true, true, 10, "D1"), r("s2", "Q1", 0, true, false, 20, "D1"),
-      r("s1", "Q2", 1, true, true, 30, "D3"), r("s2", "Q2", 1, false, false, null, "D3"),
+      r("s1", "Q1", 0, true, true, 10, "D1", "Passage A"), r("s2", "Q1", 0, true, false, 20, "D1", "Passage A"),
+      r("s1", "Q2", 1, true, true, 30, "D3", "Passage A"), r("s2", "Q2", 1, false, false, null, "D3", "Passage A"),
     ];
     const diag = buildAssessmentDiagnostics(recs);
     expect(diag.whole.speeded.nItems).toBe(2);
     expect(diag.whole.timing.nStudents).toBeGreaterThanOrEqual(0);
     expect(diag.byDemand.map((d) => d.demand)).toEqual(["D1", "D3"]);
+    expect(diag.byItemSet.map((s) => s.itemSet)).toEqual(["Passage A"]);
     expect(diag.omissionByPosition).toHaveLength(2);
   });
 });

@@ -301,10 +301,12 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     const order = new Map<string, number>();
     for (const r of ordered) if (!order.has(r.item_id)) order.set(r.item_id, order.size);
     const demandByItem = new Map(aItems.map((it) => [it.id, it.demand_level]));
+    const itemSetByItem = new Map(aItems.map((it) => [it.id, it.item_set]));
     const diagRecs: DiagResponse[] = aResp.map((r) => ({
       participantId: r.participant_id,
       itemId: r.item_id,
       demandLevel: demandByItem.get(r.item_id) ?? null,
+      itemSet: itemSetByItem.get(r.item_id) ?? null,
       order: order.get(r.item_id) ?? 0,
       answered: r.answer_given != null,
       correct: Number(r.answer_score) === 1,
