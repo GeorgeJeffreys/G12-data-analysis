@@ -83,6 +83,17 @@ export function Shell({
               </span>
             ))}
           </nav>
+          {/* Page-specific content sits to the LEFT of the persistent section
+              toggle: quiet status, then page actions (e.g. exports). These grow
+              and shrink leftward as they appear/disappear, so they never move
+              the toggle. */}
+          {status}
+          {actions}
+          {/* The section toggle is right-anchored — rendered last so it lands at
+              the same x on every page (the breadcrumb's flex:1 pins this group to
+              the right edge, and the toggle's width is page-independent). The
+              divider separates the page actions from the fixed toggle. */}
+          {subnav && (status || actions) && <span style={{ width: 1, height: 20, background: H.line2 }} />}
           {/* section tabs — compact text buttons, top-right (was a separate row) */}
           {subnav && (
             <nav aria-label="Section" style={{ display: "flex", alignItems: "center", gap: 2, flex: "0 0 auto" }}>
@@ -107,9 +118,6 @@ export function Shell({
               ))}
             </nav>
           )}
-          {subnav && (status || actions) && <span style={{ width: 1, height: 20, background: H.line2 }} />}
-          {status}
-          {actions}
         </div>
 
         {/* pipeline row */}
