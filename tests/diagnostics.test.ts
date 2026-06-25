@@ -10,12 +10,15 @@ import {
   pearson,
   spearman,
   correlationStrength,
+  speededByDemand,
+  omissionByPosition,
+  buildAssessmentDiagnostics,
   type DiagResponse,
 } from "@/lib/diagnostics";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 
-function r(participantId: string, itemId: string, order: number, answered: boolean, correct: boolean, responseTime: number | null): DiagResponse {
-  return { participantId, itemId, majorElement: null, order, answered, correct, responseTime };
+function r(participantId: string, itemId: string, order: number, answered: boolean, correct: boolean, responseTime: number | null, demandLevel: string | null = null): DiagResponse {
+  return { participantId, itemId, demandLevel, order, answered, correct, responseTime };
 }
 
 describe("late-item selection", () => {
@@ -94,25 +97,84 @@ describe("correlations", () => {
   });
 });
 
+describe("speededness by demand level", () => {
+  it("splits speededness by D1/D2/D3 in fixed order, only present levels", () => {
+    // D1 items all answered; D3 items all omitted late → D3 should flag.
+    const recs: DiagResponse[] = [];
+    for (const p of ["s1", "s2"]) {
+      recs.push(r(p, "Q1", 0, true, true, 20, "D1"));
+      recs.push(r(p, "Q2", 1, true, true, 20, "D1"));
+      recs.push(r(p, "Q3", 2, false, false, null, "D3")); // omitted
+    }
+    const byD = speededByDemand(recs);
+    expect(byD.map((d) => d.demand)).toEqual(["D1", "D3"]); // D2 absent, fixed order
+    const d1 = byD.find((d) => d.demand === "D1")!.speeded;
+    const d3 = byD.find((d) => d.demand === "D3")!.speeded;
+    expect(d1.omissionRate).toBe(0);
+    expect(d3.omissionRate).toBe(1);
+    expect(d3.omissionStatus).toBe("Flag");
+  });
+  it("ignores untagged (null demand) items entirely", () => {
+    const recs = [r("s1", "Q1", 0, true, true, 10), r("s1", "Q2", 1, true, true, 10)];
+    expect(speededByDemand(recs)).toEqual([]);
+  });
+});
+
+describe("omission rate by position", () => {
+  it("orders items by earliest presented order, 1-based, carrying demand", () => {
+    // Q1 (D1) answered by both; Q2 (D3) omitted by one of two.
+    const recs: DiagResponse[] = [
+      r("s1", "Q1", 0, true, true, 10, "D1"), r("s2", "Q1", 0, true, true, 10, "D1"),
+      r("s1", "Q2", 1, false, false, null, "D3"), r("s2", "Q2", 1, true, false, 10, "D3"),
+    ];
+    const series = omissionByPosition(recs);
+    expect(series.map((p) => p.position)).toEqual([1, 2]);
+    expect(series[0]).toMatchObject({ itemId: "Q1", demandLevel: "D1", omissionRate: 0, nPresentations: 2, omitted: 0 });
+    expect(series[1]).toMatchObject({ itemId: "Q2", demandLevel: "D3", omissionRate: 0.5, nPresentations: 2, omitted: 1 });
+  });
+});
+
+describe("buildAssessmentDiagnostics", () => {
+  it("bundles whole-assessment speeded+timing, by-demand, and omission-by-position", () => {
+    const recs: DiagResponse[] = [
+      r("s1", "Q1", 0, true, true, 10, "D1"), r("s2", "Q1", 0, true, false, 20, "D1"),
+      r("s1", "Q2", 1, true, true, 30, "D3"), r("s2", "Q2", 1, false, false, null, "D3"),
+    ];
+    const diag = buildAssessmentDiagnostics(recs);
+    expect(diag.whole.speeded.nItems).toBe(2);
+    expect(diag.whole.timing.nStudents).toBeGreaterThanOrEqual(0);
+    expect(diag.byDemand.map((d) => d.demand)).toEqual(["D1", "D3"]);
+    expect(diag.omissionByPosition).toHaveLength(2);
+  });
+});
+
 describe("provider diagnostics read-model", () => {
-  it("exposes per-assessment groups (Overall + elements) from the seed", () => {
+  it("exposes whole-assessment + demand + position diagnostics from the seed", () => {
     const p = new InMemoryDataProvider();
     const model = p.getDiagnostics("may-2026")!;
     expect(model.assessments.length).toBe(5);
     for (const a of model.assessments) {
-      expect(a.groups.length).toBeGreaterThanOrEqual(1);
-      expect(a.groups[0]!.key).toBe("Overall");
-      // statuses are valid bands and rates are in [0,1]
-      const s = a.groups[0]!.speeded;
+      // whole-assessment speededness: valid band, rates in [0,1]
+      const s = a.whole.speeded;
       expect(["Good", "Review", "Flag"]).toContain(s.speededStatus);
       expect(s.omissionRate).toBeGreaterThanOrEqual(0);
       expect(s.completion).toBeLessThanOrEqual(1);
-      // timing correlation is in [-1, 1] or null
-      const t = a.groups[0]!.timing;
+      // whole-assessment timing correlation is in [-1, 1] or null
+      const t = a.whole.timing;
       if (t.pearson !== null) {
         expect(t.pearson).toBeGreaterThanOrEqual(-1);
         expect(t.pearson).toBeLessThanOrEqual(1);
       }
+      // demand lens uses only D1/D2/D3 in fixed order
+      const demands = a.byDemand.map((d) => d.demand);
+      expect(demands).toEqual([...demands].filter((d) => ["D1", "D2", "D3"].includes(d)));
+      expect(demands).toEqual([...new Set(demands)]);
+      // omission-by-position is 1-based and contiguous
+      a.omissionByPosition.forEach((pt, i) => {
+        expect(pt.position).toBe(i + 1);
+        expect(pt.omissionRate).toBeGreaterThanOrEqual(0);
+        expect(pt.omissionRate).toBeLessThanOrEqual(1);
+      });
     }
   });
 });

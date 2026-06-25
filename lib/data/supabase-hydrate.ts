@@ -45,13 +45,12 @@ import type {
   SeedResponse,
   SeedParticipant,
   SeedAssessmentDiagnostics,
-  SeedDiagGroup,
   SeedPriorCycle,
   SeedTechnicalIncident,
 } from "./seed-types";
 import { isTechnicalIncidentStatus } from "./result-status";
 import { ENGINE_VERSION, type QualityRating } from "@/lib/engine";
-import { speededness, timingPerformance, groupBy, type DiagResponse } from "@/lib/diagnostics";
+import { buildAssessmentDiagnostics, type DiagResponse } from "@/lib/diagnostics";
 import type { EssayUploadRow, IncidentInput, IncidentDecisionInput } from "./provider";
 import type { ValidationReport } from "@/lib/ingest/types";
 
@@ -301,21 +300,17 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     const ordered = [...aResp].sort((x, y) => (x.created_at < y.created_at ? -1 : 1));
     const order = new Map<string, number>();
     for (const r of ordered) if (!order.has(r.item_id)) order.set(r.item_id, order.size);
-    const majorByItem = new Map(aItems.map((it) => [it.id, it.major_element]));
+    const demandByItem = new Map(aItems.map((it) => [it.id, it.demand_level]));
     const diagRecs: DiagResponse[] = aResp.map((r) => ({
       participantId: r.participant_id,
       itemId: r.item_id,
-      majorElement: majorByItem.get(r.item_id) ?? null,
+      demandLevel: demandByItem.get(r.item_id) ?? null,
       order: order.get(r.item_id) ?? 0,
       answered: r.answer_given != null,
       correct: Number(r.answer_score) === 1,
       responseTime: r.response_time,
     }));
-    const diagGroups: SeedDiagGroup[] = [{ key: "Overall", speeded: speededness(diagRecs), timing: timingPerformance(diagRecs) }];
-    for (const [el, sub] of groupBy(diagRecs, (r) => r.majorElement)) {
-      diagGroups.push({ key: el, speeded: speededness(sub), timing: timingPerformance(sub) });
-    }
-    diagnostics.push({ assessmentId: a.id, assessmentName: a.name, groups: diagGroups, _order: info.order });
+    diagnostics.push({ assessmentId: a.id, assessmentName: a.name, ...buildAssessmentDiagnostics(diagRecs), _order: info.order });
 
     seedAssessments.push({
       id: a.id,

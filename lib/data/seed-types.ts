@@ -9,7 +9,7 @@
  */
 
 import type { QualityRating } from "@/lib/engine";
-import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
+import type { AssessmentDiagnostics } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 
 export interface SeedItem {
@@ -88,17 +88,14 @@ export interface SeedPreview {
   rows: (string | number | null)[][];
 }
 
-/** Speededness & timing diagnostics for one group (Overall or a major element). */
-export interface SeedDiagGroup {
-  key: string;
-  speeded: SpeededResult;
-  timing: TimingResult;
-}
-/** Diagnostics for one assessment: an Overall group followed by per-element groups. */
-export interface SeedAssessmentDiagnostics {
+/**
+ * Diagnostics for one assessment: a single whole-assessment speededness + timing
+ * measure, a demand-level speededness lens, and omission rate by item position.
+ * (Construct/element breakdowns were removed — they were not actionable.)
+ */
+export interface SeedAssessmentDiagnostics extends AssessmentDiagnostics {
   assessmentId: string;
   assessmentName: string;
-  groups: SeedDiagGroup[];
 }
 
 export interface SeedLiveCycle {

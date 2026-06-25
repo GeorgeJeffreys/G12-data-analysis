@@ -15,11 +15,10 @@
  */
 
 import { getEngine, type ItemMeta, type QualityRating, type ResponseRecord } from "@/lib/engine";
-import { speededness, timingPerformance, groupBy, type DiagResponse } from "@/lib/diagnostics";
+import { buildAssessmentDiagnostics, type DiagResponse } from "@/lib/diagnostics";
 import type {
   SeedAssessment,
   SeedAssessmentDiagnostics,
-  SeedDiagGroup,
   SeedItem,
   SeedParticipant,
   SeedPreview,
@@ -185,17 +184,13 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
     const diagRecs: DiagResponse[] = recs.map((r) => ({
       participantId: r.participantPseudonym,
       itemId: r.qmQuestionId,
-      majorElement: r.majorElement,
+      demandLevel: r.demandLevel,
       order: itemOrder.get(r.qmQuestionId)!,
       answered: !!r.answerGiven,
       correct: r.answerScore === 1,
       responseTime: r.responseTime,
     }));
-    const diagGroups: SeedDiagGroup[] = [{ key: "Overall", speeded: speededness(diagRecs), timing: timingPerformance(diagRecs) }];
-    for (const [el, sub] of groupBy(diagRecs, (r) => r.majorElement)) {
-      diagGroups.push({ key: el, speeded: speededness(sub), timing: timingPerformance(sub) });
-    }
-    diagnostics.push({ assessmentId, assessmentName: name, groups: diagGroups });
+    diagnostics.push({ assessmentId, assessmentName: name, ...buildAssessmentDiagnostics(diagRecs) });
 
     assessments.push({
       id: assessmentId,

@@ -20,7 +20,8 @@
 export interface DiagResponse {
   participantId: string;
   itemId: string;
-  majorElement: string | null;
+  /** Demand level (D1/D2/D3) of the item, or null when untagged. */
+  demandLevel: string | null;
   /** Presentation order (lower = earlier). */
   order: number;
   /** Whether a (non-blank) answer was given. */
@@ -212,4 +213,101 @@ export function groupBy<T>(rows: readonly T[], key: (r: T) => string | null): Ma
     else out.set(k, [r]);
   }
   return out;
+}
+
+// --- Actionable lenses: by demand level + omission by item position ----------
+
+/** Fixed display order for demand levels (D1 easiest → D3 top-difficulty). */
+const DEMAND_ORDER = ["D1", "D2", "D3"] as const;
+
+/** Speededness/omission for one demand level (D1/D2/D3). */
+export interface DemandSpeeded {
+  demand: string;
+  speeded: SpeededResult;
+}
+
+/**
+ * Speededness/omission/completion split by demand level. Replaces the old
+ * per-element breakdown: difficulty is the actionable axis (high omission on
+ * the hardest items flags time pressure on those items). Only levels that
+ * actually carry items appear, in fixed D1→D3 order.
+ */
+export function speededByDemand(records: readonly DiagResponse[]): DemandSpeeded[] {
+  const groups = groupBy(records, (r) => r.demandLevel);
+  return DEMAND_ORDER.filter((d) => groups.has(d)).map((d) => ({ demand: d, speeded: speededness(groups.get(d)!) }));
+}
+
+/** Omission rate for the item at one presentation position. */
+export interface PositionOmission {
+  /** 1-based item position by earliest presented order. */
+  position: number;
+  /** Internal item id (for keys only — not for display). */
+  itemId: string;
+  /** Demand level of this item, or null when untagged. */
+  demandLevel: string | null;
+  /** Total presentations of this item across students. */
+  nPresentations: number;
+  /** Presentations left blank. */
+  omitted: number;
+  /** omitted ÷ presentations. */
+  omissionRate: number;
+}
+
+/**
+ * Omission rate by item position across the assessment. Each position is one
+ * unique item (ordered by earliest presented order), carrying its demand level
+ * so the series can be read by difficulty. A rising tail = students running out
+ * of time at the end (actionable: shorten the paper or move hard items earlier).
+ */
+export function omissionByPosition(records: readonly DiagResponse[]): PositionOmission[] {
+  const earliest = new Map<string, number>();
+  const demand = new Map<string, string | null>();
+  const tally = new Map<string, { n: number; omitted: number }>();
+  for (const r of records) {
+    const cur = earliest.get(r.itemId);
+    if (cur === undefined || r.order < cur) earliest.set(r.itemId, r.order);
+    if (!demand.has(r.itemId)) demand.set(r.itemId, r.demandLevel);
+    let t = tally.get(r.itemId);
+    if (!t) { t = { n: 0, omitted: 0 }; tally.set(r.itemId, t); }
+    t.n += 1;
+    if (!r.answered) t.omitted += 1;
+  }
+  const ordered = [...earliest.entries()].sort((a, b) => a[1] - b[1]).map(([id]) => id);
+  return ordered.map((id, i) => {
+    const t = tally.get(id)!;
+    return {
+      position: i + 1,
+      itemId: id,
+      demandLevel: demand.get(id) ?? null,
+      nPresentations: t.n,
+      omitted: t.omitted,
+      omissionRate: rnd(t.n ? t.omitted / t.n : 0),
+    };
+  });
+}
+
+/** Whole-assessment speededness + timing, the single non-broken-down measures. */
+export interface WholeDiagnostics {
+  speeded: SpeededResult;
+  timing: TimingResult;
+}
+
+/**
+ * The full actionable diagnostics for one assessment: a single whole-assessment
+ * speededness + timing measure, a demand-level speededness lens, and omission
+ * rate by item position. Shared by all three build paths (seed script, in-memory
+ * build, Supabase hydrate) so they stay identical.
+ */
+export interface AssessmentDiagnostics {
+  whole: WholeDiagnostics;
+  byDemand: DemandSpeeded[];
+  omissionByPosition: PositionOmission[];
+}
+
+export function buildAssessmentDiagnostics(records: readonly DiagResponse[]): AssessmentDiagnostics {
+  return {
+    whole: { speeded: speededness(records), timing: timingPerformance(records) },
+    byDemand: speededByDemand(records),
+    omissionByPosition: omissionByPosition(records),
+  };
 }

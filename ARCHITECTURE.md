@@ -541,22 +541,38 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
 ### Speededness & timing diagnostics (informational)
 
 `lib/diagnostics/` computes, from the raw export's response-time and answer
-columns, the team's notebook metrics — never affecting grading:
+columns, the team's notebook metrics — never affecting grading. Only
+**actionable** lenses are surfaced; the old per-major-element / sub-element
+("construct-level") breakdowns were removed as non-actionable. `getDiagnostics`
+returns, per assessment, a `{ whole, byDemand, omissionByPosition }` shape
+(`AssessmentDiagnostics`):
 
-- **Speededness / omission / completion** per assessment and major element:
+- **Speededness / omission / completion — whole assessment** (`whole.speeded`):
   omission = blank-answer presentations ÷ total; completion = 1 − omission; late
   items = the final 25% of unique items by presented order (ceil, min 1);
   **Speededness Index** = (max(0, lateOmission − earlyOmission) + max(0,
   earlyAccuracy − lateAccuracy)) ÷ 2, with the Good ≤0.05 / Review ≤0.15 / Flag
   bands (and omission ≤0.05/≤0.10, completion ≥0.95/≥0.90).
-- **Timing–performance**: aggregate to student level (score %, median item time),
-  then Pearson + Spearman with strength labels.
+- **By demand level** (`byDemand`): the same speededness measures split by item
+  difficulty D1/D2/D3 (from the `Demand Level==Dx` MetaTag) — the actionable lens
+  that replaces the construct breakdown (e.g. high omission concentrated in D3
+  flags time pressure on the hardest items). Fixed D1→D3 order, present levels
+  only; untagged items are ignored.
+- **Omission rate by item position** (`omissionByPosition`): one row per item in
+  presented order, carrying the item's demand level, with omission = blank ÷
+  presentations. A rising tail is the classic speededness signature.
+- **Timing–performance — whole assessment** (`whole.timing`): aggregate to
+  student level (score %, median item time), then Pearson + Spearman with
+  strength labels.
 
-These are computed at **seed-build time** over the cleaned responses
-(`scripts/build-seed.mts` → `lib/data/seed.generated.json`, presentation order =
-export order, `// CONFIRM:`), exposed by `getDiagnostics` and surfaced read-only
-on the **Diagnostics** cycle tab. `tests/diagnostics.test.ts` pins the
-computations against hand-computed values.
+These are computed at **seed-build time** over the cleaned responses via the
+shared `buildAssessmentDiagnostics()` helper (`scripts/build-seed.mts` →
+`lib/data/seed.generated.json`, presentation order = export order, `// CONFIRM:`;
+the same helper runs in the in-memory and Supabase-hydrate paths so all three
+stay identical). Surfaced read-only on the **Diagnostics** cycle tab with
+embedded plain-language interpretation for speededness and omission rate.
+`tests/diagnostics.test.ts` pins the computations against hand-computed values;
+`tests/diagnostics-page.render.test.ts` locks the actionable-only layout.
 
 ### Adjustments & Distinction safeguard (the workflow)
 
