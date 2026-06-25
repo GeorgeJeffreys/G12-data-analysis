@@ -45,6 +45,12 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   const model = useProviderData((p) => p.getBoundaries(cycleId, scope), [cycleId, scope]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const provisional = useProvisionalNotice(cycleId);
+  // Governance gate: only a global admin may EDIT cut scores. Regular users get a
+  // read-only view. This is the client (UX) layer of the lock — the real lock is
+  // the save_grade_scheme RPC role check + grade_schemes RLS (migration 0010), so
+  // a non-admin's write is rejected server-side regardless of this flag. Reactive
+  // so the Supabase provider's post-hydration user fills in the real role.
+  const isAdmin = useProviderData((p) => p.getCurrentUser().isAdmin, []);
 
   // Pre-fill the draggable cut-score sliders from the Wave 3b backsolved
   // suggestion as the starting point — the suggestion IS the initial slider
@@ -53,7 +59,11 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   // the user can then drag/type to change any cut, re-suggest, or reset to the
   // suggestion. No backsolve/guard-rail change — it just adopts the existing
   // suggestion as the editable starting point.
-  const needsSuggestion = !!model && !model.locked && model.n > 0 && model.suggestedCuts == null;
+  // Only admins adopt the suggestion — it's a persisted write. A regular user
+  // must never trigger a (server-rejected) mutation just by viewing the page;
+  // they see whatever cut scores the admin has stored.
+  const needsSuggestion =
+    isAdmin && !!model && !model.locked && model.n > 0 && model.suggestedCuts == null;
   useEffect(() => {
     if (needsSuggestion) provider.setBoundary(cycleId, scope, { suggest: true });
   }, [needsSuggestion, provider, cycleId, scope]);
@@ -70,6 +80,10 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
   // the histogram goes and quiet band rows on the right — NOT bare backsolve
   // scaffolding (empty target inputs, guard-rail cards) as the main content.
   const isEmpty = model.n === 0;
+  // Edits are allowed only for an admin on an unlocked cycle. Drives every
+  // interactive affordance below (drag handles, table inputs, mode toggle,
+  // backsolve controls) so a regular user sees a clean read-only view.
+  const canEdit = isAdmin && !model.locked;
 
   const setCut = (index: number, v: number) =>
     provider.setBoundary(cycleId, scope, { cutIndex: index, cutValue: v });
@@ -161,15 +175,29 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           <div>
             <div className="hf-h1">{model.isAward ? "Set overall award cut scores" : "Set grade cut scores"}</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 560 }}>
-              {isEmpty
+              {!isAdmin
+                ? "These are the recommended cut scores. You have view-only access — only an admin can change them."
+                : isEmpty
                 ? "No scored data yet — complete the Score step to set cut scores."
                 : model.mode === "cuts"
                   ? `${model.isAward ? "Classify each student's overall score into an award level. " : ""}Drag a handle on the curve, or type a cut score on the right — student counts update as you move.`
                   : "Drag a handle to re-target a band's share, or type the share you want on the right — we backsolve the nearest cut score and the handle settles there."}
             </div>
           </div>
-          {/* Dual-mode toggle — only meaningful once there is scored data to work with. */}
-          {!isEmpty && (
+          {/* Read-only badge for regular (non-admin) users. The edit controls are
+              hidden below; this makes the view-only state explicit, not a dead page. */}
+          {!isAdmin && (
+            <div
+              style={{ display: "flex", alignItems: "center", gap: 7, flex: "0 0 auto", background: H.tint, border: `1px solid ${H.line2}`, borderRadius: 999, padding: "6px 13px", color: H.ink2, fontSize: 12, fontWeight: 600 }}
+              title="Only an admin can change cut scores"
+            >
+              <Icon name="lock" size={13} />
+              View only
+            </div>
+          )}
+          {/* Dual-mode toggle — only meaningful once there is scored data AND the
+              user may edit; a regular user can't switch the editing mode. */}
+          {!isEmpty && canEdit && (
             <div style={{ display: "flex", alignItems: "center", background: H.tint2, borderRadius: 11, padding: 4, gap: 4, width: 400, flex: "0 0 auto" }}>
               {seg("cuts", "Set cut-points", "Set scores → see counts")}
               {seg("pct", "Set distribution", "Set shares → solve scores")}
@@ -183,7 +211,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           <div className="hf-card" style={{ flex: "1.45 1 0%", padding: "20px 24px 14px", minWidth: 320, minHeight: 0, display: "flex", flexDirection: "column" }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
               <span className="hf-lbl">Score distribution · {model.n} students</span>
-              {!isEmpty && (
+              {!isEmpty && canEdit && (
                 <span style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: H.pink, fontWeight: 600 }}>
                   <span style={{ width: 6, height: 6, borderRadius: 999, background: H.pink }} />
                   {model.mode === "cuts" ? "Drag to set cut score" : "Drag to set share"}
@@ -199,7 +227,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                   cuts={model.cuts}
                   bands={model.bands}
                   isAward={model.isAward}
-                  draggable={!model.locked}
+                  draggable={canEdit}
                   mode={model.mode}
                   onDrag={model.mode === "cuts" ? setCut : dragTarget}
                 />
@@ -212,9 +240,11 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                   <MiniStat n={String(model.stats.itemsScored)} label="items scored" sub={`${model.stats.excluded} excluded`} />
                 </div>
                 <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 8, marginTop: 10, color: H.ink3, fontSize: 11.5 }}>
-                  <Icon name="arrow" />
+                  <Icon name={canEdit ? "arrow" : "lock"} />
                   <span>
-                    {model.mode === "cuts"
+                    {!canEdit
+                      ? "Recommended cut scores, shown read-only. Only an admin can change them."
+                      : model.mode === "cuts"
                       ? "Drag a handle or edit a cut score on the right — counts recompute instantly."
                       : "Drag a handle or edit a share on the right — we backsolve the nearest cut and the handle settles there."}
                   </span>
@@ -264,7 +294,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                             <span className="hf-sub hf-mono">—</span>
                           ) : isLowest ? (
                             <span className="hf-sub hf-mono">remainder</span>
-                          ) : model.mode === "cuts" ? (
+                          ) : model.mode === "cuts" && canEdit ? (
                             <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
                               <CutInput value={b.cut ?? 0} onCommit={(v) => setCut(i, v)} />
                               <span className="hf-sub">%</span>
@@ -287,7 +317,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                         <td className="hf-td" style={{ textAlign: "right" }}>
                           {isEmpty ? (
                             <span className="hf-sub hf-mono">—</span>
-                          ) : model.mode === "pct" && !isLowest ? (
+                          ) : model.mode === "pct" && !isLowest && canEdit ? (
                             <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                               <span style={{ display: "inline-flex", justifyContent: "flex-end", gap: 4, alignItems: "center" }}>
                                 <CutInput value={model.targets[i] ?? 0} width={58} onCommit={(v) => setTarget(i, v)} />
@@ -312,7 +342,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
                   (re-suggest) and when an adopted suggestion has been edited in
                   "Set cut-points" (reset). Never a permanent block; a single slim
                   row that swaps with the mode. */}
-              {!isEmpty && !model.locked && <BacksolveBar model={model} onSuggest={suggest} onResetAll={resetAll} />}
+              {!isEmpty && canEdit && <BacksolveBar model={model} onSuggest={suggest} onResetAll={resetAll} />}
             </div>
 
             {/* pinned warning strip — guard-rail / D3 / sanity notices, always at

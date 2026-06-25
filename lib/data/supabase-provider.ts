@@ -88,7 +88,7 @@ type DB = SupabaseBrowserClient;
 
 export type AccessStatus = "loading" | "ok" | "no-session" | "not-member" | "no-cycle" | "error";
 
-const LOADING_USER: CurrentUser = { id: "loading", name: "…", initials: "…", role: "viewer" };
+const LOADING_USER: CurrentUser = { id: "loading", name: "…", initials: "…", role: "viewer", isAdmin: false };
 
 const EMPTY_SEED: Seed = {
   generatedAt: new Date(0).toISOString(),

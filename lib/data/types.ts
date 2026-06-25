@@ -16,7 +16,15 @@ export interface CurrentUser {
   id: string;
   name: string;
   initials: string;
+  /** Per-cycle pipeline role (drives the in-cycle RLS). */
   role: Role;
+  /**
+   * Workspace-GLOBAL governance role (migration 0010 `profiles.role`), separate
+   * from the per-cycle `role`. Only an admin may edit cut scores; regular users
+   * get a read-only view. The client uses this for UX only — the real lock is
+   * the RPC role check + RLS in the database.
+   */
+  isAdmin: boolean;
 }
 
 // Document/certificate generation is NOT a per-sitting pipeline step: certificates

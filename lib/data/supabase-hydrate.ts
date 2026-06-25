@@ -36,6 +36,7 @@ import type {
   WorkspaceSettingRow,
   ImportBatchRow,
   MemberRole,
+  AppRole,
 } from "@/lib/types/database";
 import type { CurrentUser, Role } from "./types";
 import type {
@@ -120,11 +121,19 @@ export async function fetchSessionUser(supabase: DB): Promise<SessionUser> {
   if (memberships.length === 0) return { status: "not-member", user: null };
 
   const role = pickRole(memberships.map((m) => m.role));
+
+  // Global governance role (migration 0010). RLS lets a user read only their own
+  // profiles row; a missing row (the default for regular users) means non-admin.
+  const profiles = await sel<{ role: AppRole }>(
+    supabase.from("profiles").select("role").eq("user_id", u.id),
+  );
+  const isAdmin = profiles.some((p) => p.role === "admin");
+
   const name =
     ((u.user_metadata?.full_name as string | undefined) ||
       (u.email ? u.email.split("@")[0] : undefined)) ??
     "User";
-  return { status: "ok", user: { id: u.id, name, initials: initialsOf(name), role } };
+  return { status: "ok", user: { id: u.id, name, initials: initialsOf(name), role, isAdmin } };
 }
 
 // ── decision state replayed into the inner provider ─────────────────────────
