@@ -137,10 +137,12 @@ alter table exam_years add constraint exam_years_name_region_centre_key
 
 -- ----------------------------------------------------------------------------
 -- 7. Indexes — the centre FK (every per-centre listing filters on it) and the
---    comparable period field `name` (cross-centre alignment for P2 analytics).
+--    active flag on test_centres. Cross-centre alignment on the comparable
+--    period field `name` (P2 analytics) is already served by the leading column
+--    of the centre-scoped unique constraint added in section 6
+--    (name, region, test_centre_id), so no standalone `name` index is needed.
 -- ----------------------------------------------------------------------------
 create index if not exists exam_years_test_centre_id_idx on exam_years (test_centre_id);
-create index if not exists exam_years_name_idx            on exam_years (name);
 create index if not exists test_centres_active_idx        on test_centres (active);
 
 -- ----------------------------------------------------------------------------
@@ -159,9 +161,17 @@ begin
   if coalesce(trim(p_code), '') = '' then raise exception 'code is required'; end if;
   v_slug := coalesce(nullif(trim(p_slug), ''),
                      trim(both '-' from lower(regexp_replace(p_name, '[^a-zA-Z0-9]+', '-', 'g'))));
-  insert into test_centres (name, code, slug, region)
-  values (trim(p_name), trim(p_code), v_slug, p_region)
-  returning * into t;
+  -- Re-raise the raw unique_violation (on code OR slug — including a slug derived
+  -- from the name that collides with an existing centre) as a friendly message,
+  -- matching the missing-name/code pattern above. This is an admin-facing flow.
+  begin
+    insert into test_centres (name, code, slug, region)
+    values (trim(p_name), trim(p_code), v_slug, p_region)
+    returning * into t;
+  exception when unique_violation then
+    raise exception 'a test centre with code "%" or slug "%" already exists',
+      trim(p_code), v_slug;
+  end;
   perform app.audit(null, 'create', 'test_centre', t.id::text, null, to_jsonb(t));
   return t;
 end $$;
@@ -240,11 +250,16 @@ declare
   v_name      text;
   v_year_id   uuid := p_year_id;
   v_year_name text;
-  v_centre    uuid := coalesce(p_test_centre_id, app.default_test_centre());
+  v_centre    uuid;
 begin
-  -- Resolve the year WITHIN the centre: explicit id wins, else find-or-create
-  -- from the name + region + centre.
+  -- Resolve the year and its centre. The audit payload below records v_centre,
+  -- so it must ALWAYS be the year's REAL centre — never a passed-in guess that
+  -- could disagree with it. (The audit trail is load-bearing for the Cambridge
+  -- check-ins.)
   if v_year_id is null then
+    -- New year: resolve the centre (explicit, else placeholder) and
+    -- find-or-create the year within it.
+    v_centre := coalesce(p_test_centre_id, app.default_test_centre());
     v_year_name := coalesce(substring(p_name from '(?:19|20)\d{2}'),
                             to_char(now(), 'YYYY'));
     select id into v_year_id from exam_years
@@ -253,6 +268,18 @@ begin
       insert into exam_years (name, region, test_centre_id, created_by)
       values (v_year_name, p_region, v_centre, auth.uid())
       returning id into v_year_id;
+    end if;
+  else
+    -- Explicit year: the centre is whatever that year already belongs to.
+    select test_centre_id into v_centre from exam_years where id = v_year_id;
+    if not found then
+      raise exception 'exam year % not found', v_year_id;
+    end if;
+    -- Passing a year under one centre together with a DIFFERENT centre is a
+    -- caller bug: fail loudly rather than silently attaching to the year's centre.
+    if p_test_centre_id is not null and p_test_centre_id <> v_centre then
+      raise exception 'test_centre_id % conflicts with year %''s centre %',
+        p_test_centre_id, v_year_id, v_centre;
     end if;
   end if;
 

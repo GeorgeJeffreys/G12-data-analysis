@@ -42,9 +42,18 @@ describe("0010_test_centres.sql — structure", () => {
     expect(SQL).toMatch(/unique \(name, region, test_centre_id\)/i);
   });
 
-  it("indexes the centre FK and the comparable period field (name)", () => {
+  it("indexes the centre FK and the active flag; no redundant standalone name index", () => {
     expect(SQL).toMatch(/create index if not exists exam_years_test_centre_id_idx on exam_years \(test_centre_id\)/i);
-    expect(SQL).toMatch(/create index if not exists exam_years_name_idx\s+on exam_years \(name\)/i);
+    expect(SQL).toMatch(/create index if not exists test_centres_active_idx\s+on test_centres \(active\)/i);
+    // Cross-centre `name` lookups are served by the leading column of the
+    // (name, region, test_centre_id) unique from section 6, so a standalone
+    // exam_years_name_idx is redundant and must NOT be recreated.
+    expect(SQL).not.toMatch(/exam_years_name_idx/i);
+  });
+
+  it("create_test_centre re-raises a duplicate code/slug as a friendly admin message", () => {
+    expect(SQL).toMatch(/exception when unique_violation then/i);
+    expect(SQL).toMatch(/a test centre with code "%" or slug "%" already exists/i);
   });
 
   it("keeps writes definer-only and readable by authenticated users (RLS preserved)", () => {
@@ -71,11 +80,35 @@ describe("0010_test_centres.sql — structure", () => {
   });
 });
 
+describe("0010 — create_cycle_with_assessments centre integrity", () => {
+  it("derives the audited centre from the RESOLVED year, never a passed-in guess", () => {
+    // When an explicit year is given, v_centre is read from THAT year, so the
+    // audit payload below can never record a centre the year doesn't belong to.
+    expect(SQL).toMatch(/select test_centre_id into v_centre from exam_years where id = v_year_id/i);
+  });
+
+  it("raises when the explicit year does not exist", () => {
+    expect(SQL).toMatch(/raise exception 'exam year % not found'/i);
+  });
+
+  it("raises when an explicit p_test_centre_id conflicts with the year's real centre", () => {
+    // A caller passing a year under centre A together with centre B is a bug and
+    // must fail loudly, not silently attach to A (the audit trail is load-bearing).
+    expect(SQL).toMatch(/p_test_centre_id is not null and p_test_centre_id <> v_centre/i);
+    expect(SQL).toMatch(/raise exception 'test_centre_id % conflicts with year/i);
+  });
+});
+
 describe("0010_test_centres.rollback.sql — reversibility", () => {
   it("drops the new objects and restores the 0005 function signatures", () => {
     expect(ROLLBACK).toMatch(/drop table if exists test_centres/i);
     expect(ROLLBACK).toMatch(/drop column if exists test_centre_id/i);
     expect(ROLLBACK).toMatch(/add constraint exam_years_name_region_key unique \(name, region\)/i);
     expect(ROLLBACK).toMatch(/function public\.create_exam_year\(\s*p_name text, p_region text/i);
+  });
+
+  it("warns plainly that a clean revert is only possible immediately post-apply", () => {
+    expect(ROLLBACK).toMatch(/CLEAN REVERT IS ONLY POSSIBLE IMMEDIATELY POST-APPLY/i);
+    expect(ROLLBACK).toMatch(/manual data surgery/i);
   });
 });
