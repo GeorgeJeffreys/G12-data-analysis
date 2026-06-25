@@ -25,6 +25,7 @@ import type {
   CompareCyclesModel,
   AuditFilter,
   AuditModel,
+  OverrideViewModel,
   BoundaryMode,
   ConfigModel,
   CreateCycleInput,
@@ -234,6 +235,12 @@ export interface DataProvider {
 
   // audit & analytics
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel;
+  /**
+   * The admin "Audit & overrides" surface for a cycle: the CURRENT effective
+   * grade-bearing decisions (excluded items, manual mark adjustments) with their
+   * provenance, flagging any that are the result of an override (and by whom).
+   */
+  getOverrideView(cycleId: string): OverrideViewModel;
   getAnalyticsTrends(): AnalyticsTrends;
   getAnalyticsCompare(): AnalyticsCompare;
   /**
@@ -361,6 +368,35 @@ export interface DataProvider {
   adjustStudentMark(cycleId: string, participantId: string, assessmentId: string, newMark: number, reason: string): void;
   /** Remove a manual mark adjustment by id — reverts the grade; audited. */
   removeStudentMarkAdjustment(cycleId: string, adjustmentId: string): void;
+
+  // overrides (authorised user reverses another user's grade-bearing action) ──
+  /**
+   * Override another user's item exclusion/inclusion decision (e.g. re-include an
+   * item a reviewer excluded). Authorised users only (lead_admin); a `reason` is
+   * required. Re-applies the SAME effective state the original action used, so
+   * scoring recomputes through the full engine (incl. the D3 safeguard), and
+   * writes an override audit entry naming the prior decider.
+   */
+  overrideItemExclusion(
+    cycleId: string,
+    assessmentId: string,
+    itemId: string,
+    exclude: boolean,
+    reason: string,
+  ): void;
+  /**
+   * Override another user's manual mark adjustment: set the cell's mark to
+   * `newMark`, or revert it (`newMark === null`). lead_admin only; `reason`
+   * required. Rides the existing alterations engine input (full recompute incl.
+   * D3) and writes an override audit entry naming the prior adjuster.
+   */
+  overrideMarkAdjustment(
+    cycleId: string,
+    participantId: string,
+    assessmentId: string,
+    newMark: number | null,
+    reason: string,
+  ): void;
 
   // configuration mutations
   setRetention(patch: Partial<RetentionConfig>): void;

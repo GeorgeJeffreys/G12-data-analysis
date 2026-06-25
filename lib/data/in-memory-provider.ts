@@ -69,6 +69,8 @@ import {
   type AuditFilter,
   type AuditModel,
   type AuditType,
+  type OverrideViewModel,
+  type EffectiveDecision,
   type BoundaryMode,
   type BoundaryModel,
   type D3HalfWarning,
@@ -360,7 +362,7 @@ export class InMemoryDataProvider implements DataProvider {
   private testCentres: TestCentreSummary[] = [];
   private seq = 0;
 
-  private readonly user: CurrentUser = {
+  private user: CurrentUser = {
     id: "m-rana",
     // Default MOCK user (a Lead) for the in-memory demo so role-gated controls
     // (Lock, admin) are exercised. The SupabaseDataProvider injects the real
@@ -369,6 +371,15 @@ export class InMemoryDataProvider implements DataProvider {
     initials: "RM",
     role: "lead_admin",
   };
+
+  // Who set the current effective state of each grade-bearing decision, so an
+  // override can name the prior actor. Keyed like the audit detail.
+  //   exclusionBy: `${cycleId}:${assessmentId}:${itemId}` → actor
+  private exclusionBy = new Map<string, { id: string; name: string; at: string }>();
+  //   overrideMeta (item exclusions): same key → override provenance
+  private exclusionOverride = new Map<string, { by: string; priorActor: string | null; reason: string; ts: string }>();
+  //   overrideMeta (mark adjustments): `${cycleId}:${participantId}:${assessmentId}`
+  private adjustmentOverride = new Map<string, { by: string; priorActor: string | null; reason: string; ts: string }>();
 
   /**
    * @param seed Optional cycle data to serve (defaults to the bundled demo seed).
@@ -413,8 +424,24 @@ export class InMemoryDataProvider implements DataProvider {
     return this.user;
   }
 
+  /**
+   * Switch the acting user. The SupabaseDataProvider injects the real session
+   * user via the constructor; this lets the in-memory demo (and tests) model a
+   * second authorised person performing an override of someone else's action.
+   */
+  setCurrentUser(user: CurrentUser): void {
+    this.user = user;
+    this.bump();
+  }
+
   /** Append an audit entry attributed to the current user (newest first). */
-  private audit(type: AuditType, action: string, detail: string, cycleId: string | null): void {
+  private audit(
+    type: AuditType,
+    action: string,
+    detail: string,
+    cycleId: string | null,
+    extra?: { isOverride?: boolean; priorActor?: string | null; reason?: string | null },
+  ): void {
     const me = this.members.find((m) => m.id === this.user.id);
     this.auditSeq += 1;
     this.auditEntries.unshift({
@@ -428,6 +455,9 @@ export class InMemoryDataProvider implements DataProvider {
       detail,
       cycleId,
       seeded: false,
+      isOverride: extra?.isOverride ?? false,
+      priorActor: extra?.priorActor ?? null,
+      reason: extra?.reason ?? null,
     } satisfies AuditEntry);
   }
 
@@ -3215,6 +3245,34 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── writes ────────────────────────────────────────────────────────────────
+  /**
+   * Apply the effective exclusion state for one item. This is the SINGLE mutation
+   * the engine reads (`excludedSet` → `excludedItemIds`), shared by the direct
+   * item-review action and by an override, so both recompute through the exact
+   * same scoring path (incl. the D3 safeguard). It records who set the state and
+   * does NOT itself audit — callers attach the appropriate (direct/override)
+   * audit entry.
+   */
+  private applyItemExclusionState(
+    cycleId: string,
+    assessmentId: string,
+    itemId: string,
+    excluded: boolean,
+    reason: string | null,
+  ): void {
+    const key = `${cycleId}:${assessmentId}`;
+    const set = this.exclusions.get(key) ?? new Set<string>();
+    if (excluded) {
+      set.add(itemId);
+      if (reason != null) this.reasons.set(`${key}:${itemId}`, reason);
+    } else {
+      set.delete(itemId);
+      this.reasons.delete(`${key}:${itemId}`);
+    }
+    this.exclusions.set(key, set);
+    this.exclusionBy.set(`${key}:${itemId}`, { id: this.user.id, name: this.user.name, at: new Date().toISOString() });
+  }
+
   setItemExcluded(
     cycleId: string,
     assessmentId: string,
@@ -3223,20 +3281,134 @@ export class InMemoryDataProvider implements DataProvider {
     reason?: string | null,
   ): void {
     if (this.locked.has(cycleId)) return;
-    const key = `${cycleId}:${assessmentId}`;
-    const set = this.exclusions.get(key) ?? new Set<string>();
+    this.applyItemExclusionState(cycleId, assessmentId, itemId, excluded, reason ?? null);
+    // A fresh direct decision supersedes any prior override provenance.
+    this.exclusionOverride.delete(`${cycleId}:${assessmentId}:${itemId}`);
+    const a = this.assessment(assessmentId);
     if (excluded) {
-      set.add(itemId);
-      if (reason != null) this.reasons.set(`${key}:${itemId}`, reason);
-      const a = this.assessment(assessmentId);
       this.audit("exclude", "Excluded item", `${a?.name ?? assessmentId} — reason: ${reason ?? "flagged in review"}`, cycleId);
     } else {
-      set.delete(itemId);
-      this.reasons.delete(`${key}:${itemId}`);
-      const a = this.assessment(assessmentId);
       this.audit("exclude", "Restored item", `${a?.name ?? assessmentId} — item returned to scoring`, cycleId);
     }
-    this.exclusions.set(key, set);
+    this.bump();
+  }
+
+  // ── overrides (authorised user reverses another user's action) ─────────────
+  /**
+   * Override another user's item exclusion/inclusion (e.g. re-include an item a
+   * reviewer excluded). lead_admin only; a reason is required. Re-applies the
+   * SAME effective state the direct action uses, so scoring recomputes through
+   * the full engine (incl. the D3 safeguard), then writes an override audit
+   * entry naming the prior decider. No-op (rejected) for non-admins.
+   */
+  overrideItemExclusion(
+    cycleId: string,
+    assessmentId: string,
+    itemId: string,
+    exclude: boolean,
+    reason: string,
+  ): void {
+    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return; // an override requires a reason
+    const key = `${cycleId}:${assessmentId}:${itemId}`;
+    const prior = this.exclusionBy.get(key);
+    const priorActor = prior && prior.id !== this.user.id ? prior.name : prior?.name ?? null;
+
+    this.applyItemExclusionState(cycleId, assessmentId, itemId, exclude, clean);
+    const ts = new Date().toISOString();
+    this.exclusionOverride.set(key, { by: this.user.name, priorActor, reason: clean, ts });
+
+    const a = this.assessment(assessmentId);
+    const verb = exclude ? "re-excluded" : "re-included";
+    this.audit(
+      "override",
+      "Override — item exclusion",
+      `${a?.name ?? assessmentId} — item ${verb}${priorActor ? ` (was set by ${priorActor})` : ""} — ${clean}`,
+      cycleId,
+      { isOverride: true, priorActor, reason: clean },
+    );
+    this.bump();
+  }
+
+  /**
+   * Override another user's manual mark adjustment: set the cell's mark to
+   * `newMark`, or revert it (`newMark === null`). lead_admin only; reason
+   * required. Rides the existing alterations engine input exactly as the direct
+   * adjustment does (full recompute incl. D3), then writes an override audit
+   * entry naming the prior adjuster. No-op (rejected) for non-admins.
+   */
+  overrideMarkAdjustment(
+    cycleId: string,
+    participantId: string,
+    assessmentId: string,
+    newMark: number | null,
+    reason: string,
+  ): void {
+    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return;
+    const list = this.manualAdjustmentsByCycle.get(cycleId) ?? [];
+    const existing = list.find((m) => m.participantId === participantId && m.assessmentId === assessmentId);
+    const priorActor = existing && existing.by !== this.user.name ? existing.by : existing?.by ?? null;
+    const a = this.assessment(assessmentId);
+    const who = this.seed.liveCycle.participants.find((p) => p.id === participantId)?.label ?? participantId;
+    const key = `${cycleId}:${participantId}:${assessmentId}`;
+    const ts = new Date().toISOString();
+
+    if (newMark === null) {
+      // Revert: drop the manual adjustment via the SAME effective path the direct
+      // remove uses (engine recomputes the base grade), then audit the override.
+      if (!existing) return;
+      this.manualAdjustmentsByCycle.set(
+        cycleId,
+        list.filter((m) => !(m.participantId === participantId && m.assessmentId === assessmentId)),
+      );
+      this.adjustmentOverride.set(key, { by: this.user.name, priorActor, reason: clean, ts });
+      this.audit(
+        "override",
+        "Override — reverted mark adjustment",
+        `${who} · ${a?.name ?? assessmentId} — adjustment reverted${priorActor ? ` (was set by ${priorActor})` : ""} — ${clean}`,
+        cycleId,
+        { isOverride: true, priorActor, reason: clean },
+      );
+      this.bump();
+      return;
+    }
+
+    // Re-set the mark through the same alterations input the direct adjustment
+    // uses, then record + audit the override.
+    if (!Number.isFinite(newMark)) return;
+    const score = a ? this.pctByParticipant(cycleId, a).get(participantId) : undefined;
+    if (!a || !score) return;
+    const displayedBefore = score.raw;
+    const baseRaw = round(displayedBefore - (existing?.delta ?? 0), 4);
+    const target = round(newMark, 4);
+    const delta = round(target - baseRaw, 4);
+    const next = list.filter((m) => !(m.participantId === participantId && m.assessmentId === assessmentId));
+    if (delta !== 0) {
+      this.manualAdjSeq += 1;
+      next.push({
+        id: `madj-${this.manualAdjSeq}`,
+        participantId,
+        assessmentId,
+        oldMark: baseRaw,
+        newMark: target,
+        delta,
+        reason: clean,
+        by: this.user.name,
+        ts,
+      });
+    }
+    this.manualAdjustmentsByCycle.set(cycleId, next);
+    this.adjustmentOverride.set(key, { by: this.user.name, priorActor, reason: clean, ts });
+    this.audit(
+      "override",
+      "Override — mark adjustment",
+      `${who} · ${a.name}: ${round(displayedBefore, 2)} → ${target} (${delta >= 0 ? "+" : ""}${delta})${priorActor ? ` (was set by ${priorActor})` : ""} — ${clean}`,
+      cycleId,
+      { isOverride: true, priorActor, reason: clean },
+    );
     this.bump();
   }
 
@@ -3684,6 +3856,70 @@ export class InMemoryDataProvider implements DataProvider {
       return true;
     });
     return { entries, total: this.auditEntries.length };
+  }
+
+  /**
+   * Admin "Audit & overrides" surface: the CURRENT effective grade-bearing
+   * decisions for a cycle (excluded items + manual mark adjustments) with their
+   * provenance, flagging any that are the result of an override (and by whom).
+   * This is the surface used during a Cambridge check-in to see — and reverse —
+   * what is in effect, with nothing silently changed.
+   */
+  getOverrideView(cycleId: string): OverrideViewModel {
+    const decisions: EffectiveDecision[] = [];
+
+    // Excluded items (the grade-bearing item-review state).
+    for (const [key, set] of this.exclusions) {
+      const [cid, aid] = key.split(":");
+      if (cid !== cycleId || !aid) continue;
+      const a = this.assessment(aid);
+      for (const itemId of set) {
+        const loc = this.itemLocate(itemId);
+        const label = loc?.label ?? itemId;
+        const who = this.exclusionBy.get(`${key}:${itemId}`);
+        const ov = this.exclusionOverride.get(`${cycleId}:${aid}:${itemId}`);
+        decisions.push({
+          key: `excl:${aid}:${itemId}`,
+          kind: "item_exclusion",
+          target: `${a?.name ?? aid} · ${label}`,
+          assessmentId: aid,
+          itemId,
+          state: "Excluded from scoring",
+          excluded: true,
+          decidedBy: who?.name ?? "—",
+          decidedAt: who?.at ?? "",
+          reason: this.reasons.get(`${key}:${itemId}`) ?? null,
+          override: ov ? { by: ov.by, priorActor: ov.priorActor, reason: ov.reason, ts: ov.ts } : null,
+        });
+      }
+    }
+
+    // Manual mark adjustments (the grade-bearing alterations state).
+    for (const adj of this.manualAdjustmentsByCycle.get(cycleId) ?? []) {
+      const a = this.assessment(adj.assessmentId);
+      const who = this.seed.liveCycle.participants.find((p) => p.id === adj.participantId)?.label ?? adj.participantId;
+      const ov = this.adjustmentOverride.get(`${cycleId}:${adj.participantId}:${adj.assessmentId}`);
+      decisions.push({
+        key: `adj:${adj.participantId}:${adj.assessmentId}`,
+        kind: "mark_adjustment",
+        target: `${who} · ${a?.name ?? adj.assessmentId}`,
+        assessmentId: adj.assessmentId,
+        participantId: adj.participantId,
+        state: `${adj.oldMark} → ${adj.newMark} (${adj.delta >= 0 ? "+" : ""}${adj.delta})`,
+        decidedBy: adj.by,
+        decidedAt: adj.ts,
+        reason: adj.reason,
+        override: ov ? { by: ov.by, priorActor: ov.priorActor, reason: ov.reason, ts: ov.ts } : null,
+      });
+    }
+
+    decisions.sort((x, y) => (y.decidedAt ?? "").localeCompare(x.decidedAt ?? ""));
+    return {
+      cycleId,
+      canOverride: this.user.role === "lead_admin" && !this.locked.has(cycleId),
+      decisions,
+      counts: { decisions: decisions.length, overridden: decisions.filter((d) => d.override).length },
+    };
   }
 
   recordExport(cycleId: string, detail: string): void {
