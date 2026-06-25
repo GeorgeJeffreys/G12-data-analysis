@@ -125,6 +125,69 @@ describe("test centres — scoping & labelling", () => {
   });
 });
 
+/** Two centres that BOTH run a 2026 year — for the reassignment conflict. */
+function sameYearTwoCentres(): Seed {
+  const s = twoCentreSeed();
+  // Re-label the prior so centre B also owns a 2026 year (collides on reassignment).
+  s.priorCycles = [{ ...s.priorCycles[0]!, id: "prior-b", name: "May 2026" }];
+  return s;
+}
+
+describe("test centres — year reassignment (0013)", () => {
+  it("an admin moves a year to another centre; result/grade data is untouched", async () => {
+    const p = new InMemoryDataProvider();
+    const liveId = p.listCycles().find((c) => c.live)!.id;
+    const before = p.getCycle(liveId)!;
+    const assessmentId = before.assessments[0]!.id;
+    const rawBefore = p.getRawData(liveId, assessmentId);
+    expect(rawBefore).not.toBeNull();
+
+    // The demo year that contains the live sitting.
+    const demoYear = p.listYears().find((y) => y.may.cycleId === liveId || y.february.cycleId === liveId)!;
+    p.createTestCentre({ name: "Shatila 2", code: "SHA2" });
+    const target = p.listTestCentres().find((c) => c.code === "SHA2")!;
+    expect(demoYear.testCentreId).not.toBe(target.id);
+
+    await p.moveExamYearToCentre(demoYear.id, target.id);
+
+    // The year now reports the new centre, and its sitting still points at the
+    // SAME cycle id — nothing was rebuilt.
+    const moved = p.listYears().find((y) => y.name === demoYear.name && y.testCentreId === target.id);
+    expect(moved).toBeDefined();
+    expect(moved!.testCentreName).toBe("Shatila 2");
+    expect(moved!.may.cycleId ?? moved!.february.cycleId).toBe(liveId);
+
+    // Grade-bearing reads are byte-for-byte identical — pure labelling.
+    expect(p.getRawData(liveId, assessmentId)).toEqual(rawBefore);
+    expect(p.getCycle(liveId)!.participants).toBe(before.participants);
+    expect(p.getCycle(liveId)!.assessments.length).toBe(before.assessments.length);
+  });
+
+  it("a non-admin cannot reassign a year (silent no-op; rejected server-side on live)", async () => {
+    const p = new InMemoryDataProvider(twoCentreSeed(), VIEWER);
+    const yearA = p.listYears().find((y) => y.testCentreId === "tc-a")!;
+    await p.moveExamYearToCentre(yearA.id, "tc-b");
+    expect(p.listYears().find((y) => y.id === yearA.id)!.testCentreId).toBe("tc-a");
+  });
+
+  it("a conflicting reassignment raises the friendly error (centre already runs that year)", async () => {
+    const p = new InMemoryDataProvider(sameYearTwoCentres());
+    const yearA = p.listYears().find((y) => y.testCentreId === "tc-a")!;
+    await expect(p.moveExamYearToCentre(yearA.id, "tc-b")).rejects.toThrow(/already has a 2026 year/i);
+    // The year is left where it was.
+    expect(p.listYears().find((y) => y.id === yearA.id)!.testCentreId).toBe("tc-a");
+  });
+
+  it("reassignment writes an audit entry naming the destination centre", async () => {
+    const p = new InMemoryDataProvider(twoCentreSeed());
+    const yearA = p.listYears().find((y) => y.testCentreId === "tc-a")!;
+    await p.moveExamYearToCentre(yearA.id, "tc-b");
+    const entry = p.getAuditLog(null, "all", "").entries.find((e) => /moved exam year/i.test(e.action) && !e.seeded);
+    expect(entry).toBeDefined();
+    expect(entry!.detail).toContain("Shatila 2");
+  });
+});
+
 describe("test centres — parity for non-centre paths", () => {
   it("the seeded demo year keeps its stable `year-2026` id (route + rollup parity)", () => {
     const p = new InMemoryDataProvider();

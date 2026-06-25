@@ -71,7 +71,7 @@ export default function NewCyclePage() {
             <span className="hf-lbl">Test centre</span>
             {model.testCentres.length === 0 ? (
               <span className="hf-sub" style={{ fontSize: 12 }}>
-                No active test centres. Create one in <strong>Settings › Configuration</strong> before starting a sitting.
+                No active test centres. Create one in <strong>Settings › Test centres</strong> before starting a sitting.
               </span>
             ) : (
               <span className="hf-field" style={{ padding: 0, overflow: "hidden" }}>

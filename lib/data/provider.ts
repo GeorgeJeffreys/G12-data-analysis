@@ -223,6 +223,14 @@ export interface DataProvider {
   updateTestCentre(id: string, patch: { name?: string; code?: string; active?: boolean }): void;
   /** Activate / deactivate a centre (hide from new work without deleting history). */
   setTestCentreActive(id: string, active: boolean): void;
+  /**
+   * 0013 — reassign an exam year to a different centre. `yearId` is the derived
+   * id from `listYears()`. Admin-only (enforced server-side via
+   * move_exam_year_to_centre); rejects on a (name, region, centre) conflict with a
+   * friendly message. Pure labelling — never recomputes the engine or touches
+   * grades. Rejects the returned promise on error so the UI can surface it.
+   */
+  moveExamYearToCentre(yearId: string, testCentreId: string): Promise<void>;
 
   // settings: configuration
   getConfig(): ConfigModel;

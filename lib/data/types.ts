@@ -68,6 +68,10 @@ export interface CycleSummary {
   /** 0010 — the test centre this sitting belongs to (via its year). */
   testCentreId: string;
   testCentreName: string;
+  /** 0013 — the real exam_years.id this sitting groups under (live data only;
+   *  undefined in the demo seed, which has no database year rows). Used to target
+   *  the year-reassignment RPC. */
+  examYearId?: string;
 }
 
 /** Which sitting of a year. "overall" is the derived best-of-two view. */
@@ -105,6 +109,9 @@ export interface YearSummary {
   /** 0010 — the test centre this year belongs to. */
   testCentreId: string;
   testCentreName: string;
+  /** 0013 — the real exam_years.id (live data only; undefined in the demo seed).
+   *  Target of move_exam_year_to_centre when an admin reassigns the year. */
+  examYearId?: string;
   february: SittingRef;
   may: SittingRef;
   /** Distinct participants across the year's sittings (max of the two). */
@@ -123,6 +130,8 @@ export interface YearDetail {
   /** 0010 — the test centre this year belongs to. */
   testCentreId: string;
   testCentreName: string;
+  /** 0013 — the real exam_years.id (live data only; undefined in the demo seed). */
+  examYearId?: string;
   february: SittingRef;
   may: SittingRef;
   /**

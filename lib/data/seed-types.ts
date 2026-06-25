@@ -106,6 +106,10 @@ export interface SeedLiveCycle {
   /** 0010 — the test centre this sitting belongs to (via its year). Optional so
    *  legacy/demo seeds without it still load (defaulted to the primary centre). */
   testCentreId?: string;
+  /** 0013 — the real exam_years.id this sitting groups under (live data only).
+   *  Absent in the demo seed (no database year rows); carried so the Years list
+   *  can target the year-reassignment RPC. */
+  yearId?: string;
   startedAt: string;
   lastActivity: string;
   stageIndex: number;
@@ -132,6 +136,8 @@ export interface SeedPriorCycle {
   name: string;
   /** 0010 — the test centre this sitting belongs to (via its year). */
   testCentreId?: string;
+  /** 0013 — the real exam_years.id this sitting groups under (live data only). */
+  yearId?: string;
   stageIndex: number;
   stepsDone: number;
   participants: number;

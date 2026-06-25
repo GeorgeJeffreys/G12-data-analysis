@@ -465,6 +465,11 @@ export interface Database {
         Args: { p_id: string; p_active: boolean };
         Returns: TestCentreRow;
       };
+      // 0013 — admin-gated reassignment of an exam year onto a different centre.
+      move_exam_year_to_centre: {
+        Args: { p_year_id: string; p_test_centre_id: string };
+        Returns: ExamYearRow;
+      };
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };
       decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };

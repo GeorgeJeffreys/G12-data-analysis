@@ -361,6 +361,11 @@ export class InMemoryDataProvider implements DataProvider {
   // below, which mirror the SECURITY DEFINER RPCs in migration 0010.
   private testCentres: TestCentreSummary[] = [];
   private seq = 0;
+  // 0013 — year reassignments: cycleId → overridden centre id. Held as mutable
+  // decision state (like exclusions/locks) rather than written back onto `seed`,
+  // so the SHARED demo seed module is never mutated (keeps test isolation) and a
+  // reassignment is pure labelling — no result/grade/seed data is rewritten.
+  private cycleCentreOverride = new Map<string, string>();
 
   private user: CurrentUser = {
     id: "m-rana",
@@ -405,6 +410,12 @@ export class InMemoryDataProvider implements DataProvider {
   /** Resolve a cycle's centre by id, falling back to the primary centre. */
   private centreFor(testCentreId?: string): TestCentreSummary {
     return (testCentreId && this.testCentres.find((c) => c.id === testCentreId)) || this.primaryTestCentre();
+  }
+
+  /** A cycle's EFFECTIVE centre id: a 0013 reassignment override if one exists,
+   *  else the centre stored on the seed cycle. */
+  private effectiveCentreId(cycleId: string, seedCentreId?: string): string | undefined {
+    return this.cycleCentreOverride.get(cycleId) ?? seedCentreId;
   }
 
   // ── subscription ──────────────────────────────────────────────────────────
@@ -705,7 +716,7 @@ export class InMemoryDataProvider implements DataProvider {
   // ── cycles ────────────────────────────────────────────────────────────────
   listCycles(): CycleSummary[] {
     const live = this.seed.liveCycle;
-    const liveCentre = this.centreFor(live.testCentreId);
+    const liveCentre = this.centreFor(this.effectiveCentreId(live.id, live.testCentreId));
     const liveSummary: CycleSummary = {
       id: live.id,
       name: live.name,
@@ -720,9 +731,10 @@ export class InMemoryDataProvider implements DataProvider {
       mock: false,
       testCentreId: liveCentre.id,
       testCentreName: liveCentre.name,
+      examYearId: live.yearId,
     };
     const priors: CycleSummary[] = this.seed.priorCycles.map((p) => {
-      const centre = this.centreFor(p.testCentreId);
+      const centre = this.centreFor(this.effectiveCentreId(p.id, p.testCentreId));
       return {
         id: p.id,
         name: p.name,
@@ -737,6 +749,7 @@ export class InMemoryDataProvider implements DataProvider {
         mock: true,
         testCentreId: centre.id,
         testCentreName: centre.name,
+        examYearId: p.yearId,
       };
     });
     return [liveSummary, ...priors];
@@ -755,7 +768,7 @@ export class InMemoryDataProvider implements DataProvider {
         stageIndex: this.locked.has(live.id) ? PIPELINE.length - 1 : live.stageIndex,
         locked: this.locked.has(live.id),
         mock: false,
-        testCentreName: this.centreFor(live.testCentreId).name,
+        testCentreName: this.centreFor(this.effectiveCentreId(live.id, live.testCentreId)).name,
         // Land on the cycle's FIRST INCOMPLETE step — never skip ahead to a
         // screen (Review/Boundaries/…) whose data doesn't exist yet. A locked
         // cycle's work is done, so its next action is document generation; an
@@ -777,7 +790,7 @@ export class InMemoryDataProvider implements DataProvider {
         stageIndex: prior.stageIndex,
         locked: true,
         mock: true,
-        testCentreName: this.centreFor(prior.testCentreId).name,
+        testCentreName: this.centreFor(this.effectiveCentreId(prior.id, prior.testCentreId)).name,
         doNext: { title: "Locked cycle", body: "This is a mock prior cycle with no detailed data in this build.", href: "/", cta: "Back to cycles" },
         assessments: [],
       };
@@ -858,13 +871,14 @@ export class InMemoryDataProvider implements DataProvider {
     name: string;
     testCentreId: string;
     testCentreName: string;
+    examYearId?: string;
     february: SittingRef;
     may: SittingRef;
   }[] {
     const order: string[] = [];
     const byKey = new Map<
       string,
-      { year: string; centre: TestCentreSummary; february?: SittingRef; may?: SittingRef }
+      { year: string; centre: TestCentreSummary; examYearId?: string; february?: SittingRef; may?: SittingRef }
     >();
     const primaryId = this.primaryTestCentre().id;
     for (const c of this.listCycles()) {
@@ -877,6 +891,9 @@ export class InMemoryDataProvider implements DataProvider {
         order.push(key);
       }
       const slot = byKey.get(key)!;
+      // The real exam_years.id (live data) — first cycle in the slot to carry one
+      // wins; all sittings of a (centre, year) share the same year row.
+      if (!slot.examYearId && c.examYearId) slot.examYearId = c.examYearId;
       const ref = this.sittingRefFrom(c, sitting);
       // First write wins per slot; listCycles is newest-first and the live run is
       // first, so the most relevant cycle keeps the slot if names ever collide.
@@ -890,6 +907,7 @@ export class InMemoryDataProvider implements DataProvider {
         name: slot.year,
         testCentreId: slot.centre.id,
         testCentreName: slot.centre.name,
+        examYearId: slot.examYearId,
         february: slot.february ?? this.emptySitting("february", slot.centre.name),
         may: slot.may ?? this.emptySitting("may", slot.centre.name),
       };
@@ -914,6 +932,7 @@ export class InMemoryDataProvider implements DataProvider {
         name: y.name,
         testCentreId: y.testCentreId,
         testCentreName: y.testCentreName,
+        examYearId: y.examYearId,
         february: y.february,
         may: y.may,
         participants: Math.max(y.february.participants, y.may.participants),
@@ -934,6 +953,7 @@ export class InMemoryDataProvider implements DataProvider {
       name: y.name,
       testCentreId: y.testCentreId,
       testCentreName: y.testCentreName,
+      examYearId: y.examYearId,
       february: y.february,
       may: y.may,
       overall: {
@@ -4332,6 +4352,45 @@ export class InMemoryDataProvider implements DataProvider {
     c.active = active;
     this.audit("config", active ? "Activated test centre" : "Deactivated test centre", c.name, null);
     this.bump();
+  }
+
+  /**
+   * 0013 — reassign an exam year to a different centre. Mirrors the SECURITY
+   * DEFINER `move_exam_year_to_centre` RPC: Lead/Admin only (a non-admin is a
+   * silent no-op here; rejected server-side on live data), respects the
+   * (name, region, centre) uniqueness with a friendly conflict message, and is
+   * PURE LABELLING — it only repoints the year's sittings to the new centre
+   * (an override map), so no result/grade row is touched and the engine is not
+   * re-run. `yearId` is the derived year id from `listYears()`.
+   */
+  moveExamYearToCentre(yearId: string, testCentreId: string): Promise<void> {
+    if (this.user.role !== "lead_admin") return Promise.resolve();
+    const years = this.buildYears();
+    const year = years.find((y) => y.id === yearId);
+    if (!year) return Promise.reject(new Error("Exam year not found."));
+    const target = this.testCentres.find((c) => c.id === testCentreId);
+    if (!target) return Promise.reject(new Error("Test centre not found."));
+    // Idempotent: already in the target centre.
+    if (year.testCentreId === testCentreId) return Promise.resolve();
+    // Respect unique (name, region, centre): the target centre must not already
+    // run a year of the same period. Friendly message matches the server RPC.
+    const conflict = years.some(
+      (y) => y.id !== year.id && y.testCentreId === testCentreId && y.name === year.name,
+    );
+    if (conflict) {
+      return Promise.reject(new Error(`centre "${target.name}" already has a ${year.name} year`));
+    }
+    // Repoint every sitting (cycle) in this derived year to the new centre. The
+    // cycle's CycleSummary.testCentreId is already the EFFECTIVE id, so matching
+    // on the year's current centre selects exactly this year's cycles.
+    for (const c of this.listCycles()) {
+      if (this.yearOf(c.name) === year.name && c.testCentreId === year.testCentreId) {
+        this.cycleCentreOverride.set(c.id, testCentreId);
+      }
+    }
+    this.audit("config", "Moved exam year to centre", `${year.name} → ${target.name}`, null);
+    this.bump();
+    return Promise.resolve();
   }
 
   /** Route-safe slug from a centre name, de-duplicated against existing centres. */

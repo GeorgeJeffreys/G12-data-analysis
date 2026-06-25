@@ -687,6 +687,24 @@ export class SupabaseDataProvider implements DataProvider {
     this.bump();
     void this.rpcThenRehydrate("set_test_centre_active", { p_id: id, p_active: active });
   }
+  // 0013 — reassign a year onto another centre. Server-authoritative (the RPC owns
+  // the admin check AND the (name, region, centre) uniqueness), so we call it
+  // FIRST and rethrow its friendly message on failure rather than optimistically
+  // relabelling — a conflict/permission error must surface, not be guessed locally.
+  // The move is pure labelling: no scoring/grade data is read or recomputed.
+  async moveExamYearToCentre(yearId: string, testCentreId: string): Promise<void> {
+    const year = this.inner.listYears().find((y) => y.id === yearId);
+    const realYearId = year?.examYearId;
+    if (!realYearId) {
+      throw new Error("This year can't be reassigned — it has no database record yet.");
+    }
+    const { error } = await this.rpcFn("move_exam_year_to_centre", {
+      p_year_id: realYearId,
+      p_test_centre_id: testCentreId,
+    });
+    if (error) throw new Error(error.message);
+    await this.rehydrate();
+  }
   setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {
     this.inner.setSafeguardConfig(patch);
     this.bump();

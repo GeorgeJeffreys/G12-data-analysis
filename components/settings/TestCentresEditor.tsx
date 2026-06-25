@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Settings › Configuration › Test centres (migration 0010).
+ * Settings › Test centres (migrations 0010 + 0013).
  *
  * Test centres are the top-level scoping dimension: each centre (e.g. "Shatila 1")
  * owns its own exam years and sittings. This section lists every centre and lets
@@ -10,8 +10,9 @@
  *
  * Centre is a partition / labelling key only — nothing here feeds scoring.
  *
- * TODO(P3): the underlying mutations become admin-only when the admin-lock work
- * lands; today they follow the existing config-write pattern (Lead/Admin).
+ * Management is admin-only and enforced SERVER-SIDE: the create/update/set-active
+ * RPCs assert app.is_workspace_admin() (migration 0013), so this client gate is
+ * UX only — a non-admin is rejected at the data layer regardless.
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
@@ -38,11 +39,11 @@ export function TestCentresEditor() {
   return (
     <Card style={{ padding: "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <div className="hf-h2">Test centres</div>
+        <div className="hf-h2">Centres</div>
       </div>
       <div className="hf-sub" style={{ fontSize: 12, marginTop: 3, marginBottom: 14 }}>
-        The top-level scoping dimension. Each centre owns its own exam years and sittings; the same year
-        (e.g. 2026) can run in more than one centre and is aligned later for cross-centre comparison.
+        Each centre owns its own exam years and sittings; the same year (e.g. 2026) can run in more than
+        one centre and is aligned later for cross-centre comparison.
       </div>
 
       <div className="hf-scroll-x">
