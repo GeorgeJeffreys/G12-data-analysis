@@ -989,7 +989,9 @@ export type AuditType =
   | "student"
   | "safeguard"
   /** Workspace settings: quality thresholds, grading vocabulary, roles. */
-  | "config";
+  | "config"
+  /** An authorised user reversing another user's grade-bearing action. */
+  | "override";
 
 export interface AuditEntry {
   id: string;
@@ -1004,11 +1006,61 @@ export interface AuditEntry {
   cycleId: string | null;
   /** True for the seeded illustrative entries (not from this session's actions). */
   seeded: boolean;
+  /** True when this entry is an override of another user's action. */
+  isOverride?: boolean;
+  /** The actor whose action was overridden (display name), when isOverride. */
+  priorActor?: string | null;
+  /** The required reason captured for an override. */
+  reason?: string | null;
 }
 
 export interface AuditModel {
   entries: AuditEntry[];
   total: number;
+}
+
+// --- Audit & overrides view (admin check-in surface) ------------------------
+/**
+ * One grade-bearing decision currently in effect for a cycle, with provenance.
+ * Powers the admin "Audit & overrides" surface: it shows the CURRENT effective
+ * state (not just history) and, where the current state is the result of an
+ * override, who overrode whom and why — so nothing looks silently changed.
+ */
+export interface EffectiveDecision {
+  /** Stable key for the row + the override control. */
+  key: string;
+  /** What kind of grade-bearing action this is. */
+  kind: "item_exclusion" | "mark_adjustment";
+  /** Human label for the target (e.g. "English 2nd Lang · Q23"). */
+  target: string;
+  assessmentId: string;
+  /** The item id (item_exclusion) — the override control needs it. */
+  itemId?: string;
+  /** The participant id (mark_adjustment). */
+  participantId?: string;
+  /** Current effective state, in words (e.g. "Excluded", "+2 marks"). */
+  state: string;
+  /** Whether the item is currently excluded (item_exclusion only). */
+  excluded?: boolean;
+  /** Who set the current state, and when. */
+  decidedBy: string;
+  decidedAt: string;
+  reason: string | null;
+  /** Present when the current state is the result of an override. */
+  override?: {
+    by: string;
+    priorActor: string | null;
+    reason: string;
+    ts: string;
+  } | null;
+}
+
+export interface OverrideViewModel {
+  cycleId: string;
+  /** Whether the signed-in user may override (lead_admin). */
+  canOverride: boolean;
+  decisions: EffectiveDecision[];
+  counts: { decisions: number; overridden: number };
 }
 
 export type AuditFilter = "all" | "exclude" | "boundary" | "lock" | "export";

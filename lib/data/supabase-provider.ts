@@ -47,6 +47,7 @@ import type {
   CompareCyclesModel,
   AuditFilter,
   AuditModel,
+  OverrideViewModel,
   ConfigModel,
   CreateCycleInput,
   CurrentUser,
@@ -312,6 +313,7 @@ export class SupabaseDataProvider implements DataProvider {
   getConfig(): ConfigModel { return this.inner.getConfig(); }
   getScoringConfig(): ScoringConfig { return this.inner.getScoringConfig(); }
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
+  getOverrideView(cycleId: string): OverrideViewModel { return this.inner.getOverrideView(cycleId); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
   getAnalyticsCompare(): AnalyticsCompare { return this.inner.getAnalyticsCompare(); }
   getCompareCycles(cycleIds?: string[]): CompareCyclesModel { return this.inner.getCompareCycles(cycleIds); }
@@ -620,6 +622,34 @@ export class SupabaseDataProvider implements DataProvider {
         p_assessment: rec.assessmentId,
       });
     }
+  }
+
+  // overrides — optimistic local apply (the inner provider holds the real session
+  // user, so authorization is mirrored locally) + the admin-only SECURITY DEFINER
+  // override RPC, which re-checks lead_admin server-side and writes the override
+  // audit row. The override re-applies the SAME effective state the original
+  // action used, so the grade recomputes through the full engine (incl. D3).
+  overrideItemExclusion(cycleId: string, assessmentId: string, itemId: string, exclude: boolean, reason: string): void {
+    this.inner.overrideItemExclusion(cycleId, assessmentId, itemId, exclude, reason);
+    this.bump();
+    void this.rpcFn("override_item_exclusion", { p_item: itemId, p_exclude: exclude, p_reason: reason }).then(({ error }) => {
+      // eslint-disable-next-line no-console
+      if (error) console.error("RPC override_item_exclusion failed:", error.message);
+    });
+  }
+  overrideMarkAdjustment(cycleId: string, participantId: string, assessmentId: string, newMark: number | null, reason: string): void {
+    this.inner.overrideMarkAdjustment(cycleId, participantId, assessmentId, newMark, reason);
+    this.bump();
+    void this.rpcFn("override_mark_adjustment", {
+      p_cycle: cycleId,
+      p_participant: participantId,
+      p_assessment: assessmentId,
+      p_new_mark: newMark,
+      p_reason: reason,
+    }).then(({ error }) => {
+      // eslint-disable-next-line no-console
+      if (error) console.error("RPC override_mark_adjustment failed:", error.message);
+    });
   }
 
   // configuration blobs
