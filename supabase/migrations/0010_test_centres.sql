@@ -277,6 +277,9 @@ begin
     end if;
     -- Passing a year under one centre together with a DIFFERENT centre is a
     -- caller bug: fail loudly rather than silently attaching to the year's centre.
+    -- The current UI never reaches this (createCycle passes only p_test_centre_id,
+    -- never p_year_id); this guards future callers that pass BOTH — e.g. a re-run
+    -- against an existing year, or an admin/bulk import path.
     if p_test_centre_id is not null and p_test_centre_id <> v_centre then
       raise exception 'test_centre_id % conflicts with year %''s centre %',
         p_test_centre_id, v_year_id, v_centre;
