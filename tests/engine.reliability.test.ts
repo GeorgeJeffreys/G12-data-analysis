@@ -134,13 +134,12 @@ describe("computeReliability — grouping by construct tag", () => {
     expect(subjects.find((s) => s.assessmentId === "S2")!.k).toBe(2);
   });
 
-  it("groups by major element and sub-element from the tags present", () => {
+  it("groups by major element from the tags present, but not sub-element (removed as noise)", () => {
     const majors = g((x) => x.level === "majorElement");
     expect(majors).toHaveLength(1); // only S1 has majors
     expect(majors[0]!.k).toBe(3); // i1,i2,i3
-    const subs = g((x) => x.level === "subElement");
-    expect(subs.map((s) => s.label).sort()).toEqual(["Add", "Mul"]);
-    expect(subs.find((s) => s.label === "Add")!.k).toBe(2);
+    // sub-element α was removed as non-actionable — no subElement groups are produced
+    expect(g((x) => x.level === "subElement")).toHaveLength(0);
   });
 
   it("groups by demand level within each subject, excluding untagged items", () => {

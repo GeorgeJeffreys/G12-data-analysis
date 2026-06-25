@@ -2657,7 +2657,10 @@ export class InMemoryDataProvider implements DataProvider {
         assessmentId: d.assessmentId,
         assessmentName: d.assessmentName,
         shortName: shortOf.get(d.assessmentId) ?? d.assessmentName,
-        groups: d.groups,
+        whole: d.whole,
+        byDemand: d.byDemand,
+        byItemSet: d.byItemSet,
+        omissionByPosition: d.omissionByPosition,
       })),
     };
   }

@@ -53,6 +53,21 @@ export function parseDemandLevel(metaTags: unknown): DemandLevel | null {
 }
 
 /**
+ * Parse the item-set name (a shared stimulus/passage grouping) out of MetaTags.
+ * Questionmark tags these subject-prefixed, e.g. "ESL Item Sets==Calm your mind
+ * book review" or "ST Item Sets==Koch-curve"; the sentinel value "None" means the
+ * item belongs to no set and yields null. The value runs to the next `||`.
+ */
+export function parseItemSet(metaTags: unknown): string | null {
+  if (typeof metaTags !== "string") return null;
+  const m = metaTags.match(/Item Sets?==\s*([^|]+)/i);
+  if (!m) return null;
+  const value = repairText(m[1]!).trim();
+  if (!value || /^none$/i.test(value)) return null;
+  return value;
+}
+
+/**
  * Derive major and sub element from a backslash-delimited QuestionTopicPath.
  * The first segment is the assessment/subject; the next two are major and sub.
  * e.g. "Applicable Math\Numerical and quantitative reasoning\Applying …"
@@ -153,6 +168,7 @@ export function normalizeResponses(rows: readonly RawExportRow[]): NormalizeResu
       majorElement: major,
       subElement: sub,
       demandLevel: parseDemandLevel(row["MetaTags"]),
+      itemSet: parseItemSet(row["MetaTags"]),
       questionType,
       maxScore: toNumber(row["QuestionMaximumScore"], 1) ?? 1,
       answerGiven: repairValue(row["AnswerGiven"]) as string | null,

@@ -18,12 +18,11 @@ import type {
   Seed,
   SeedAssessment,
   SeedAssessmentDiagnostics,
-  SeedDiagGroup,
   SeedItem,
   SeedResponse,
   SeedTechnicalIncident,
 } from "../lib/data/seed-types";
-import { speededness, timingPerformance, groupBy, type DiagResponse } from "../lib/diagnostics";
+import { buildAssessmentDiagnostics, type DiagResponse } from "../lib/diagnostics";
 import { isTechnicalIncidentStatus } from "../lib/data/result-status";
 
 const engine = getEngine();
@@ -109,19 +108,14 @@ function main() {
     const diagRecs: DiagResponse[] = recs.map((r) => ({
       participantId: r.participantPseudonym,
       itemId: r.qmQuestionId,
-      majorElement: r.majorElement,
+      demandLevel: r.demandLevel,
+      itemSet: r.itemSet,
       order: itemOrder.get(r.qmQuestionId)!,
       answered: !!r.answerGiven,
       correct: r.answerScore === 1,
       responseTime: r.responseTime,
     }));
-    const diagGroups: SeedDiagGroup[] = [
-      { key: "Overall", speeded: speededness(diagRecs), timing: timingPerformance(diagRecs) },
-    ];
-    for (const [el, sub] of groupBy(diagRecs, (r) => r.majorElement)) {
-      diagGroups.push({ key: el, speeded: speededness(sub), timing: timingPerformance(sub) });
-    }
-    diagnosticsRaw.push({ assessmentId, assessmentName: info.name, groups: diagGroups, _order: info.order });
+    diagnosticsRaw.push({ assessmentId, assessmentName: info.name, ...buildAssessmentDiagnostics(diagRecs), _order: info.order });
 
     // Distinct items (first occurrence) with metadata.
     const itemMetaMap = new Map<string, ItemMeta>();

@@ -6,7 +6,7 @@
 
 import type { QualityRating } from "@/lib/engine";
 import type { PerCutSuggestion } from "@/lib/engine/cut-scores";
-import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
+import type { AssessmentDiagnostics } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { SeedPreview } from "./seed-types";
 
@@ -397,17 +397,16 @@ export interface AdjustmentsModel {
 }
 
 // --- Diagnostics (speededness & timing — informational) ----------------------
-export interface DiagnosticsGroup {
-  /** "Overall" or a major-element name. */
-  key: string;
-  speeded: SpeededResult;
-  timing: TimingResult;
-}
-export interface DiagnosticsAssessment {
+/**
+ * Diagnostics for one assessment. A single whole-assessment speededness + timing
+ * measure (`whole`), a demand-level speededness lens (`byDemand`), and omission
+ * rate by item position (`omissionByPosition`). Element/construct breakdowns were
+ * removed as non-actionable.
+ */
+export interface DiagnosticsAssessment extends AssessmentDiagnostics {
   assessmentId: string;
   assessmentName: string;
   shortName: string;
-  groups: DiagnosticsGroup[];
 }
 export interface DiagnosticsModel {
   cycleId: string;

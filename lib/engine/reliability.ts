@@ -134,10 +134,11 @@ interface GroupSpec {
 
 /**
  * Compute Cronbach's α at every grouping driven by the items' construct tags:
- * overall exam, per subject, per major element, per sub-element, per demand
- * level, and per context (only where a context tag exists). Groups are built from
- * whatever tags are present — nothing about element/demand/context counts is
- * hard-coded.
+ * overall exam, per subject, per major element, per demand level, and per
+ * context (only where a context tag exists). Groups are built from whatever tags
+ * are present — nothing about element/demand/context counts is hard-coded.
+ * (Sub-element α was dropped: at this cohort size it is essentially noise and is
+ * not actionable.)
  */
 export function computeReliability(
   responses: readonly ResponseRecord[],
@@ -187,13 +188,11 @@ export function computeReliability(
     push("overall", null, "overall", "Overall exam", itemId);
     // per subject
     push("subject", assessmentId, `subject|${assessmentId}`, assessmentId, itemId);
-    // per major element (within subject)
+    // per major element (within subject). Sub-element α was removed as
+    // non-actionable noise: at this cohort size α over a handful of sub-element
+    // items is essentially meaningless, and nothing is done per sub-element.
     if (m?.majorElement) {
       push("majorElement", assessmentId, `major|${assessmentId}|${m.majorElement}`, m.majorElement, itemId);
-      // per sub-element (within major, within subject)
-      if (m.subElement) {
-        push("subElement", assessmentId, `sub|${assessmentId}|${m.majorElement}|${m.subElement}`, m.subElement, itemId);
-      }
     }
     // per demand level (within subject)
     if (m?.demandLevel) {

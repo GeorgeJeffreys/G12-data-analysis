@@ -29,6 +29,7 @@ function sampleRecs(): CleanResponse[] {
     majorElement: null,
     subElement: null,
     demandLevel: null,
+    itemSet: null,
     questionType: "MCQ",
     maxScore: 1,
     answerGiven: "A",

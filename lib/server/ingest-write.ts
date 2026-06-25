@@ -148,6 +148,7 @@ export async function ingestCleanResponses(
       major_element: r.majorElement,
       sub_element: r.subElement,
       demand_level: r.demandLevel,
+      item_set: r.itemSet,
       max_score: r.maxScore ?? 1,
       // Richer intake (0006): QuestionType, QuestionStatus (Beta/Normal —
       // informational), and the topic name/path. Null when no canonical model.

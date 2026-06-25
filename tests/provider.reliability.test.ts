@@ -38,10 +38,13 @@ describe("getReliability read-model", () => {
     }
   });
 
-  it("omits context α (no context tags in this data) but provides demand groups", () => {
+  it("omits context α (no context tags in this data) and sub-element α (removed as noise) but provides demand groups", () => {
     expect(model.rows.some((r) => r.level === "context")).toBe(false);
     expect(model.rows.some((r) => r.level === "demandLevel")).toBe(true);
-    expect(model.rows.some((r) => r.level === "subElement")).toBe(true);
+    // sub-element α was removed as non-actionable noise
+    expect(model.rows.some((r) => r.level === "subElement")).toBe(false);
+    // major-element α is retained
+    expect(model.rows.some((r) => r.level === "majorElement")).toBe(true);
   });
 
   it("drops cohort-excluded items from the usable set (overall k decreases)", () => {
