@@ -19,6 +19,8 @@ export type CycleStatus =
 export type AssessmentStatus = "pending" | "in_review" | "reviewed" | "scored";
 export type ItemStatus = "active" | "excluded";
 export type MemberRole = "lead_admin" | "reviewer" | "viewer";
+/** 0010 — workspace-global governance role (admin gates cut-score edits). */
+export type AppRole = "admin" | "user";
 export type QualityRating = "Good" | "Review" | "Flag";
 export type DemandLevel = "D1" | "D2" | "D3";
 export type SchemeMethod = "judgemental" | "fixed_pct";
@@ -296,6 +298,15 @@ export interface WorkspaceSettingRow {
   updated_at: string;
 }
 
+// 0010 — workspace-global user roles. One row per auth user; `role` defaults to
+// 'user'. Only admins may write (RLS); reads are own-row or admin.
+export interface ProfileRow {
+  user_id: string;
+  role: AppRole;
+  created_at: string;
+  updated_at: string;
+}
+
 // --- Helper to describe a table to the Supabase client -----------------------
 type TableDef<Row, Insert, Update> = {
   Row: Row;
@@ -403,6 +414,9 @@ export interface Database {
       distinction_overrides: TableDef<DistinctionOverrideRow, never, never>;
       document_settings: TableDef<DocumentSettingsRow, never, never>;
       workspace_settings: TableDef<WorkspaceSettingRow, never, never>;
+      // 0010 — global roles. Writes flow through the set_user_role RPC / the
+      // bootstrap seed; RLS restricts them to admins, so no client Insert/Update.
+      profiles: TableDef<ProfileRow, never, never>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -435,6 +449,8 @@ export interface Database {
       set_import_validation: { Args: { p_batch: string; p_passed: boolean; p_report: unknown }; Returns: undefined };
       record_export: { Args: { p_cycle: string; p_kind: string }; Returns: undefined };
       save_grade_scheme: { Args: { p_cycle: string; p_scope: string; p_method: SchemeMethod; p_bands: unknown }; Returns: GradeSchemeRow };
+      // 0010 — admin-only global role assignment.
+      set_user_role: { Args: { p_user: string; p_role: AppRole }; Returns: ProfileRow };
       // 0003
       write_scores: { Args: { p_cycle: string; p_engine_version: string; p_runs: unknown }; Returns: undefined };
       upsert_essay_marks: { Args: { p_cycle: string; p_file_ref: string | null; p_marks: unknown }; Returns: undefined };

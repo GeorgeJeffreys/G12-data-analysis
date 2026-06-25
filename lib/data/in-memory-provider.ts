@@ -353,6 +353,10 @@ export class InMemoryDataProvider implements DataProvider {
     name: "Rana Mansour",
     initials: "RM",
     role: "lead_admin",
+    // Demo user is a global admin so role-gated governance (cut-score editing)
+    // is exercised in the no-auth demo. The SupabaseDataProvider injects the
+    // real session-derived user (isAdmin from `profiles`) via the constructor.
+    isAdmin: true,
   };
 
   /**
