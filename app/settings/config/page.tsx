@@ -15,6 +15,7 @@
  * actually reads; everything the engine fixes by policy is labelled DISPLAY-ONLY.
  */
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
@@ -26,6 +27,7 @@ import { QualityThresholdsEditor } from "@/components/settings/QualityThresholds
 import { TestCentresEditor } from "@/components/settings/TestCentresEditor";
 import { POLICY_GUARDRAILS, POLICY_BAND_RANGES, DEFAULT_POLICY_TARGETS } from "@/lib/engine/cut-scores";
 import { LOW_ITEMS_THRESHOLD, SMALL_SAMPLE_THRESHOLD } from "@/lib/engine/reliability";
+import { BORDERLINE_BAND_MIN, BORDERLINE_BAND_MAX, isValidBorderlineBand } from "@/lib/data/grading";
 
 export default function ConfigPage() {
   const provider = useProvider();
@@ -85,6 +87,25 @@ export default function ConfigPage() {
             <span className="hf-sub" style={{ textAlign: "right", maxWidth: 360 }}>
               D3 items answered <strong>correctly</strong> (not attempted), against the items <strong>available</strong>
               {" "}(not attempted). A single exam below its majority caps the award to the next tier.
+            </span>
+          </Row>
+        </SectionCard>
+
+        {/* Borderline (marginal) flagging band — EDITABLE, grade-bearing. The engine
+            reads this when flagging students just below a grade boundary; editing
+            it re-flags through the full grade recompute (incl. the D3 safeguard). */}
+        <SectionCard
+          title="Borderline (marginal) flagging"
+          sub="How close to a grade boundary a student must be to be flagged 'marginal' on the Grades screen. Measured as a symmetric percentage band (±%) around each threshold — fairer than a raw item count, which is harsher in subjects with fewer items. The flag drives the marginal filter and the suggested mark adjustment."
+        >
+          <BorderlineBandRow
+            value={config.borderline.bandPct}
+            onCommit={(pct) => provider.setBorderlineConfig({ bandPct: pct })}
+          />
+          <Row label="Pending G12 policy" last>
+            <span className="hf-sub" style={{ textAlign: "right", maxWidth: 360 }}>
+              <strong>±2% is a placeholder</strong> until G12 confirms the policy value — edit it above. Bounds:
+              {" "}{BORDERLINE_BAND_MIN}–{BORDERLINE_BAND_MAX}%. The value is validated again server-side before it is saved.
             </span>
           </Row>
         </SectionCard>
@@ -230,5 +251,49 @@ function Row({ label, children, last }: { label: string; children: ReactNode; la
 function DisplayValue({ children }: { children: ReactNode }) {
   return (
     <span className="hf-sub" style={{ fontSize: 12, textAlign: "right", maxWidth: 380, color: H.ink2 }}>{children}</span>
+  );
+}
+
+/**
+ * Editable borderline-band (±%) control. Holds local text while editing, validates
+ * numerically against the bounds, and commits a clamped value on blur / Enter. The
+ * commit is the grade-bearing write — the engine re-flags through the full recompute.
+ */
+function BorderlineBandRow({ value, onCommit }: { value: number; onCommit: (pct: number) => void }) {
+  const [text, setText] = useState<string | null>(null);
+  const shown = text ?? String(value);
+  const parsed = Number(shown);
+  const invalid = shown.trim() === "" || Number.isNaN(parsed) || !isValidBorderlineBand(parsed);
+  const commit = () => {
+    if (!invalid) onCommit(parsed);
+    setText(null); // fall back to the (clamped) live value
+  };
+  return (
+    <Row label="Borderline band (±%)">
+      <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="hf-sub" style={{ fontSize: 12 }}>±</span>
+          <input
+            className="hf-input"
+            style={{ width: 64, textAlign: "right", borderColor: invalid ? H.pink : undefined }}
+            value={shown}
+            inputMode="decimal"
+            aria-label="Borderline band, percent"
+            aria-invalid={invalid}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+            }}
+          />
+          <span className="hf-sub" style={{ fontSize: 12 }}>%</span>
+        </span>
+        {invalid && (
+          <span style={{ fontSize: 10.5, color: H.pink }}>
+            Enter a number between {BORDERLINE_BAND_MIN} and {BORDERLINE_BAND_MAX}.
+          </span>
+        )}
+      </span>
+    </Row>
   );
 }

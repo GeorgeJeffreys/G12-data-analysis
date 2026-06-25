@@ -54,6 +54,7 @@ import type {
   RolesModel,
   BoundaryModel,
   BrandingConfig,
+  BorderlineConfig,
   StudentReviewModel,
   DistinctionSafeguardModel,
   EssayMarksModel,
@@ -365,6 +366,9 @@ export interface DataProvider {
   setRetention(patch: Partial<RetentionConfig>): void;
   setBranding(patch: Partial<BrandingConfig>): void;
   setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void;
+  /** Set the borderline (marginal) flagging band (percentage points). Grade-bearing:
+   *  re-flags through the full grade recompute (incl. the D3 safeguard). */
+  setBorderlineConfig(patch: Partial<BorderlineConfig>): void;
 
   // audit-writing actions (UI-driven export / document generation)
   recordExport(cycleId: string, detail: string): void;

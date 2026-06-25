@@ -20,7 +20,7 @@ import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { InlineComposition } from "@/components/ui/composition";
-import { AWARD_SHORT, MARGINAL_MARK_THRESHOLD } from "@/lib/data/grading";
+import { AWARD_SHORT } from "@/lib/data/grading";
 import type { GradeCell, GradesModel, StudentComposition, SubjectComposition, PerfReportStudent, PerfReportSubject, PerfElementResult, DemandScore } from "@/lib/data/types";
 
 export default function GradesPage({ params }: { params: { cycleId: string } }) {
@@ -29,6 +29,8 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const model = useProviderData((p) => p.getGrades(cycleId), [cycleId]);
   const comp = useProviderData((p) => p.getComposition(cycleId), [cycleId]);
   const perf = useProviderData((p) => p.getPerformanceReport(cycleId), [cycleId]);
+  // The live borderline (marginal) band (percentage points), from Settings config.
+  const borderlineBand = useProviderData((p) => p.getConfig().borderline.bandPct);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   // A sitting's year-Overall surface, where certificates/reports are generated from
   // the best-of-two award. The year id mirrors the provider's `year-${YYYY}` scheme
@@ -157,7 +159,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
             type="button"
             onClick={() => setOnlyMarginal((v) => !v)}
             aria-pressed={onlyMarginal}
-            title={`Show only students within ${MARGINAL_MARK_THRESHOLD} marks below a grade boundary`}
+            title={`Show only students within ${borderlineBand}% below a grade boundary`}
             style={{
               display: "inline-flex",
               alignItems: "center",
@@ -259,7 +261,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
                 {visibleRows.length === 0 && (
                   <tr>
                     <td className="hf-td" colSpan={model.assessments.length + 2} style={{ textAlign: "center", color: H.ink3, padding: 18 }}>
-                      No marginal students — nobody is within {MARGINAL_MARK_THRESHOLD} mark{MARGINAL_MARK_THRESHOLD === 1 ? "" : "s"} below a grade boundary.
+                      No marginal students — nobody is within {borderlineBand}% below a grade boundary.
                     </td>
                   </tr>
                 )}

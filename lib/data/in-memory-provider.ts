@@ -73,6 +73,7 @@ import {
   type BoundaryModel,
   type D3HalfWarning,
   type BrandingConfig,
+  type BorderlineConfig,
   type ConfigModel,
   type CompareColumn,
   type CreateCycleInput,
@@ -152,7 +153,8 @@ import {
   type GradingConfig,
   DEFAULT_PERFORMANCE_TARGETS,
   DEFAULT_AWARD_TARGETS,
-  MARGINAL_MARK_THRESHOLD,
+  DEFAULT_BORDERLINE_BAND_PCT,
+  clampBorderlineBand,
 } from "./grading";
 import {
   ALL_CAPABILITY_IDS,
@@ -328,6 +330,10 @@ export class InMemoryDataProvider implements DataProvider {
     distinctionThreshold: 3,
     topDifficultyDemand: "",
   };
+  // Borderline (marginal) flagging band, in percentage points. Grade-bearing
+  // input the grade recompute reads (see marginalInfo); editable via Settings.
+  // Default is the ±2% placeholder pending G12's policy value.
+  private borderline: BorderlineConfig = { bandPct: DEFAULT_BORDERLINE_BAND_PCT };
 
   // admin / audit / config state (all MOCK — see lib/data/mock-admin.ts)
   private members: Member[] = defaultMembers();
@@ -569,31 +575,43 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   /**
-   * Raw marks a student's subject score sits below the cut for the NEXT grade up,
-   * with that grade's level — or null when the student is not within
-   * `MARGINAL_MARK_THRESHOLD` raw marks of any boundary (3+ marks below, or
-   * already at the top band). Cuts are percentages, so each is converted to raw
-   * marks of THIS subject's max (so "2 marks" means marks, not points).
+   * Borderline detection for one subject score: is the student within the
+   * configurable borderline band (`this.borderline.bandPct`, in PERCENTAGE
+   * POINTS) below the cut for the NEXT grade up? Returns the gap to that cut in
+   * both percentage points (`pctToNext`, the flagging unit) and raw marks
+   * (`marksToNext`, kept so the adjustment dialog can pre-fill the upward bump) —
+   * or null when the student is farther than the band below every boundary, or is
+   * already at the top band.
+   *
+   * Percentage flagging is fairer than the old raw-item-count rule: a fixed mark
+   * count meant wildly different leniencies across subjects with different item
+   * totals; a % band is consistent and is measured in the same % space the cuts
+   * (and `classify`) live in. The band is symmetric about the threshold; we flag
+   * the just-below side, which is what feeds the "nudge them over" workflow.
    */
   private marginalInfo(
     score: ParticipantScore,
     cuts: number[],
     levels: string[],
-  ): { marksToNext: number; nextLevel: string } | null {
-    const { raw, max } = score;
+  ): { marksToNext: number; pctToNext: number; nextLevel: string } | null {
+    const { raw, max, pct } = score;
     if (max <= 0) return null;
-    // cuts are descending (best → lowest); the next grade up is the CLOSEST cut
-    // strictly above the student's raw — i.e. the lowest boundary they have not
-    // yet cleared. Iterating from the lowest cut upward, the first cut above them
-    // is that closest boundary.
+    const band = this.borderline.bandPct;
+    if (!(band > 0)) return null; // a band of 0 disables borderline flagging
+    // cuts are descending percentages (best → lowest); the next grade up is the
+    // CLOSEST cut strictly above the student's % — the lowest boundary they have
+    // not yet cleared. Iterating from the lowest cut upward, the first cut above
+    // them is that closest boundary. Measuring in % keeps this consistent with
+    // `classify`, which bands on the same `pct`.
     for (let i = cuts.length - 1; i >= 0; i--) {
-      const cutRaw = (cuts[i]! / 100) * max;
-      if (cutRaw > raw) {
-        const marksBelow = cutRaw - raw;
-        if (marksBelow > 0 && marksBelow <= MARGINAL_MARK_THRESHOLD) {
-          return { marksToNext: round(marksBelow, 2), nextLevel: levels[i] ?? "" };
+      const cutPct = cuts[i]!;
+      if (cutPct > pct) {
+        const pctBelow = cutPct - pct;
+        if (pctBelow > 0 && pctBelow <= band) {
+          const cutRaw = (cutPct / 100) * max;
+          return { marksToNext: round(cutRaw - raw, 2), pctToNext: round(pctBelow, 2), nextLevel: levels[i] ?? "" };
         }
-        return null; // closest boundary above is farther than the threshold
+        return null; // closest boundary above is farther than the band
       }
     }
     return null; // already at/above the top cut — no grade up to miss
@@ -1644,12 +1662,15 @@ export class InMemoryDataProvider implements DataProvider {
         const level = sc === undefined ? "" : classify(sc.pct, perfLevels, cuts);
         const cell: GradeCell = { level, stars: starsFor(level, this.grading.starMap) };
         if (sc) {
-          // Flag students within MARGINAL_MARK_THRESHOLD raw marks below the next
-          // grade-up cut — the small-adjustment-would-change-the-grade cases.
+          // Flag students within the configurable borderline band (percentage
+          // points) below the next grade-up cut — the small-adjustment-would-
+          // change-the-grade cases. Runs in the SAME getGrades pass as deriveAward
+          // + the D3 cap, so re-flagging recomputes through the full engine path.
           const marg = this.marginalInfo(sc, cuts, perfLevels);
           if (marg) {
             cell.marginal = true;
             cell.marksToNext = marg.marksToNext;
+            cell.pctToNext = marg.pctToNext;
             cell.nextLevel = marg.nextLevel;
           }
           const adj = this.manualAdjustmentFor(cycleId, p.id, a.id);
@@ -2703,6 +2724,18 @@ export class InMemoryDataProvider implements DataProvider {
             for (const id of g.ids) score += scoreByPI.get(`${pid}␟${id}`) ?? 0;
             return { demand: d, score: round(score, 2), max: g.max };
           });
+        // Per-subject D3 CORRECT % (display-only, Part A). Of the retained D3 items
+        // on this subject, how many this student answered correctly (score > 0)
+        // out of how many were available — the same "correct, not attempted /
+        // available, not attempted" definition the safeguard uses, but broken down
+        // per subject for the Score table. Does NOT touch the D3 majority cap.
+        let subjectD3: { correct: number; available: number; pct: number | null } | null = null;
+        if (d3Group && d3Group.ids.size > 0) {
+          let correct = 0;
+          for (const id of d3Group.ids) if ((scoreByPI.get(`${pid}␟${id}`) ?? 0) > 0) correct += 1;
+          const available = d3Group.ids.size;
+          subjectD3 = { correct, available, pct: round((correct / available) * 100, 1) };
+        }
         const list = byP.get(pid) ?? [];
         list.push({
           assessmentId: a.id,
@@ -2715,6 +2748,7 @@ export class InMemoryDataProvider implements DataProvider {
           max: s.max,
           pct: s.pct,
           byDemand,
+          d3: subjectD3,
           adjustment: this.manualAdjustmentFor(cycleId, pid, a.id) ?? null,
         });
         byP.set(pid, list);
@@ -3598,12 +3632,28 @@ export class InMemoryDataProvider implements DataProvider {
         topDifficultyDemand: this.resolveTopDifficulty(),
         demandLevels: this.allDemandLevels(),
       },
+      borderline: { ...this.borderline },
     };
   }
 
   getScoringConfig(): ScoringConfig {
     return this.scoringConfig();
   }
+
+  /**
+   * Set the borderline (marginal) flagging band (percentage points). Grade-bearing
+   * config: invalid/out-of-range values are clamped (defence in depth — the
+   * Supabase RPC also validates server-side), and a change re-flags through the
+   * full grade recompute on the next read (marginalInfo runs inside getGrades).
+   */
+  setBorderlineConfig(patch: Partial<BorderlineConfig>): void {
+    if (this.user.role !== "lead_admin") return;
+    if (patch.bandPct == null || !Number.isFinite(patch.bandPct)) return;
+    this.borderline = { bandPct: clampBorderlineBand(patch.bandPct) };
+    this.audit("config", "Updated borderline flagging band", `±${this.borderline.bandPct}% around each grade boundary`, null);
+    this.bump();
+  }
+
   setRetention(patch: Partial<RetentionConfig>): void {
     this.retention = { ...this.retention, ...patch };
     this.bump();

@@ -75,6 +75,7 @@ import type {
   RolesModel,
   BoundaryModel,
   BrandingConfig,
+  BorderlineConfig,
   StudentReviewModel,
   DistinctionSafeguardModel,
   EssayMarksModel,
@@ -230,6 +231,7 @@ export class SupabaseDataProvider implements DataProvider {
     if (w.retention) p.setRetention(w.retention as Partial<RetentionConfig>);
     if (w.branding) p.setBranding(w.branding as Partial<BrandingConfig>);
     if (w.safeguard) p.setSafeguardConfig(w.safeguard as { distinctionThreshold?: number; topDifficultyDemand?: string });
+    if (w.borderline) p.setBorderlineConfig(w.borderline as Partial<BorderlineConfig>);
   }
 
   // ── RPC helpers ────────────────────────────────────────────────────────
@@ -659,6 +661,13 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.setSafeguardConfig(patch);
     this.bump();
     this.rpc("set_workspace_setting", { p_key: "safeguard", p_value: patch });
+  }
+  setBorderlineConfig(patch: Partial<BorderlineConfig>): void {
+    // Optimistic local update (clamped in the inner provider), then persist via the
+    // SECURITY DEFINER RPC, which re-validates the band server-side before writing.
+    this.inner.setBorderlineConfig(patch);
+    this.bump();
+    this.rpc("set_workspace_setting", { p_key: "borderline", p_value: patch });
   }
 
   // audit-writing actions

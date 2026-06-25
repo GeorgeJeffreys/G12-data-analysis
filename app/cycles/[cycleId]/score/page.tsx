@@ -84,9 +84,10 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
           <span className="hf-h2" style={{ fontSize: 16 }}>Computed scores</span>
           <span className="hf-sub" style={{ fontSize: 12, maxWidth: 660 }}>
             Final post-adjustment scores per student — the numbers boundaries are set against. Each subject cell shows
-            raw/max and %; hover for the MCQ + Essay + Alterations breakdown. The last two columns are display-only
-            signals (D3 questions attempted, technical incidents). There is no sitting “Overall” here — the final
-            Overall is the best of February + May at the year level.
+            raw/max and %, plus that subject’s D3 (top-difficulty) correct % beneath; hover for the MCQ + Essay +
+            Alterations breakdown. The last two columns are display-only signals (D3 questions attempted, technical
+            incidents). There is no sitting “Overall” here — the final Overall is the best of February + May at the
+            year level.
           </span>
           <div style={{ flex: 1, minWidth: 12 }} />
           <ZoomControl zoom={zoom} onZoom={setZoom} />

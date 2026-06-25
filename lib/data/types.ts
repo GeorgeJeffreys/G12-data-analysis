@@ -482,6 +482,14 @@ export interface SubjectComposition {
   /** Retained-MCQ score split by demand level (D1/D2/D3), in fixed order. */
   byDemand: DemandScore[];
   /**
+   * Per-subject top-difficulty (D3) correctness — display-only. Of the retained
+   * D3 items on THIS subject, how many the student answered correctly (score > 0)
+   * out of how many were available. `pct` is null when the subject carries no D3
+   * items. This is a reporting breakdown; it does NOT change the D3 majority cap
+   * (which stays per-exam aggregate — see open G12 decision #2 in the PR notes).
+   */
+  d3?: { correct: number; available: number; pct: number | null } | null;
+  /**
    * The active manual mark adjustment on this subject, if any — surfaced so the
    * manual delta (already folded into `alterations`) and its reason are visible
    * in the breakdown rather than hidden.
@@ -718,13 +726,15 @@ export interface GradeCell {
   level: string;
   stars: string;
   /**
-   * True when the subject score is within MARGINAL_MARK_THRESHOLD raw marks below
-   * the cut for the next grade up — the student just missed it, and a small
-   * upward mark adjustment would change the grade.
+   * True when the subject score is within the configurable borderline band
+   * (percentage points) below the cut for the next grade up — the student just
+   * missed it, and a small upward mark adjustment would change the grade.
    */
   marginal?: boolean;
   /** Raw marks needed to reach the next grade up (present when `marginal`). */
   marksToNext?: number;
+  /** Percentage points below the next grade-up cut (present when `marginal`). */
+  pctToNext?: number;
   /** The next grade up's performance level (for the marginal marker tooltip). */
   nextLevel?: string;
   /** The active manual mark adjustment on this subject cell, if any. */
@@ -1155,12 +1165,26 @@ export interface BrandingConfig {
   defaultCertificateTemplate: string;
 }
 
+/**
+ * Borderline (marginal) flagging band — a workspace config value the engine reads
+ * when flagging students just below a grade boundary. `bandPct` is the symmetric
+ * ±% window (percentage points) around each threshold; the flag fires for the
+ * just-below side, feeding the mark-adjustment workflow. Grade-bearing input:
+ * editing it re-flags through the full grade recompute (incl. the D3 safeguard).
+ */
+export interface BorderlineConfig {
+  /** Borderline band, in percentage points. Bounds enforced server-side. */
+  bandPct: number;
+}
+
 export interface ConfigModel {
   /** The engine's active rating thresholds (read-only — they drive item ratings). */
   thresholds: QualityThresholdRow[];
   retention: RetentionConfig;
   branding: BrandingConfig;
   safeguard: SafeguardConfig;
+  /** The configurable borderline (marginal) flagging band (percentage points). */
+  borderline: BorderlineConfig;
 }
 
 // --- New cycle --------------------------------------------------------------

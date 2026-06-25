@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { MARGINAL_MARK_THRESHOLD } from "@/lib/data/grading";
+import { DEFAULT_BORDERLINE_BAND_PCT } from "@/lib/data/grading";
 import { getEngine } from "@/lib/engine";
 import type { GradeCell } from "@/lib/data/types";
 
@@ -33,40 +33,93 @@ function pickTarget(p: InMemoryDataProvider) {
   throw new Error("no suitable target student/subject in the seed");
 }
 
+/** The target's exact subject percentage — the space the borderline band lives in. */
+function pctOf(t: { raw: number; max: number }): number {
+  return (t.raw / t.max) * 100;
+}
+
 function cellOf(p: InMemoryDataProvider, pid: string, aid: string): GradeCell {
   return p.getGrades(CYCLE)!.rows.find((r) => r.id === pid)!.grades[aid]!;
 }
 
-describe("marginal-student flag (within N raw marks below the next boundary)", () => {
-  it("flags a student ~1.5 marks below the next grade-up cut", () => {
+describe("borderline flag (within the configurable ±% band below the next boundary)", () => {
+  it("flags a student ~1% below the next grade-up cut (band default ±2%)", () => {
     const p = new InMemoryDataProvider();
     const t = pickTarget(p);
-    const pct = (m: number) => (m / t.max) * 100;
-    // Lowest cut sits 1.5 marks above the student → they just missed the next grade.
-    p.setBoundary(CYCLE, t.aid, { cuts: [pct(t.raw + 8), pct(t.raw + 4), pct(t.raw + 1.5)] });
+    const sp = pctOf(t);
+    // Lowest cut sits ~1 percentage point above the student → they just missed it.
+    const lowest = Math.floor(sp) + 1; // 0 < (lowest − sp) ≤ 1 ≤ band
+    p.setBoundary(CYCLE, t.aid, { cuts: [lowest + 20, lowest + 10, lowest] });
     const cell = cellOf(p, t.pid, t.aid);
     expect(cell.marginal).toBe(true);
-    // ~1.5 marks below (cut scores round to whole percents, so allow a little slack).
-    expect(cell.marksToNext).toBeCloseTo(1.5, 0);
+    // Flagging unit is now percentage points, within the band, and still positive.
+    expect(cell.pctToNext!).toBeGreaterThan(0);
+    expect(cell.pctToNext!).toBeLessThanOrEqual(DEFAULT_BORDERLINE_BAND_PCT);
+    expect(cell.pctToNext).toBeCloseTo(lowest - sp, 5);
+    // marksToNext is still surfaced (for the adjustment dialog's upward bump).
     expect(cell.marksToNext!).toBeGreaterThan(0);
-    expect(cell.marksToNext!).toBeLessThanOrEqual(MARGINAL_MARK_THRESHOLD);
     expect(cell.nextLevel).toBeTruthy();
   });
 
-  it("does NOT flag a student 5 marks below the boundary (3+ below)", () => {
+  it("does NOT flag a student well below the boundary (gap wider than the band)", () => {
     const p = new InMemoryDataProvider();
     const t = pickTarget(p);
-    const pct = (m: number) => (m / t.max) * 100;
-    p.setBoundary(CYCLE, t.aid, { cuts: [pct(t.raw + 12), pct(t.raw + 8), pct(t.raw + 5)] });
+    const sp = pctOf(t);
+    const lowest = Math.ceil(sp) + 5; // ≥ 5 percentage points above → outside ±2%
+    p.setBoundary(CYCLE, t.aid, { cuts: [lowest + 20, lowest + 10, lowest] });
     expect(cellOf(p, t.pid, t.aid).marginal).toBeFalsy();
   });
 
   it("does NOT flag a student who has cleared the boundary (above it)", () => {
     const p = new InMemoryDataProvider();
     const t = pickTarget(p);
-    const pct = (m: number) => (m / t.max) * 100;
-    p.setBoundary(CYCLE, t.aid, { cuts: [pct(t.raw - 1), pct(t.raw - 3), pct(t.raw - 5)] });
+    const sp = pctOf(t);
+    const top = Math.floor(sp) - 1; // every cut sits below the student
+    p.setBoundary(CYCLE, t.aid, { cuts: [top, top - 2, top - 4] });
     expect(cellOf(p, t.pid, t.aid).marginal).toBeFalsy();
+  });
+
+  it("verifies the change against the old count-based behaviour on the same data", () => {
+    // OLD rule: flagged when within 2 RAW MARKS below the cut, regardless of subject
+    // size. NEW rule: within the ±2% band. On a small-max subject the same 2-mark gap
+    // is a LARGER % gap, so the percentage rule is stricter (fairer) — it does not
+    // flag a student the raw-count rule would have. This pins that difference.
+    const p = new InMemoryDataProvider();
+    const t = pickTarget(p); // Applicable Math: max 40 → 2 marks = 5% (> the 2% band)
+    const sp = pctOf(t);
+    // A cut 2 raw marks above the student: the OLD rule flags (≤ 2 marks); the NEW
+    // rule does not (the gap is 2/max·100 % ≈ 5% > 2%).
+    const twoMarkPct = (2 / t.max) * 100;
+    expect(twoMarkPct).toBeGreaterThan(DEFAULT_BORDERLINE_BAND_PCT); // precondition: small subject
+    const cut = Math.round(sp + twoMarkPct);
+    p.setBoundary(CYCLE, t.aid, { cuts: [cut + 20, cut + 10, cut] });
+    expect(cellOf(p, t.pid, t.aid).marginal).toBeFalsy(); // NEW: not flagged (old would be)
+  });
+
+  it("re-flags when the Settings band is widened (recompute through getGrades)", () => {
+    const p = new InMemoryDataProvider();
+    const t = pickTarget(p);
+    const sp = pctOf(t);
+    const cut = Math.round(sp + 4); // ~4% above the student
+    p.setBoundary(CYCLE, t.aid, { cuts: [cut + 20, cut + 10, cut] });
+    // Default ±2% band: a 4% gap is outside it → not flagged.
+    expect(cellOf(p, t.pid, t.aid).marginal).toBeFalsy();
+    // Widen the band to ±5% → the same student now flags, recomputed through getGrades.
+    p.setBorderlineConfig({ bandPct: 5 });
+    const cell = cellOf(p, t.pid, t.aid);
+    expect(cell.marginal).toBe(true);
+    expect(cell.pctToNext!).toBeLessThanOrEqual(5);
+    // Narrow it back below the gap → flag clears again.
+    p.setBorderlineConfig({ bandPct: 1 });
+    expect(cellOf(p, t.pid, t.aid).marginal).toBeFalsy();
+  });
+
+  it("clamps an out-of-range band to the valid bounds (defence in depth)", () => {
+    const p = new InMemoryDataProvider();
+    p.setBorderlineConfig({ bandPct: 999 });
+    expect(p.getConfig().borderline.bandPct).toBe(20); // BORDERLINE_BAND_MAX
+    p.setBorderlineConfig({ bandPct: -5 });
+    expect(p.getConfig().borderline.bandPct).toBe(0); // BORDERLINE_BAND_MIN
   });
 });
 
@@ -74,10 +127,11 @@ describe("manual mark adjustment — audited, recomputes through the full grade 
   it("recomputes the grade (a marginal student crosses the boundary) and audits old→new + reason + actor + time", () => {
     const p = new InMemoryDataProvider();
     const t = pickTarget(p);
-    const pct = (m: number) => (m / t.max) * 100;
-    // Make the student marginal: lowest cut ~1.5 marks above their mark, with the
-    // other cuts far away so a small bump clears the boundary cleanly.
-    p.setBoundary(CYCLE, t.aid, { cuts: [pct(t.raw + 30), pct(t.raw + 18), pct(t.raw + 1.5)] });
+    const sp = pctOf(t);
+    // Make the student marginal: lowest cut ~1% above their score, with the other
+    // cuts far away so a small bump clears the boundary cleanly.
+    const lowest = Math.floor(sp) + 1;
+    p.setBoundary(CYCLE, t.aid, { cuts: [lowest + 35, lowest + 18, lowest] });
     const before = cellOf(p, t.pid, t.aid);
     expect(before.marginal).toBe(true);
     const nextLevel = before.nextLevel!;
@@ -139,8 +193,9 @@ describe("manual mark adjustment — reversible", () => {
   it("removing an adjustment reverts the grade and audits the removal", () => {
     const p = new InMemoryDataProvider();
     const t = pickTarget(p);
-    const pct = (m: number) => (m / t.max) * 100;
-    p.setBoundary(CYCLE, t.aid, { cuts: [pct(t.raw + 8), pct(t.raw + 4), pct(t.raw + 1.5)] });
+    const sp = pctOf(t);
+    const lowest = Math.floor(sp) + 1; // ~1% above → within the ±2% band
+    p.setBoundary(CYCLE, t.aid, { cuts: [lowest + 20, lowest + 10, lowest] });
     const original = cellOf(p, t.pid, t.aid).level;
 
     p.adjustStudentMark(CYCLE, t.pid, t.aid, t.raw + 2, "Remark after appeal");

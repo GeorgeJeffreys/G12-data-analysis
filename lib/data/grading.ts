@@ -27,16 +27,35 @@ export const PERFORMANCE_LEVELS = performanceLabels(DEFAULT_SCORING_CONFIG);
 export const AWARD_LEVELS = awardLabels(DEFAULT_SCORING_CONFIG);
 
 /**
- * Marginal-student flag threshold (single source of truth — change here to retune).
+ * Borderline (marginal) flagging band — the configurable default (single source
+ * of truth for the placeholder; the live value is a Settings config value).
  *
- * A student's subject score is flagged "marginal" when it sits within this many
- * **raw marks** below the cut score for the next grade up — i.e. they just missed
- * it, and a small upward mark adjustment would change the grade. The unit is raw
- * marks: cut scores are stored as percentages, so the call site converts per
- * subject (this many marks of that subject's max) before comparing, so "2 marks"
- * always means marks, not percentage points.
+ * A student's subject score is flagged "borderline" when it sits within this many
+ * **percentage points** below the cut score for the next grade up — i.e. they
+ * just missed it, and a small upward mark adjustment would change the grade.
+ * Flagging by percentage (rather than raw item count) is fairer across subjects
+ * with different item totals, and is symmetric about the threshold in % space.
+ *
+ * This is a PLACEHOLDER of ±2% pending G12's policy value — it is editable in
+ * Settings › Configuration, and the engine reads the live value, not this default.
  */
-export const MARGINAL_MARK_THRESHOLD: number = 2;
+export const DEFAULT_BORDERLINE_BAND_PCT: number = 2;
+
+/** Sensible bounds for the borderline band (percentage points). Enforced client-
+ *  side, in the provider setter, AND server-side in `set_workspace_setting`. */
+export const BORDERLINE_BAND_MIN: number = 0;
+export const BORDERLINE_BAND_MAX: number = 20;
+
+/** True when `pct` is a valid borderline band (numeric, within bounds). */
+export function isValidBorderlineBand(pct: number): boolean {
+  return Number.isFinite(pct) && pct >= BORDERLINE_BAND_MIN && pct <= BORDERLINE_BAND_MAX;
+}
+
+/** Clamp an incoming band to the valid range (defensive — invalid → default). */
+export function clampBorderlineBand(pct: number): number {
+  if (!Number.isFinite(pct)) return DEFAULT_BORDERLINE_BAND_PCT;
+  return Math.min(BORDERLINE_BAND_MAX, Math.max(BORDERLINE_BAND_MIN, pct));
+}
 
 /** Star mapping used in the performance reports (derived from level, never typed). */
 export const DEFAULT_STAR_MAP: Record<string, string> = starMapOf(DEFAULT_SCORING_CONFIG);

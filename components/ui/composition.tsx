@@ -92,13 +92,27 @@ export function compositionTitle(c: {
  * title tooltip (see compositionTitle), keeping rows dense and scannable.
  */
 export function SubjectScoreCell({ s }: { s: SubjectComposition }) {
+  const d3 = s.d3 && s.d3.available > 0 ? s.d3 : null;
   return (
-    <span
-      className="hf-mono"
-      style={{ fontSize: 12, color: H.ink, fontWeight: 600, whiteSpace: "nowrap" }}
-      title={compositionTitle(s)}
-    >
-      {fmtNum(s.total)}/{fmtNum(s.max)} · {Math.round(s.pct)}%
+    <span style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+      <span
+        className="hf-mono"
+        style={{ fontSize: 12, color: H.ink, fontWeight: 600, whiteSpace: "nowrap" }}
+        title={compositionTitle(s)}
+      >
+        {fmtNum(s.total)}/{fmtNum(s.max)} · {Math.round(s.pct)}%
+      </span>
+      {d3 && (
+        // Per-subject D3 (top-difficulty) CORRECT % — display-only breakdown
+        // (Part A). Does not affect the score above or the D3 majority cap.
+        <span
+          className="hf-mono"
+          style={{ fontSize: 9.5, fontWeight: 500, color: H.ink3, whiteSpace: "nowrap" }}
+          title={`D3 correct: ${d3.correct} of ${d3.available} top-difficulty (D3) items answered correctly on this subject. Display only — does not change the score or the D3 majority cap.`}
+        >
+          D3 {d3.correct}/{d3.available} · {d3.pct == null ? "–" : `${Math.round(d3.pct)}%`}
+        </span>
+      )}
     </span>
   );
 }
