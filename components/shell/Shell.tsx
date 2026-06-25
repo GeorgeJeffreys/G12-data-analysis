@@ -30,8 +30,6 @@ export function Shell({
   active,
   subnav,
   stageIndex,
-  done,
-  range,
   stageAction,
   cycleId,
   children,
@@ -45,8 +43,6 @@ export function Shell({
   /** Secondary tab bar under the header. */
   subnav?: SubnavItem[];
   stageIndex?: number;
-  done?: number;
-  range?: [number, number];
   stageAction?: ReactNode;
   /** When set, the pipeline stepper links each stage to its screen. */
   cycleId?: string;
@@ -133,7 +129,7 @@ export function Shell({
             {/* stepper scrolls within its own region on narrow viewports so it
                 never wraps and never pushes the primary action off-screen */}
             <div style={{ flex: "1 1 auto", minWidth: 0, overflowX: "auto", display: "flex", alignItems: "center" }}>
-              <Pipeline active={stageIndex} done={done} range={range} cycleId={cycleId} />
+              <Pipeline active={stageIndex} cycleId={cycleId} />
             </div>
             {stageAction && <div style={{ flex: "0 0 auto" }}>{stageAction}</div>}
           </div>

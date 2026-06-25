@@ -12,7 +12,13 @@ import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Badge } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
-import type { SittingRef } from "@/lib/data/types";
+import { PIPELINE, type SittingRef } from "@/lib/data/types";
+
+// The step total shown in "k/N steps" derives from the canonical pipeline list
+// (the same one the in-pipeline stepper renders), so the card and the tracker
+// can never disagree on N — and a stale/over-counted source can never read as
+// more steps done than exist.
+const TOTAL_STEPS = PIPELINE.length;
 
 function SittingCard({ s }: { s: SittingRef }) {
   return (
@@ -46,7 +52,7 @@ function SittingCard({ s }: { s: SittingRef }) {
             </div>
             <div>
               <div style={{ fontSize: 13, fontWeight: 600 }}>{s.stageLabel}</div>
-              <div className="hf-sub" style={{ fontSize: 11 }}>{s.stepsDone}/8 steps</div>
+              <div className="hf-sub" style={{ fontSize: 11 }}>{Math.min(s.stepsDone, TOTAL_STEPS)}/{TOTAL_STEPS} steps</div>
             </div>
           </div>
           <Link href={`/cycles/${s.cycleId}`}>

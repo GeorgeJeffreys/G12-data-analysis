@@ -270,9 +270,9 @@ function main() {
       diagnostics,
     },
     priorCycles: [
-      { id: "jan-2026", name: "February 2026", stageIndex: 10, stepsDone: 11, participants: 4503, assessments: 5, lastActivity: "12 Feb 2026", locked: true, mock: true },
-      { id: "nov-2025", name: "February 2025", stageIndex: 10, stepsDone: 11, participants: 4390, assessments: 4, lastActivity: "03 Dec 2025", locked: true, mock: true },
-      { id: "may-2025", name: "May 2025", stageIndex: 10, stepsDone: 11, participants: 4201, assessments: 4, lastActivity: "11 Jun 2025", locked: true, mock: true },
+      { id: "jan-2026", name: "February 2026", stageIndex: 9, stepsDone: 10, participants: 4503, assessments: 5, lastActivity: "12 Feb 2026", locked: true, mock: true },
+      { id: "nov-2025", name: "February 2025", stageIndex: 9, stepsDone: 10, participants: 4390, assessments: 4, lastActivity: "03 Dec 2025", locked: true, mock: true },
+      { id: "may-2025", name: "May 2025", stageIndex: 9, stepsDone: 10, participants: 4201, assessments: 4, lastActivity: "11 Jun 2025", locked: true, mock: true },
     ],
   };
 

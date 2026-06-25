@@ -34,8 +34,6 @@ export function CycleShell({
   page,
   area = "pipeline",
   stageIndex,
-  done,
-  range,
   primary,
   actions,
   subjectTabs,
@@ -48,8 +46,6 @@ export function CycleShell({
   page?: string;
   area?: CycleArea;
   stageIndex?: number;
-  done?: number;
-  range?: [number, number];
   /** The single next-step button, pinned top-right on every page. */
   primary?: ReactNode;
   /** Optional secondary header actions (e.g. exports). Kept off the primary slot. */
@@ -72,8 +68,6 @@ export function CycleShell({
       status={<LockStatus cycleId={cycleId} />}
       subnav={cyclesSubnav(cycleId, area)}
       stageIndex={isPipeline ? (stageIndex ?? 0) : undefined}
-      done={done}
-      range={range}
       cycleId={cycleId}
       // pipeline pages pin the primary in the stepper row; other areas in the header
       stageAction={isPipeline ? primary : undefined}
