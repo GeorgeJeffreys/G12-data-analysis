@@ -38,6 +38,21 @@ export const PIPELINE = [
 ] as const;
 export type PipelineStage = (typeof PIPELINE)[number];
 
+/**
+ * A test centre — the top-level scoping dimension (migration 0010). A centre
+ * owns its own exam years; each year owns its February + May sittings. Centre is
+ * a partition / labelling key only — it never feeds scoring.
+ */
+export interface TestCentreSummary {
+  id: string;
+  name: string;
+  /** Short tag, e.g. "SHA1". */
+  code: string;
+  /** Route-safe, e.g. "shatila-1". */
+  slug: string;
+  active: boolean;
+}
+
 export interface CycleSummary {
   id: string;
   name: string;
@@ -50,6 +65,9 @@ export interface CycleSummary {
   locked: boolean;
   live: boolean;
   mock: boolean;
+  /** 0010 — the test centre this sitting belongs to (via its year). */
+  testCentreId: string;
+  testCentreName: string;
 }
 
 /** Which sitting of a year. "overall" is the derived best-of-two view. */
@@ -64,6 +82,8 @@ export interface SittingRef {
   sitting: SittingKey;
   /** Display label, e.g. "February" / "May". */
   label: string;
+  /** 0010 — the test centre this sitting's year belongs to (for labelling). */
+  testCentreName: string;
   /** The exam_cycle id for this sitting, or null when not started. */
   cycleId: string | null;
   cycleName: string | null;
@@ -82,6 +102,9 @@ export interface SittingRef {
 export interface YearSummary {
   id: string;
   name: string;
+  /** 0010 — the test centre this year belongs to. */
+  testCentreId: string;
+  testCentreName: string;
   february: SittingRef;
   may: SittingRef;
   /** Distinct participants across the year's sittings (max of the two). */
@@ -97,6 +120,9 @@ export interface YearSummary {
 export interface YearDetail {
   id: string;
   name: string;
+  /** 0010 — the test centre this year belongs to. */
+  testCentreId: string;
+  testCentreName: string;
   february: SittingRef;
   may: SittingRef;
   /**
@@ -126,6 +152,8 @@ export interface CycleDetail {
   stageIndex: number;
   locked: boolean;
   mock: boolean;
+  /** 0010 — the test centre this sitting belongs to (via its year). */
+  testCentreName: string;
   doNext: { title: string; body: string; href: string; cta: string };
   assessments: AssessmentRef[];
 }
@@ -1148,12 +1176,18 @@ export interface NewCycleModel {
   defaultName: string;
   sittingDate: string;
   assessments: NewCycleAssessment[];
+  /** 0010 — active test centres to choose from (the sitting is created under one). */
+  testCentres: TestCentreSummary[];
+  /** Pre-selected centre (first active centre), or null when none exist yet. */
+  defaultTestCentreId: string | null;
 }
 
 export interface CreateCycleInput {
   name: string;
   sittingDate: string;
   assessmentIds: string[];
+  /** 0010 — the test centre to create this sitting (and its year) under. */
+  testCentreId: string;
 }
 
 // --- Per-student technical exclusions (Student review step) ------------------

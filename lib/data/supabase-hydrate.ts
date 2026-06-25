@@ -18,6 +18,8 @@
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type {
   ExamCycleRow,
+  ExamYearRow,
+  TestCentreRow,
   AssessmentRow,
   ItemRow,
   ItemStatsRow,
@@ -174,6 +176,26 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   if (cycles.length === 0) return null;
   const live = cycles[0]!;
   const cycleId = live.id;
+
+  // 0010 — test centres + the year→centre map, so each sitting resolves to its
+  // centre (exam_cycles.year_id → exam_years.test_centre_id). Defensive against a
+  // pre-0010 database (no rows / column): the provider falls back to a default
+  // centre when the list is empty.
+  const [testCentreRows, yearRows] = await Promise.all([
+    sel<TestCentreRow>(supabase.from("test_centres").select("*").order("created_at", { ascending: true })),
+    sel<ExamYearRow>(supabase.from("exam_years").select("*")),
+  ]);
+  const yearToCentre = new Map<string, string>();
+  for (const y of yearRows) if (y.test_centre_id) yearToCentre.set(y.id, y.test_centre_id);
+  const centreOfCycle = (c: ExamCycleRow): string | undefined =>
+    c.year_id ? yearToCentre.get(c.year_id) : undefined;
+  const seedTestCentres = testCentreRows.map((t) => ({
+    id: t.id,
+    name: t.name,
+    code: t.code,
+    slug: t.slug,
+    active: t.active,
+  }));
 
   const [assessments, items, participants, responses] = await Promise.all([
     sel<AssessmentRow>(supabase.from("assessments").select("*").eq("cycle_id", cycleId)),
@@ -362,6 +384,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const priorCycles: SeedPriorCycle[] = cycles.slice(1).map((c) => ({
     id: c.id,
     name: c.name,
+    testCentreId: centreOfCycle(c),
     stageIndex: 7,
     stepsDone: 8,
     participants: 0,
@@ -374,10 +397,12 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const seed: Seed = {
     generatedAt: new Date().toISOString(),
     engineVersion: ENGINE_VERSION,
+    testCentres: seedTestCentres.length > 0 ? seedTestCentres : undefined,
     liveCycle: {
       id: cycleId,
       name: live.name,
       region: live.region,
+      testCentreId: centreOfCycle(live),
       startedAt: new Date(live.created_at).toLocaleDateString(),
       lastActivity: new Date(live.updated_at).toLocaleString(),
       stageIndex: stageIndexFromStatus(live.status),

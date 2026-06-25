@@ -79,6 +79,7 @@ import {
   type CurrentUser,
   type CycleDetail,
   type CycleSummary,
+  type TestCentreSummary,
   type YearSummary,
   type YearDetail,
   type SittingRef,
@@ -345,6 +346,14 @@ export class InMemoryDataProvider implements DataProvider {
     defaultCertificateTemplate: "certificate_template.pptx",
   };
 
+  // 0010 — test centres (top-level scoping dimension). The demo seeds a single
+  // active centre that every derived year belongs to (the live Supabase provider
+  // hydrates the real list from the test_centres table via the seed). Populated
+  // in the constructor (after `seed` is bound) and managed by the CRUD methods
+  // below, which mirror the SECURITY DEFINER RPCs in migration 0010.
+  private testCentres: TestCentreSummary[] = [];
+  private seq = 0;
+
   private readonly user: CurrentUser = {
     id: "m-rana",
     // Default MOCK user (a Lead) for the in-memory demo so role-gated controls
@@ -362,6 +371,23 @@ export class InMemoryDataProvider implements DataProvider {
   constructor(seed?: Seed, user?: CurrentUser) {
     if (seed) this.seed = seed;
     if (user) this.user = user;
+    // 0010 — bind the test-centre list now that `seed` is final. Live runs carry
+    // the hydrated centres; the demo falls back to a single active centre so the
+    // home/year screens always have a centre to label and the picker is non-empty.
+    this.testCentres =
+      this.seed.testCentres && this.seed.testCentres.length > 0
+        ? this.seed.testCentres.map((c) => ({ ...c }))
+        : [{ id: "tc-shatila-1", name: "Shatila 1", code: "SHA1", slug: "shatila-1", active: true }];
+  }
+
+  /** The centre new work defaults to: the first ACTIVE centre, else the first. */
+  private primaryTestCentre(): TestCentreSummary {
+    return this.testCentres.find((c) => c.active) ?? this.testCentres[0]!;
+  }
+
+  /** Resolve a cycle's centre by id, falling back to the primary centre. */
+  private centreFor(testCentreId?: string): TestCentreSummary {
+    return (testCentreId && this.testCentres.find((c) => c.id === testCentreId)) || this.primaryTestCentre();
   }
 
   // ── subscription ──────────────────────────────────────────────────────────
@@ -631,6 +657,7 @@ export class InMemoryDataProvider implements DataProvider {
   // ── cycles ────────────────────────────────────────────────────────────────
   listCycles(): CycleSummary[] {
     const live = this.seed.liveCycle;
+    const liveCentre = this.centreFor(live.testCentreId);
     const liveSummary: CycleSummary = {
       id: live.id,
       name: live.name,
@@ -643,20 +670,27 @@ export class InMemoryDataProvider implements DataProvider {
       locked: this.locked.has(live.id),
       live: true,
       mock: false,
+      testCentreId: liveCentre.id,
+      testCentreName: liveCentre.name,
     };
-    const priors: CycleSummary[] = this.seed.priorCycles.map((p) => ({
-      id: p.id,
-      name: p.name,
-      stageIndex: p.stageIndex,
-      stageLabel: "Locked & exported",
-      stepsDone: p.stepsDone,
-      participants: p.participants,
-      assessments: p.assessments,
-      lastActivity: p.lastActivity,
-      locked: p.locked,
-      live: false,
-      mock: true,
-    }));
+    const priors: CycleSummary[] = this.seed.priorCycles.map((p) => {
+      const centre = this.centreFor(p.testCentreId);
+      return {
+        id: p.id,
+        name: p.name,
+        stageIndex: p.stageIndex,
+        stageLabel: "Locked & exported",
+        stepsDone: p.stepsDone,
+        participants: p.participants,
+        assessments: p.assessments,
+        lastActivity: p.lastActivity,
+        locked: p.locked,
+        live: false,
+        mock: true,
+        testCentreId: centre.id,
+        testCentreName: centre.name,
+      };
+    });
     return [liveSummary, ...priors];
   }
 
@@ -673,6 +707,7 @@ export class InMemoryDataProvider implements DataProvider {
         stageIndex: this.locked.has(live.id) ? PIPELINE.length - 1 : live.stageIndex,
         locked: this.locked.has(live.id),
         mock: false,
+        testCentreName: this.centreFor(live.testCentreId).name,
         // Land on the cycle's FIRST INCOMPLETE step — never skip ahead to a
         // screen (Review/Boundaries/…) whose data doesn't exist yet. A locked
         // cycle's work is done, so its next action is document generation; an
@@ -694,6 +729,7 @@ export class InMemoryDataProvider implements DataProvider {
         stageIndex: prior.stageIndex,
         locked: true,
         mock: true,
+        testCentreName: this.centreFor(prior.testCentreId).name,
         doNext: { title: "Locked cycle", body: "This is a mock prior cycle with no detailed data in this build.", href: "/", cta: "Back to cycles" },
         assessments: [],
       };
@@ -727,6 +763,7 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       sitting,
       label: sitting === "february" ? "February" : "May",
+      testCentreName: c.testCentreName,
       cycleId: c.id,
       cycleName: c.name,
       started: true,
@@ -741,10 +778,11 @@ export class InMemoryDataProvider implements DataProvider {
     };
   }
 
-  private emptySitting(sitting: SittingKey): SittingRef {
+  private emptySitting(sitting: SittingKey, testCentreName: string): SittingRef {
     return {
       sitting,
       label: sitting === "february" ? "February" : "May",
+      testCentreName,
       cycleId: null,
       cycleName: null,
       started: false,
@@ -759,30 +797,53 @@ export class InMemoryDataProvider implements DataProvider {
     };
   }
 
-  /** Group every cycle into its year + sitting slot (newest year first). */
-  private buildYears(): { id: string; name: string; february: SittingRef; may: SittingRef }[] {
+  /**
+   * Group every cycle into its (centre, year) + sitting slot (newest first). A
+   * year now belongs to a TEST CENTRE (migration 0010), so the grouping key is
+   * (centreId, year): "Shatila 1 / 2026" and "Shatila 2 / 2026" are two distinct
+   * year rows that share the comparable period "2026". The primary centre keeps
+   * the clean `year-${year}` id (route + test stability); additional centres are
+   * qualified by their slug so their ids stay unique.
+   */
+  private buildYears(): {
+    id: string;
+    name: string;
+    testCentreId: string;
+    testCentreName: string;
+    february: SittingRef;
+    may: SittingRef;
+  }[] {
     const order: string[] = [];
-    const byYear = new Map<string, { february?: SittingRef; may?: SittingRef }>();
+    const byKey = new Map<
+      string,
+      { year: string; centre: TestCentreSummary; february?: SittingRef; may?: SittingRef }
+    >();
+    const primaryId = this.primaryTestCentre().id;
     for (const c of this.listCycles()) {
       const year = this.yearOf(c.name);
       const sitting = this.sittingOf(c.name);
-      if (!byYear.has(year)) {
-        byYear.set(year, {});
-        order.push(year);
+      const centre = this.centreFor(c.testCentreId);
+      const key = `${centre.id}|${year}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, { year, centre });
+        order.push(key);
       }
-      const slot = byYear.get(year)!;
+      const slot = byKey.get(key)!;
       const ref = this.sittingRefFrom(c, sitting);
       // First write wins per slot; listCycles is newest-first and the live run is
       // first, so the most relevant cycle keeps the slot if names ever collide.
       if (!slot[sitting]) slot[sitting] = ref;
     }
-    return order.map((year) => {
-      const slot = byYear.get(year)!;
+    return order.map((key) => {
+      const slot = byKey.get(key)!;
+      const id = slot.centre.id === primaryId ? this.yearId(slot.year) : `${this.yearId(slot.year)}--${slot.centre.slug}`;
       return {
-        id: this.yearId(year),
-        name: year,
-        february: slot.february ?? this.emptySitting("february"),
-        may: slot.may ?? this.emptySitting("may"),
+        id,
+        name: slot.year,
+        testCentreId: slot.centre.id,
+        testCentreName: slot.centre.name,
+        february: slot.february ?? this.emptySitting("february", slot.centre.name),
+        may: slot.may ?? this.emptySitting("may", slot.centre.name),
       };
     });
   }
@@ -803,6 +864,8 @@ export class InMemoryDataProvider implements DataProvider {
       return {
         id: y.id,
         name: y.name,
+        testCentreId: y.testCentreId,
+        testCentreName: y.testCentreName,
         february: y.february,
         may: y.may,
         participants: Math.max(y.february.participants, y.may.participants),
@@ -821,6 +884,8 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       id: y.id,
       name: y.name,
+      testCentreId: y.testCentreId,
+      testCentreName: y.testCentreName,
       february: y.february,
       may: y.may,
       overall: {
@@ -3911,6 +3976,7 @@ export class InMemoryDataProvider implements DataProvider {
     // The picker offers the canonical G12++ subject catalog, not the assessments
     // of whatever cycle happens to be loaded — so it is fully populated even
     // before any cycle exists (live Supabase, fresh database).
+    const active = this.testCentres.filter((c) => c.active);
     return {
       defaultName: "May 2026",
       sittingDate: "14 May 2026",
@@ -3921,6 +3987,9 @@ export class InMemoryDataProvider implements DataProvider {
         included: true,
         fileName: null,
       })),
+      // 0010 — the sitting (and its year) is created under a chosen test centre.
+      testCentres: active.map((c) => ({ ...c })),
+      defaultTestCentreId: active[0]?.id ?? null,
     };
   }
 
@@ -3928,8 +3997,60 @@ export class InMemoryDataProvider implements DataProvider {
     // In-memory/demo mode has no database: record the intent in the audit log and
     // resolve to the demo cycle id (the only one with real data) so navigation
     // works. The Supabase provider overrides this to persist a real cycle.
-    this.audit("cycle", "Created cycle", `${input.name} — ${input.assessmentIds.length} assessments`, this.seed.liveCycle.id);
+    const centre = this.centreFor(input.testCentreId);
+    this.audit(
+      "cycle",
+      "Created cycle",
+      `${centre.name} · ${input.name} — ${input.assessmentIds.length} assessments`,
+      this.seed.liveCycle.id,
+    );
     this.bump();
     return Promise.resolve(this.seed.liveCycle.id);
+  }
+
+  // ── test centres (top-level scoping dimension — migration 0010) ────────────
+  listTestCentres(): TestCentreSummary[] {
+    return this.testCentres.map((c) => ({ ...c }));
+  }
+
+  createTestCentre(input: { name: string; code: string }): void {
+    if (this.user.role !== "lead_admin") return;
+    const name = input.name.trim();
+    const code = input.code.trim();
+    if (!name || !code) return;
+    const slug = this.uniqueCentreSlug(name);
+    this.seq += 1;
+    this.testCentres.push({ id: `tc-${this.seq}-${slug}`, name, code, slug, active: true });
+    this.audit("config", "Created test centre", `${name} (${code})`, null);
+    this.bump();
+  }
+
+  updateTestCentre(id: string, patch: { name?: string; code?: string; active?: boolean }): void {
+    if (this.user.role !== "lead_admin") return;
+    const c = this.testCentres.find((x) => x.id === id);
+    if (!c) return;
+    if (patch.name !== undefined && patch.name.trim()) c.name = patch.name.trim();
+    if (patch.code !== undefined && patch.code.trim()) c.code = patch.code.trim();
+    if (patch.active !== undefined) c.active = patch.active;
+    this.audit("config", "Updated test centre", `${c.name} (${c.code})`, null);
+    this.bump();
+  }
+
+  setTestCentreActive(id: string, active: boolean): void {
+    if (this.user.role !== "lead_admin") return;
+    const c = this.testCentres.find((x) => x.id === id);
+    if (!c) return;
+    c.active = active;
+    this.audit("config", active ? "Activated test centre" : "Deactivated test centre", c.name, null);
+    this.bump();
+  }
+
+  /** Route-safe slug from a centre name, de-duplicated against existing centres. */
+  private uniqueCentreSlug(name: string): string {
+    const base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "centre";
+    let slug = base;
+    let n = 2;
+    while (this.testCentres.some((c) => c.slug === slug)) slug = `${base}-${n++}`;
+    return slug;
   }
 }

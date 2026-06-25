@@ -11,6 +11,7 @@
 import type { QualityRating } from "@/lib/engine";
 import type { SpeededResult, TimingResult } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
+import type { TestCentreSummary } from "./types";
 
 export interface SeedItem {
   id: string;
@@ -105,6 +106,9 @@ export interface SeedLiveCycle {
   id: string;
   name: string;
   region: string;
+  /** 0010 — the test centre this sitting belongs to (via its year). Optional so
+   *  legacy/demo seeds without it still load (defaulted to the primary centre). */
+  testCentreId?: string;
   startedAt: string;
   lastActivity: string;
   stageIndex: number;
@@ -129,6 +133,8 @@ export interface SeedLiveCycle {
 export interface SeedPriorCycle {
   id: string;
   name: string;
+  /** 0010 — the test centre this sitting belongs to (via its year). */
+  testCentreId?: string;
   stageIndex: number;
   stepsDone: number;
   participants: number;
@@ -144,4 +150,7 @@ export interface Seed {
   engineVersion: string;
   liveCycle: SeedLiveCycle;
   priorCycles: SeedPriorCycle[];
+  /** 0010 — test centres (top-level scoping dimension). Absent in legacy/demo
+   *  seeds; the provider falls back to a single active centre. */
+  testCentres?: TestCentreSummary[];
 }

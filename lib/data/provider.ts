@@ -31,6 +31,7 @@ import type {
   CurrentUser,
   CycleDetail,
   CycleSummary,
+  TestCentreSummary,
   YearSummary,
   YearDetail,
   DocSettings,
@@ -210,6 +211,16 @@ export interface DataProvider {
   // settings: users & roles
   getMembers(): MembersModel;
   getRoles(): RolesModel;
+
+  // settings: test centres (top-level scoping dimension — migration 0010)
+  /** Every test centre (active + inactive), for the management list. */
+  listTestCentres(): TestCentreSummary[];
+  /** Create a centre. Lead/Admin only (TODO P3: admin-only). */
+  createTestCentre(input: { name: string; code: string }): void;
+  /** Edit a centre's name / code / active flag. */
+  updateTestCentre(id: string, patch: { name?: string; code?: string; active?: boolean }): void;
+  /** Activate / deactivate a centre (hide from new work without deleting history). */
+  setTestCentreActive(id: string, active: boolean): void;
 
   // settings: configuration
   getConfig(): ConfigModel;

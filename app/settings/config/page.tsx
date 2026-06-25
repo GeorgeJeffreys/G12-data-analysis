@@ -23,6 +23,7 @@ import { Icon } from "@/components/ui/icons";
 import { settingsSubnav } from "@/lib/ui/subnav";
 import { GradingDefaultsEditor } from "@/components/settings/GradingDefaultsEditor";
 import { QualityThresholdsEditor } from "@/components/settings/QualityThresholdsEditor";
+import { TestCentresEditor } from "@/components/settings/TestCentresEditor";
 import { POLICY_GUARDRAILS, POLICY_BAND_RANGES, DEFAULT_POLICY_TARGETS } from "@/lib/engine/cut-scores";
 import { LOW_ITEMS_THRESHOLD, SMALL_SAMPLE_THRESHOLD } from "@/lib/engine/reliability";
 
@@ -44,6 +45,9 @@ export default function ConfigPage() {
           <div className="hf-h1">Configuration</div>
           <div className="hf-sub" style={{ marginTop: 7 }}>Quality thresholds, grading defaults, the award rule and its safeguards, data retention and branding for the whole workspace.</div>
         </div>
+
+        {/* test centres — the top-level scoping dimension (migration 0010) */}
+        <TestCentresEditor />
 
         {/* item-quality thresholds (editable — drive the engine's item ratings) */}
         <QualityThresholdsEditor />
