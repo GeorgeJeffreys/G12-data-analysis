@@ -7,10 +7,19 @@
 --   * Restores exam_years' unique (name, region) and drops the centre FK column,
 --     indexes and the test_centres table + its RPCs.
 --
--- Run in the Supabase SQL editor to revert. Safe to run only if no two centres
--- share a year name+region (the original unique constraint would reject that);
--- since the backfill put every existing year under one placeholder centre, the
--- live data satisfies this.
+-- Run in the Supabase SQL editor to revert.
+--
+-- !!  CLEAN REVERT IS ONLY POSSIBLE IMMEDIATELY POST-APPLY  !!
+-- This rollback restores exam_years' unique (name, region), which REJECTS two
+-- years that share a name+region. Right after 0010 the backfill has put every
+-- existing year under the single "Unassigned" placeholder, so the live data
+-- satisfies that and the revert is clean. But the WHOLE POINT of this feature is
+-- the intended Shatila 1/2026 + Shatila 2/2026 state — two centres sharing a
+-- period. The moment a second centre owns an overlapping year, dropping the
+-- centre column collapses those rows to a duplicate (name, region) and the
+-- `add constraint ... unique (name, region)` below WILL FAIL. Reverting from
+-- that point on is NOT a no-questions undo: it requires manual data surgery
+-- (merge/relabel/delete the colliding years) before this script can complete.
 -- ============================================================================
 
 begin;
@@ -29,7 +38,6 @@ alter table exam_years drop constraint if exists exam_years_name_region_centre_k
 -- 3. Drop the indexes and the FK column (dropping the column removes the FK to
 --    test_centres and its NOT NULL).
 drop index if exists exam_years_test_centre_id_idx;
-drop index if exists exam_years_name_idx;
 drop index if exists test_centres_active_idx;
 alter table exam_years drop column if exists test_centre_id;
 
