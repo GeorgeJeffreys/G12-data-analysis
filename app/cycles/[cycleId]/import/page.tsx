@@ -36,6 +36,7 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
   const split = useProviderData((p) => p.getCombinedSplit(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
+  const testCentreName = useProviderData((p) => p.getCycle(cycleId)?.testCentreName, [cycleId]) ?? null;
 
   const [open, setOpen] = useState<Record<number, boolean>>({ 1: true, 2: false, 3: false });
   const [resolved, setResolved] = useState<DuplicateStrategy | null>(null);
@@ -99,7 +100,17 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 30px", gap: 14, flex: 1, maxWidth: 1040 }}>
         <div>
-          <div className="hf-h1">Upload exam data</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div className="hf-h1">Upload exam data</div>
+            {testCentreName && (
+              <span
+                title="This upload is scoped to this test centre"
+                style={{ fontSize: 11, fontWeight: 700, color: H.pink, background: H.pinkSoft, padding: "2px 9px", borderRadius: 999 }}
+              >
+                {testCentreName} · {cycleName}
+              </span>
+            )}
+          </div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
             Drop in the <strong>three Questionmark CSV exports</strong> — Items, Assessments and Topics. We detect each by
             its columns (not its filename), join them on <span className="hf-mono">ResultId</span>, and split the subjects

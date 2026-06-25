@@ -52,6 +52,7 @@ import type {
   CurrentUser,
   CycleDetail,
   CycleSummary,
+  TestCentreSummary,
   YearSummary,
   YearDetail,
   DocSettings,
@@ -305,6 +306,7 @@ export class SupabaseDataProvider implements DataProvider {
   getItemAnalysisData(cycleId: string) { return this.inner.getItemAnalysisData(cycleId); }
   getMembers(): MembersModel { return this.inner.getMembers(); }
   getRoles(): RolesModel { return this.inner.getRoles(); }
+  listTestCentres(): TestCentreSummary[] { return this.inner.listTestCentres(); }
   getConfig(): ConfigModel { return this.inner.getConfig(); }
   getScoringConfig(): ScoringConfig { return this.inner.getScoringConfig(); }
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
@@ -629,6 +631,30 @@ export class SupabaseDataProvider implements DataProvider {
     this.bump();
     this.rpc("set_workspace_setting", { p_key: "branding", p_value: patch });
   }
+
+  // test centres (migration 0010) — optimistic local update, then persist via the
+  // SECURITY DEFINER RPC and re-hydrate so the server-generated row (real id +
+  // slug) replaces the optimistic one.
+  createTestCentre(input: { name: string; code: string }): void {
+    this.inner.createTestCentre(input);
+    this.bump();
+    void this.rpcThenRehydrate("create_test_centre", { p_name: input.name, p_code: input.code });
+  }
+  updateTestCentre(id: string, patch: { name?: string; code?: string; active?: boolean }): void {
+    this.inner.updateTestCentre(id, patch);
+    this.bump();
+    void this.rpcThenRehydrate("update_test_centre", {
+      p_id: id,
+      p_name: patch.name ?? null,
+      p_code: patch.code ?? null,
+      p_active: patch.active ?? null,
+    });
+  }
+  setTestCentreActive(id: string, active: boolean): void {
+    this.inner.setTestCentreActive(id, active);
+    this.bump();
+    void this.rpcThenRehydrate("set_test_centre_active", { p_id: id, p_active: active });
+  }
   setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {
     this.inner.setSafeguardConfig(patch);
     this.bump();
@@ -657,6 +683,8 @@ export class SupabaseDataProvider implements DataProvider {
       p_name: input.name,
       p_region: "eu-west",
       p_assessments,
+      // 0010 — create the sitting (and find-or-create its year) under the centre.
+      p_test_centre_id: input.testCentreId || null,
     });
     if (error || !data) {
       // eslint-disable-next-line no-console

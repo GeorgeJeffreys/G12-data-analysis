@@ -36,12 +36,35 @@ export interface GradeBand {
 }
 
 // --- Table row shapes --------------------------------------------------------
+// 0010 — test_centres are the top-level scoping dimension. A centre (e.g.
+// "Shatila 1") owns its own exam_years; sittings + results inherit the centre
+// through the exam_cycles.year_id → exam_years.test_centre_id chain.
+export interface TestCentreRow {
+  id: string;
+  name: string;
+  /** Short tag, e.g. "SHA1". */
+  code: string;
+  /** Route-safe, unique, e.g. "shatila-1". */
+  slug: string;
+  region: string;
+  active: boolean;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 // 0005 — exam_years group sittings. A year is "2026"; its sittings are the
 // February and May exam_cycles (pipeline runs) plus a derived Overall view.
 export interface ExamYearRow {
   id: string;
   name: string;
   region: string;
+  /**
+   * 0010 — the test centre this year belongs to. NOT NULL after the 0010
+   * backfill (every existing year was assigned to the "Unassigned" placeholder).
+   * Definer-only: set exclusively by create_exam_year / create_cycle_with_assessments.
+   */
+  test_centre_id: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -313,6 +336,8 @@ type TableDef<Row, Insert, Update> = {
 export interface Database {
   public: {
     Tables: {
+      // 0010 — top-level scoping dimension. Writes are definer-only (RPCs).
+      test_centres: TableDef<TestCentreRow, never, never>;
       // 0005 — exam_years group the per-sitting exam_cycles pipeline runs.
       exam_years: TableDef<
         ExamYearRow,
@@ -408,7 +433,7 @@ export interface Database {
     Functions: {
       // 0001
       create_cycle: { Args: { p_name: string; p_region?: string }; Returns: ExamCycleRow };
-      // 0004 (extended in 0005 with optional year_id / sitting)
+      // 0004 (extended in 0005 with year_id / sitting; in 0010 with test_centre_id)
       create_cycle_with_assessments: {
         Args: {
           p_name: string;
@@ -416,13 +441,27 @@ export interface Database {
           p_assessments?: unknown;
           p_year_id?: string | null;
           p_sitting?: SittingPeriod;
+          p_test_centre_id?: string | null;
         };
         Returns: string;
       };
-      // 0005 — create (or find by name) an exam year.
+      // 0005 (extended in 0010 with test_centre_id) — create/find an exam year.
       create_exam_year: {
-        Args: { p_name: string; p_region?: string };
+        Args: { p_name: string; p_region?: string; p_test_centre_id?: string | null };
         Returns: ExamYearRow;
+      };
+      // 0010 — test centre management (definer-only writes).
+      create_test_centre: {
+        Args: { p_name: string; p_code: string; p_slug?: string | null; p_region?: string };
+        Returns: TestCentreRow;
+      };
+      update_test_centre: {
+        Args: { p_id: string; p_name?: string | null; p_code?: string | null; p_active?: boolean | null };
+        Returns: TestCentreRow;
+      };
+      set_test_centre_active: {
+        Args: { p_id: string; p_active: boolean };
+        Returns: TestCentreRow;
       };
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };

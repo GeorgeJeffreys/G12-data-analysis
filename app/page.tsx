@@ -103,6 +103,7 @@ export default function YearsDashboard() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
+                <th className="hf-th">Centre</th>
                 <th className="hf-th">Year</th>
                 <th className="hf-th">Sittings</th>
                 <th className="hf-th" style={{ textAlign: "right" }}>Participants</th>
@@ -113,6 +114,9 @@ export default function YearsDashboard() {
             <tbody>
               {rows.map((y) => (
                 <tr key={y.id} className="hf-hover" style={{ background: y.live ? H.pinkSoft2 : "transparent" }}>
+                  <td className="hf-td">
+                    <span style={{ fontWeight: 600, fontSize: 12.5, color: H.ink2 }}>{y.testCentreName}</span>
+                  </td>
                   <td className="hf-td">
                     <span style={{ fontWeight: 700, fontSize: 14 }}>{y.name}</span>
                   </td>

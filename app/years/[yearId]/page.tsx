@@ -90,10 +90,15 @@ export default function YearPage({ params }: { params: { yearId: string } }) {
   }
 
   return (
-    <Shell active="Cycles" crumb={[{ label: "Years", href: "/" }, { label: year.name }]}>
+    <Shell active="Cycles" crumb={[{ label: "Years", href: "/" }, { label: year.testCentreName }, { label: year.name }]}>
       <div style={{ display: "flex", flexDirection: "column", padding: "28px 32px", gap: 22, flex: 1 }}>
         <div>
-          <div className="hf-h1">{year.name}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div className="hf-h1">{year.name}</div>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: H.ink2, background: H.tint, border: `1px solid ${H.line2}`, padding: "2px 9px", borderRadius: 999 }}>
+              {year.testCentreName}
+            </span>
+          </div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
             Two sittings run the full pipeline independently. Overall takes the higher award across the two, per student per subject.
           </div>
