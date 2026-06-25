@@ -47,18 +47,10 @@ export function ratingColor(rating: "Good" | "Review" | "Flag"): string {
   return rating === "Good" ? H.good : rating === "Review" ? H.warn : H.bad;
 }
 
-// Mirrors `PIPELINE` in lib/data/types.ts. Document/certificate generation is not a
-// per-sitting step — it lives at the cycle/overall level — so the per-sitting
-// stepper ends at Grades.
-export const PIPELINE_STAGES = [
-  "Upload",
-  "Clean",
-  "Raw scores",
-  "Question review",
-  "Diagnostics",
-  "Essay marks",
-  "Technical adjustments",
-  "Score",
-  "Cut scores",
-  "Grades",
-] as const;
+// Single source of truth for the per-sitting pipeline stages lives in
+// lib/data/types.ts (`PIPELINE`). The stepper and the "k/N steps" counter both
+// read this one list, so the visual tracker, the step total and the completed
+// count can never drift apart again. Document/certificate generation is not a
+// per-sitting step — it lives at the cycle/overall level — so the list ends at
+// Grades.
+export { PIPELINE as PIPELINE_STAGES } from "@/lib/data/types";

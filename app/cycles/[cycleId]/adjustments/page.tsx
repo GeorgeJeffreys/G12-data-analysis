@@ -29,7 +29,6 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
     cycleName,
     page: "Technical adjustments",
     stageIndex: 6,
-    done: 2,
     primary: (
       // Technical adjustments → Score (step 8) → Cut scores (step 9): the next
       // step is the computed-scores screen, not cut scores (no step is skipped).

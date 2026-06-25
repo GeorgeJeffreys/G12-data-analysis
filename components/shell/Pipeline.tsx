@@ -21,21 +21,19 @@ export const stageHref = stageRoute;
 
 export function Pipeline({
   active = 2,
-  done,
-  range,
   compact,
   cycleId,
 }: {
   active?: number;
-  done?: number;
-  range?: [number, number];
   compact?: boolean;
   /** When set (and not compact), each stage links to its screen. */
   cycleId?: string;
 }) {
-  const doneIdx = done ?? active;
-  const isDone = (i: number) => (range ? i < range[0] : i < doneIdx);
-  const isNow = (i: number) => (range ? i >= range[0] && i <= range[1] : i === active);
+  // Completion is derived solely from the active step: for a sitting on step N,
+  // every step before it is complete, N is current, and the rest are pending.
+  // There is no separate "done" override to fall out of sync with the step list.
+  const isDone = (i: number) => i < active;
+  const isNow = (i: number) => i === active;
   const clickable = !!cycleId && !compact;
 
   return (
@@ -109,7 +107,7 @@ export function Pipeline({
                 style={{
                   width: compact ? 16 : 13,
                   height: 2,
-                  background: isDone(i) ? H.slate : range && i >= range[0] && i < range[1] ? H.pink : H.line2,
+                  background: isDone(i) ? H.slate : H.line2,
                   margin: compact ? "0 9px" : "0 5px",
                   flex: "0 0 auto",
                 }}
