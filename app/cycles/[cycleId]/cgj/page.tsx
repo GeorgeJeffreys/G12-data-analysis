@@ -16,7 +16,7 @@
  * not signed off. It is surfaced here as a clearly-labelled assumption and is
  * never baked into grading.
  */
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
@@ -34,11 +34,19 @@ function shortLevel(level: string | null): string {
   return level.split(/\s+/)[0] ?? level;
 }
 
+// Three-colour coding for the actual grade vs the centre's prediction: green at
+// or above prediction, red below it, grey when there is nothing to compare.
 const MATCH_COLOR: Record<CgjMatch, string> = {
   match: H.good,
-  above: H.slate,
+  above: H.good,
   below: H.bad,
   missing: H.ink3,
+};
+const MATCH_BG: Record<CgjMatch, string> = {
+  match: H.goodSoft,
+  above: H.goodSoft,
+  below: H.badSoft,
+  missing: "transparent",
 };
 const MATCH_LABEL: Record<CgjMatch, string> = {
   match: "Matches expectation",
@@ -222,26 +230,40 @@ function Comparison({ cycleId, model }: { cycleId: string; model: CgjModel }) {
         )}
       </div>
 
-      {/* legend */}
+      {/* legend — three-colour coding on the actual mark */}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-        {(["match", "above", "below", "missing"] as CgjMatch[]).map((k) => (
-          <span key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: H.ink2 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 2, background: MATCH_COLOR[k] }} />
-            {MATCH_LABEL[k]}
+        {[
+          { c: H.good, bg: H.goodSoft, label: "Actual at or above predicted" },
+          { c: H.bad, bg: H.badSoft, label: "Actual below predicted" },
+          { c: H.ink3, bg: H.canvas, label: "No comparison" },
+        ].map((l) => (
+          <span key={l.label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: H.ink2 }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: l.bg, border: `1px solid ${l.c}` }} />
+            {l.label}
           </span>
         ))}
       </div>
 
-      {/* matrix: students × subjects, each cell expected → actual */}
+      {/* matrix: students × subjects, two columns per subject (Predicted · Actual) */}
       <div className="hf-card" style={{ padding: 0, overflow: "auto" }}>
         <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12 }}>
           <thead>
+            {/* row 1: exam name spanning its two columns */}
             <tr style={{ background: H.tint }}>
-              <th style={{ ...thStyle, textAlign: "left", position: "sticky", left: 0, background: H.tint }}>Student</th>
+              <th rowSpan={2} style={{ ...thStyle, textAlign: "left", position: "sticky", left: 0, background: H.tint, verticalAlign: "bottom" }}>Student</th>
               {model.assessments.map((a) => (
-                <th key={a.id} style={thStyle} title={a.name}>{a.shortName}</th>
+                <th key={a.id} colSpan={2} style={{ ...thStyle, borderLeft: `1px solid ${H.line2}` }} title={a.name}>{a.shortName}</th>
               ))}
-              <th style={thStyle}>Summary</th>
+              <th rowSpan={2} style={{ ...thStyle, verticalAlign: "bottom", borderLeft: `1px solid ${H.line2}` }}>Summary</th>
+            </tr>
+            {/* row 2: the Predicted · Actual sub-columns under each exam */}
+            <tr style={{ background: H.tint }}>
+              {model.assessments.map((a) => (
+                <Fragment key={a.id}>
+                  <th style={{ ...subThStyle, borderLeft: `1px solid ${H.line2}` }}>Predicted</th>
+                  <th style={subThStyle}>Actual</th>
+                </Fragment>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -265,27 +287,27 @@ function Row({ row, model }: { row: CgjStudentRow; model: CgjModel }) {
       {model.assessments.map((a) => {
         const c = row.subjects[a.id];
         const m = c?.match ?? "missing";
+        const tip = `${MATCH_LABEL[m]} — predicted ${shortLevel(c?.expected ?? null)}, actual ${shortLevel(c?.actual ?? null)}`;
         return (
-          <td key={a.id} style={tdStyle} title={`${MATCH_LABEL[m]} — expected ${shortLevel(c?.expected ?? null)}, actual ${shortLevel(c?.actual ?? null)}`}>
-            {m === "missing" && !c?.expected ? (
-              <span style={{ color: H.ink3 }}>—</span>
-            ) : (
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-                <span style={{ color: H.ink2 }}>{shortLevel(c?.expected ?? null)}</span>
-                <Icon name="arrow" size={10} color={H.ink3} />
-                <span style={{ fontWeight: 700, color: MATCH_COLOR[m] }}>{shortLevel(c?.actual ?? null)}</span>
-              </div>
-            )}
-          </td>
+          <Fragment key={a.id}>
+            {/* Predicted — neutral; the centre's expectation */}
+            <td style={{ ...tdStyle, borderLeft: `1px solid ${H.line}`, color: H.ink2 }} title={tip}>
+              {c?.expected ? shortLevel(c.expected) : <span style={{ color: H.ink3 }}>—</span>}
+            </td>
+            {/* Actual — colour-coded grey/red/green vs the prediction */}
+            <td style={{ ...tdStyle, fontWeight: 700, color: MATCH_COLOR[m], background: MATCH_BG[m] }} title={tip}>
+              {c?.actual ? shortLevel(c.actual) : <span style={{ color: H.ink3 }}>—</span>}
+            </td>
+          </Fragment>
         );
       })}
-      <td style={tdStyle}>
+      <td style={{ ...tdStyle, borderLeft: `1px solid ${H.line}` }}>
         {row.summary.compared === 0 ? (
           <span style={{ color: H.ink3 }}>—</span>
         ) : (
-          <span className="hf-mono" style={{ fontSize: 11 }}>
+          <span className="hf-mono" style={{ fontSize: 11 }} title={`${row.summary.matched} match · ${row.summary.above} above · ${row.summary.below} below`}>
             <span style={{ color: H.good }}>{row.summary.matched}=</span>{" "}
-            <span style={{ color: H.slate }}>{row.summary.above}▲</span>{" "}
+            <span style={{ color: H.good }}>{row.summary.above}▲</span>{" "}
             <span style={{ color: row.summary.below > 0 ? H.bad : H.ink3 }}>{row.summary.below}▼</span>
           </span>
         )}
@@ -302,6 +324,16 @@ const thStyle: React.CSSProperties = {
   letterSpacing: ".4px",
   textTransform: "uppercase",
   color: H.ink2,
+  whiteSpace: "nowrap",
+};
+const subThStyle: React.CSSProperties = {
+  padding: "5px 12px",
+  textAlign: "center",
+  fontSize: 9.5,
+  fontWeight: 600,
+  letterSpacing: ".3px",
+  textTransform: "uppercase",
+  color: H.ink3,
   whiteSpace: "nowrap",
 };
 const tdStyle: React.CSSProperties = {

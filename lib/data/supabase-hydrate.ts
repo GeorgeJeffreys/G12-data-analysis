@@ -276,6 +276,31 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     }))
     .sort((a, b) => a.label.localeCompare(b.label));
 
+  // INVARIANT (root cause D — mirrored from buildLiveCycleData into the live
+  // hydrate path it could not previously reach). Downstream the naive-overall +
+  // grades exports bucket per-(participant × subject) cells on the participant row
+  // id, and match students ACROSS sittings (the best-of-two Overall) on studentId
+  // (qm_participant_id). BOTH must be GUARANTEED-UNIQUE per real participant: a
+  // collapsed key — two students sharing a qm_participant_id because the source
+  // export's ResultParticipantName was blank/duplicated, so DB dedup folded them
+  // into one row — would silently overwrite one student's scores (the "fewer rows
+  // than results, survivor holds a stray mark" signature). Fail loudly here rather
+  // than ship corrupt cells; the InMemoryDataProvider's analogous guard never sees
+  // this path because it runs on the seed AFTER hydrate has already assembled it.
+  const idSeen = new Set<string>();
+  const studentIdSeen = new Set<string>();
+  for (const sp of seedParticipants) {
+    if (idSeen.has(sp.id))
+      throw new Error(`hydrate: duplicate participant row id "${sp.id}" — per-(participant,subject) cells would collide.`);
+    idSeen.add(sp.id);
+    const sid = sp.studentId ?? sp.id;
+    if (studentIdSeen.has(sid))
+      throw new Error(
+        `hydrate: studentId "${sid}" maps to more than one participant row — cross-sitting matching and the grades/overall matrix would collapse these students.`,
+      );
+    studentIdSeen.add(sid);
+  }
+
   const respByAssessment = new Map<string, ResponseRow[]>();
   for (const r of responses) {
     const aId = itemAssessment.get(r.item_id);
@@ -326,6 +351,18 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       if (r.answer_given == null) resp.a = false;
       return resp;
     });
+
+    // INVARIANT (root cause D): every distinct participant in this subject's input
+    // responses must survive to a distinct output participant in the bucketed cell
+    // matrix — no silent overwrite (mirror of buildLiveCycleData's per-subject
+    // guard, applied here to the hydrated DB rows the in-memory path never sees).
+    const inParticipants = new Set(aResp.map((r) => r.participant_id)).size;
+    const outParticipants = new Set(seedResponses.map((r) => r.p)).size;
+    if (inParticipants !== outParticipants) {
+      throw new Error(
+        `hydrate: ${a.name} bucketed ${inParticipants} input participants into ${outParticipants} output participants — participant collapse.`,
+      );
+    }
 
     // Per-participant technical incidents from the sitting's result_status flag.
     const statusByP = new Map<string, string>();

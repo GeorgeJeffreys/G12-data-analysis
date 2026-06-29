@@ -148,5 +148,8 @@ describe("CGJ page", () => {
     expect(out).toContain("Below expectation");
     // the comparison header row names the student column
     expect(out).toContain("Student");
+    // each exam now carries two sub-columns: Predicted · Actual
+    expect(out).toContain("Predicted");
+    expect(out).toContain("Actual");
   });
 });

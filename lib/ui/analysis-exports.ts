@@ -33,10 +33,31 @@ export function scoreDatasetCsv(data: AssembleScoreAnalysisArgs): { headers: str
 
 /** Overall-scores CSV: one row per participant, total score per assessment + overall. */
 export function overallScoreCsv(data: AssembleScoreAnalysisArgs): { headers: string[]; rows: unknown[][] } {
+  // INVARIANT (root cause D — mirrored from #22 into the export-generation path).
+  // The per-(participant × subject) cells below bucket on (participantId,
+  // assessmentId). BOTH id spaces must be GUARANTEED-UNIQUE, and every retained
+  // response must map to a listed participant; otherwise a collapsed/duplicated
+  // key silently merges two students' scores into one cell. Fail loudly rather
+  // than export wrong numbers.
+  const partIds = new Set<string>();
+  for (const p of data.participants) {
+    if (partIds.has(p.id)) throw new Error(`overallScoreCsv: duplicate participant id "${p.id}" — per-(participant,subject) cells would collide.`);
+    partIds.add(p.id);
+  }
+  const assessIds = new Set<string>();
+  for (const a of data.assessments) {
+    if (assessIds.has(a.id)) throw new Error(`overallScoreCsv: duplicate assessment id "${a.id}" — subject columns would collide.`);
+    assessIds.add(a.id);
+  }
   const excluded = new Set(data.excludedItemIds);
   const byP = new Map<string, Map<string, number>>();
   for (const r of data.responses) {
     if (excluded.has(r.itemId)) continue;
+    if (!partIds.has(r.participantId)) {
+      throw new Error(
+        `overallScoreCsv: response references participant "${r.participantId}" absent from the roster — participant collapse (a result was bucketed under a key that no surviving participant owns).`,
+      );
+    }
     const perA = byP.get(r.participantId) ?? new Map<string, number>();
     perA.set(r.assessmentId, (perA.get(r.assessmentId) ?? 0) + r.score);
     byP.set(r.participantId, perA);
