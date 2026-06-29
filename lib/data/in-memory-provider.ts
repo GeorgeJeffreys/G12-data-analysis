@@ -2984,9 +2984,18 @@ export class InMemoryDataProvider implements DataProvider {
         for (const it of a.items) if (excluded.has(it.id)) excludedItemIds.push(it.id);
       }
     }
+    // A cohort-removed participant (staff/test account, re-sit-only, or anyone
+    // cleaned out of every subject) leaves the cohort — they must be ABSENT from
+    // the naive-overall + score-analysis exports, exactly as getGrades drops them.
+    // `responsesOf` already strips their responses; without this filter the export
+    // would still list them as all-zero rows (the "P0010/P0011 still present"
+    // leak), so the participant roster must reflect the cleaned set too.
+    const cohortRemoved = this.cohortRemovedParticipants();
     return {
       assessments: this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name })),
-      participants: this.seed.liveCycle.participants.map((p) => ({ id: p.id, label: p.label })),
+      participants: this.seed.liveCycle.participants
+        .filter((p) => !cohortRemoved.has(p.id))
+        .map((p) => ({ id: p.id, label: p.label })),
       responses,
       items,
       excludedItemIds,
