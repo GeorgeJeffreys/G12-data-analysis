@@ -14,6 +14,13 @@ export interface GenerateRequest {
   settings: DocSettings;
   /** Uploaded PowerPoint templates, one per requested kind. */
   templates: Partial<Record<DocKind, ArrayBuffer>>;
+  /**
+   * When true, render a DRAFT proof rather than an official certificate: the
+   * same templates and tokens, watermarked and filename-prefixed so the output
+   * can never be mistaken for an issued document. Real (non-draft) issuance is
+   * gated on the O1/O2 methodology sign-off — see `IssuanceSignOff`.
+   */
+  draft?: boolean;
 }
 
 export interface FontInfo {

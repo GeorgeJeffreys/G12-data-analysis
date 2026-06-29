@@ -938,6 +938,29 @@ export interface DocSettings {
   issueDate: string;
 }
 
+/**
+ * One open methodology decision that gates REAL certificate issuance. Drafts can
+ * always be exported (watermarked); official certificates may not be issued until
+ * every decision here is `confirmed` by G12.
+ */
+export interface IssuanceDecision {
+  /** Stable reference used in the UI and audit trail (e.g. "O1", "O2"). */
+  id: string;
+  /** Short human title. */
+  title: string;
+  /** What G12 must decide before real certificates can carry these results. */
+  detail: string;
+  /** True once G12 has signed this decision off in the system. */
+  confirmed: boolean;
+}
+
+/** The pre-issue sign-off state surfaced on the Generate-certificates screen. */
+export interface IssuanceSignOff {
+  decisions: IssuanceDecision[];
+  /** True only when every decision is confirmed — real (non-draft) issuance is permitted. */
+  cleared: boolean;
+}
+
 export interface DocumentsModel {
   cycleId: string;
   /** Document generation is only available once grades are locked. */
@@ -946,6 +969,12 @@ export interface DocumentsModel {
   settings: DocSettings;
   /** Canonical slot → assessment mapping for display. */
   subjectOrder: { slot: string; assessment: string }[];
+  /**
+   * Pre-issue methodology sign-off (O1/O2). Present on the Overall documents
+   * model; until `cleared`, only draft proofs may be exported. Optional so the
+   * per-sitting documents model (drafts/diagnostics only) need not carry it.
+   */
+  signOff?: IssuanceSignOff;
 }
 
 // --- Users & access (Settings) ----------------------------------------------
