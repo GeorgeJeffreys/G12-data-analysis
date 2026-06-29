@@ -46,6 +46,7 @@ import type {
   CombinedSplitModel,
   RawDataModel,
   DataCleaningModel,
+  CleanedDataModel,
   NaiveScoresModel,
   MembersModel,
   NewCycleModel,
@@ -67,6 +68,7 @@ import type {
   IncidentDecision,
 } from "./types";
 import type { GradingConfig } from "./grading";
+import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
 
 /** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
@@ -187,6 +189,8 @@ export interface DataProvider {
   getRawData(cycleId: string, assessmentId: string): RawDataModel | null;
   /** Data-cleaning view for one subject (validation report + raw matrix). */
   getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null;
+  /** Cleaned-set view in the QM cleaned-export column layout (mirrors the Excel). */
+  getCleanedData(cycleId: string, assessmentId: string): CleanedDataModel | null;
   /** Naive (pre-exclusion) overall scores for one subject. */
   getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null;
   getReview(cycleId: string, assessmentId: string): ReviewModel | null;
@@ -454,6 +458,10 @@ export interface DataProvider {
   /** Set the borderline (marginal) flagging band (percentage points). Grade-bearing:
    *  re-flags through the full grade recompute (incl. the D3 safeguard). */
   setBorderlineConfig(patch: Partial<BorderlineConfig>): void;
+  /** Per-subject A–E element labels (configurable in Settings). */
+  getElementLabels(): ElementLabelsConfig;
+  /** Replace the per-subject element-label config (lead/admin only, validated). */
+  setElementLabels(config: ElementLabelsConfig): void;
 
   // audit-writing actions (UI-driven export / document generation)
   recordExport(cycleId: string, detail: string): void;

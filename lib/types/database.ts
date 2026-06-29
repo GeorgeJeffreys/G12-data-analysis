@@ -321,6 +321,17 @@ export interface WorkspaceSettingRow {
   updated_at: string;
 }
 
+// 0014 — per-subject A–E element labels. Writes are definer-only (set_element_labels).
+export interface ElementLabelRow {
+  id: string;
+  subject: string;
+  match_key: string;
+  letter: string;
+  label: string;
+  sort_order: number;
+  updated_at: string;
+}
+
 // --- Helper to describe a table to the Supabase client -----------------------
 type TableDef<Row, Insert, Update> = {
   Row: Row;
@@ -430,6 +441,8 @@ export interface Database {
       distinction_overrides: TableDef<DistinctionOverrideRow, never, never>;
       document_settings: TableDef<DocumentSettingsRow, never, never>;
       workspace_settings: TableDef<WorkspaceSettingRow, never, never>;
+      // 0014 — per-subject A–E element labels (definer-only writes).
+      element_labels: TableDef<ElementLabelRow, never, never>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -496,6 +509,8 @@ export interface Database {
       set_document_settings: { Args: { p_cycle: string; p_settings: unknown }; Returns: undefined };
       record_documents: { Args: { p_cycle: string; p_detail: string }; Returns: undefined };
       set_workspace_setting: { Args: { p_key: string; p_value: unknown }; Returns: undefined };
+      // 0014 — replace the per-subject element-label config (definer-only).
+      set_element_labels: { Args: { p_config: unknown }; Returns: undefined };
       // 0007 — atomic, idempotent 3-CSV persist + destructive sitting controls.
       ingest_persist: { Args: { p_cycle: string; p_payload: unknown; p_actor: string }; Returns: unknown };
       clear_sitting_data: { Args: { p_cycle: string }; Returns: undefined };

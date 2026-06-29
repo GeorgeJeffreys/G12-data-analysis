@@ -244,6 +244,10 @@ export interface RawColumnMeta {
   major: string | null;
   sub: string | null;
   demand: string | null;
+  /** Configured A–E letter for this item's major element (Settings → Element labels). */
+  elLetter?: string | null;
+  /** Configured display label for this item's major element. */
+  elLabel?: string | null;
 }
 /** One participant row in the raw spreadsheet (cells aligned to `columns`). */
 export interface RawDataRow {
@@ -257,6 +261,10 @@ export interface RawElementBreak {
   major: string;
   subs: string[];
   items: number;
+  /** Configured A–E letter for this major element (Settings → Element labels). */
+  letter?: string;
+  /** Configured display label (falls back to `major` when unconfigured). */
+  label?: string;
 }
 export interface RawDataModel {
   assessment: AssessmentRef;
@@ -295,10 +303,32 @@ export interface DataCleaningModel {
   rows: RawDataRow[];
 }
 
+/**
+ * A read-only view of the cleaned set in the Questionmark "cleaned" column layout
+ * (see lib/data/cleaned-schema.ts) — one row per retained (participant, item)
+ * response, so the Clean step mirrors the team's Excel spreadsheet. De-identified:
+ * PII and QM-only metadata columns are present (in position) but blank.
+ */
+export interface CleanedDataModel {
+  assessment: AssessmentRef;
+  assessments: AssessmentRef[];
+  /** The cleaned-export column headers, in canonical order. */
+  headers: string[];
+  /** Header keys the de-identified app does not populate (shown blank). */
+  blankColumns: string[];
+  /** One row per retained response; each cell is a string aligned to `headers`. */
+  rows: string[][];
+  /** Retained counts after Clean-stage removals. */
+  retained: { participants: number; items: number; responses: number };
+}
+
 export interface NaiveElementCol {
   major: string;
+  /** Configured A–E letter (Settings → Element labels); falls back to appearance order. */
   shortId: string;
   items: number;
+  /** Configured display label (falls back to `major` when unconfigured). */
+  label?: string;
 }
 export interface NaiveStudentRow {
   id: string;

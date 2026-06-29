@@ -92,4 +92,27 @@ describe("getCompareCycles read-model", () => {
     const picked = provider.getCompareCycles([ids[0]!, ids[2]!]);
     expect(new Set(picked.selectedIds)).toEqual(new Set([ids[0], ids[2]]));
   });
+
+  it("never compares a sitting against itself (dedupes the selection)", () => {
+    const ids = provider.listCycles().map((c) => c.id);
+    const dup = provider.getCompareCycles([ids[0]!, ids[0]!]);
+    expect(dup.selectedIds).toEqual([ids[0]]);
+    expect(dup.cycles.length).toBe(1);
+  });
+
+  it("does not fabricate reliability (α) for prior cycles — it is null, not invented", () => {
+    const prior = model.cycles.find((c) => !c.live)!;
+    expect(prior.avgAlpha).toBeNull();
+    for (const m of Object.values(prior.subjects)) {
+      expect(m.alpha).toBeNull();
+    }
+  });
+
+  it("keeps the live cycle's headline α a valid coefficient (in [0,1]) or unavailable", () => {
+    const live = model.cycles.find((c) => c.live)!;
+    if (live.avgAlpha != null) {
+      expect(live.avgAlpha).toBeGreaterThanOrEqual(0);
+      expect(live.avgAlpha).toBeLessThanOrEqual(1);
+    }
+  });
 });

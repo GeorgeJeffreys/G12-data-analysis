@@ -128,7 +128,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
                   <th className="hf-th" style={{ position: "sticky", top: 0, width: 34, textAlign: "right" }}>#</th>
                   <th className="hf-th" style={{ position: "sticky", top: 0 }}>Participant</th>
                   {model.elements.map((e) => (
-                    <th key={e.major} className="hf-th" style={{ position: "sticky", top: 0, textAlign: "center", minWidth: 52 }} title={e.major}>
+                    <th key={e.major} className="hf-th" style={{ position: "sticky", top: 0, textAlign: "center", minWidth: 52 }} title={e.label ?? e.major}>
                       {e.shortId} <span style={{ color: H.ink3, fontWeight: 400 }}>/{e.items}</span>
                     </th>
                   ))}

@@ -30,6 +30,7 @@ import { hydrate, fetchSessionUser, type DecisionState } from "./supabase-hydrat
 import { catalogNamesFor } from "./subject-catalog";
 import type { Seed } from "./seed-types";
 import type { GradingConfig } from "./grading";
+import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
 import type {
   DataProvider,
@@ -68,6 +69,7 @@ import type {
   CombinedSplitModel,
   RawDataModel,
   DataCleaningModel,
+  CleanedDataModel,
   NaiveScoresModel,
   MembersModel,
   NewCycleModel,
@@ -225,6 +227,7 @@ export class SupabaseDataProvider implements DataProvider {
     for (const o of d.distinctionOverrides) p.overrideDistinctionCap(cid, o.studentId, o.reason);
     if (d.docSettings) p.setDocumentSettings(cid, d.docSettings as Partial<DocSettings>);
     this.applyWorkspace(p, d.workspace);
+    if (d.elementLabels) p.setElementLabels(d.elementLabels);
     if (d.locked) p.lockCycle(cid); // last — freezes further edits
   }
 
@@ -295,6 +298,7 @@ export class SupabaseDataProvider implements DataProvider {
   getCombinedSplit(cycleId: string): CombinedSplitModel | null { return this.inner.getCombinedSplit(cycleId); }
   getRawData(cycleId: string, assessmentId: string): RawDataModel | null { return this.inner.getRawData(cycleId, assessmentId); }
   getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null { return this.inner.getDataCleaning(cycleId, assessmentId); }
+  getCleanedData(cycleId: string, assessmentId: string): CleanedDataModel | null { return this.inner.getCleanedData(cycleId, assessmentId); }
   getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null { return this.inner.getNaiveScores(cycleId, assessmentId); }
   getReview(cycleId: string, assessmentId: string): ReviewModel | null { return this.inner.getReview(cycleId, assessmentId); }
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null { return this.inner.getItemDetail(cycleId, assessmentId, itemId); }
@@ -314,6 +318,7 @@ export class SupabaseDataProvider implements DataProvider {
   listTestCentres(): TestCentreSummary[] { return this.inner.listTestCentres(); }
   getConfig(): ConfigModel { return this.inner.getConfig(); }
   getScoringConfig(): ScoringConfig { return this.inner.getScoringConfig(); }
+  getElementLabels(): ElementLabelsConfig { return this.inner.getElementLabels(); }
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
   getOverrideView(cycleId: string): OverrideViewModel { return this.inner.getOverrideView(cycleId); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
@@ -763,6 +768,16 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.setBorderlineConfig(patch);
     this.bump();
     this.rpc("set_workspace_setting", { p_key: "borderline", p_value: patch });
+  }
+  setElementLabels(config: ElementLabelsConfig): void {
+    // Optimistic local update (validated in the inner provider), then persist via
+    // the SECURITY DEFINER RPC, which re-validates server-side before replacing.
+    this.inner.setElementLabels(config);
+    this.bump();
+    const payload = Object.entries(config).flatMap(([subject, entries]) =>
+      entries.map((e) => ({ subject, matchKey: e.matchKey, letter: e.letter, label: e.label })),
+    );
+    this.rpc("set_element_labels", { p_config: payload });
   }
 
   // audit-writing actions

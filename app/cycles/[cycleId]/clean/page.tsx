@@ -19,7 +19,8 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
-import type { RawDataModel } from "@/lib/data/types";
+import type { RawDataModel, CleanedDataModel } from "@/lib/data/types";
+import { CLEANED_DATA_PII } from "@/lib/data/cleaned-schema";
 
 export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -32,7 +33,14 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
   // Raw-data view (summary band + element/demand breakdown) folded into Clean:
   // the same read-only overview that used to live on the separate Raw data step.
   const raw = useProviderData((p) => (assessmentId ? p.getRawData(cycleId, assessmentId) : null), [cycleId, assessmentId]);
+  // Cleaned-set view in the QM cleaned-export column layout (mirrors the team's
+  // Excel spreadsheet). Read-only; the raw data is untouched.
+  const cleaned = useProviderData((p) => (assessmentId ? p.getCleanedData(cycleId, assessmentId) : null), [cycleId, assessmentId]);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
+
+  // Which table is shown: the selection matrix (remove rows/cols) or the cleaned
+  // spreadsheet view that mirrors the Excel cleaned export.
+  const [tableView, setTableView] = useState<"select" | "cleaned">("select");
 
   // local, non-destructive selection of rows / columns to remove
   const [selCols, setSelCols] = useState<Set<string>>(new Set());
@@ -110,45 +118,77 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
               <div className="hf-h2" style={{ fontSize: 16 }}>Clean data — {model.assessment.shortName}</div>
               <div className="hf-sub" style={{ fontSize: 12, marginTop: 2 }}>Remove columns and rows you don’t need, work any flagged values, then continue. Your raw file is never touched.</div>
             </div>
-            <div className="hf-card" style={{ padding: "8px 16px", display: "flex", gap: 14, alignItems: "center", background: H.canvas }}>
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span className="hf-mono" style={{ fontSize: 16, fontWeight: 600, color: H.ink3 }}>{model.rowsBefore}</span><span className="hf-lbl" style={{ fontSize: 9 }}>before</span></div>
-              <Icon name="arrow" size={14} color={H.ink3} />
-              <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span className="hf-mono" style={{ fontSize: 16, fontWeight: 600, color: after < model.rowsBefore ? H.pink : H.ink }}>{after}</span><span className="hf-lbl" style={{ fontSize: 9 }}>after</span></div>
-              <div style={{ width: 1, height: 28, background: H.line2 }} />
-              <span className="hf-sub" style={{ fontSize: 11 }}>{selRows.size} row{selRows.size === 1 ? "" : "s"} ·<br />{selCols.size} column{selCols.size === 1 ? "" : "s"} selected</span>
+            {/* table view toggle: the selection matrix vs the cleaned-export mirror */}
+            <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 9, background: H.canvas, border: `1px solid ${H.line2}` }}>
+              {([["select", "Selection"], ["cleaned", "Cleaned data"]] as const).map(([key, label]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTableView(key)}
+                  aria-pressed={tableView === key}
+                  style={{
+                    padding: "5px 12px",
+                    borderRadius: 7,
+                    border: "none",
+                    cursor: "pointer",
+                    font: "inherit",
+                    fontSize: 12,
+                    fontWeight: tableView === key ? 700 : 500,
+                    color: tableView === key ? H.pink : H.ink2,
+                    background: tableView === key ? H.pinkSoft : "transparent",
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
+            {tableView === "select" && (
+              <div className="hf-card" style={{ padding: "8px 16px", display: "flex", gap: 14, alignItems: "center", background: H.canvas }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span className="hf-mono" style={{ fontSize: 16, fontWeight: 600, color: H.ink3 }}>{model.rowsBefore}</span><span className="hf-lbl" style={{ fontSize: 9 }}>before</span></div>
+                <Icon name="arrow" size={14} color={H.ink3} />
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span className="hf-mono" style={{ fontSize: 16, fontWeight: 600, color: after < model.rowsBefore ? H.pink : H.ink }}>{after}</span><span className="hf-lbl" style={{ fontSize: 9 }}>after</span></div>
+                <div style={{ width: 1, height: 28, background: H.line2 }} />
+                <span className="hf-sub" style={{ fontSize: 11 }}>{selRows.size} row{selRows.size === 1 ? "" : "s"} ·<br />{selCols.size} column{selCols.size === 1 ? "" : "s"} selected</span>
+              </div>
+            )}
           </div>
 
-          {/* selection action bar */}
-          <div style={{ display: "flex", gap: 12, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center" }}>
-            <span style={{ fontSize: 12.5, fontWeight: 600, color: "#fff" }}>
-              {selCount === 0 ? "Click a column header or a row to select it for removal" : `${selCols.size} column · ${selRows.size} row selected`}
-            </span>
-            <div style={{ flex: 1 }} />
-            <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}>Clear</Button>
-            <Button variant="danger" disabled={selCount === 0} onClick={deleteSelected} style={{ fontSize: 11.5, background: H.paper }}>
-              <Icon name="trash" size={12} color={H.bad} />Delete selected
-            </Button>
-          </div>
+          {tableView === "select" ? (
+            <>
+              {/* selection action bar */}
+              <div style={{ display: "flex", gap: 12, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 600, color: "#fff" }}>
+                  {selCount === 0 ? "Click a column header or a row to select it for removal" : `${selCols.size} column · ${selRows.size} row selected`}
+                </span>
+                <div style={{ flex: 1 }} />
+                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}>Clear</Button>
+                <Button variant="danger" disabled={selCount === 0} onClick={deleteSelected} style={{ fontSize: 11.5, background: H.paper }}>
+                  <Icon name="trash" size={12} color={H.bad} />Delete selected
+                </Button>
+              </div>
 
-          <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-            <span className="hf-lbl">Select rows / columns to remove</span>
-            <div style={{ flex: 1 }} />
-            <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>scroll → for all items · click headers/rows to select</span>
-          </div>
+              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <span className="hf-lbl">Select rows / columns to remove</span>
+                <div style={{ flex: 1 }} />
+                <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>scroll → for all items · click headers/rows to select</span>
+              </div>
 
-          <RawSpreadsheet
-            model={model}
-            scrollRef={scrollRef}
-            zoomWrapStyle={zoomWrapStyle}
-            maxHeight={440}
-            rtl={model.assessment.rtl}
-            selectable
-            selCols={selCols}
-            selRows={selRows}
-            onToggleCol={(id) => setSelCols((s) => toggle(s, id))}
-            onToggleRow={(id) => setSelRows((s) => toggle(s, id))}
-          />
+              <RawSpreadsheet
+                model={model}
+                scrollRef={scrollRef}
+                zoomWrapStyle={zoomWrapStyle}
+                maxHeight={440}
+                rtl={model.assessment.rtl}
+                selectable
+                selCols={selCols}
+                selRows={selRows}
+                onToggleCol={(id) => setSelCols((s) => toggle(s, id))}
+                onToggleRow={(id) => setSelRows((s) => toggle(s, id))}
+              />
+            </>
+          ) : (
+            cleaned && <CleanedDataTable model={cleaned} rtl={model.assessment.rtl} />
+          )}
         </div>
 
         {/* right rail: validation report */}
@@ -193,6 +233,94 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
  * viewport (even at full screen on a laptop). The key figures stay visible in the
  * always-on summary band; the per-element / per-demand detail expands on demand.
  */
+/**
+ * The cleaned set rendered in the Questionmark cleaned-export column layout, so
+ * the on-screen view mirrors the team's Excel spreadsheet column-for-column. Wide
+ * table → horizontal scroll. Read-only; the raw data is untouched.
+ *
+ * The pipeline is de-identified, so the PII columns (email, date of birth, gender)
+ * and the QM-only per-response metadata columns are present in their canonical
+ * position but blank — the layout matches the spreadsheet without surfacing PII the
+ * app never held. Blank columns are muted; PII columns are tagged so it's clear
+ * they are intentionally empty (GDPR), not missing data.
+ */
+function CleanedDataTable({ model, rtl }: { model: CleanedDataModel; rtl?: boolean }) {
+  const blank = new Set(model.blankColumns);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <span className="hf-lbl">Cleaned data — mirrors the Excel cleaned export</span>
+        <Badge tone="neutral">{model.headers.length} columns</Badge>
+        <div style={{ flex: 1 }} />
+        <span className="hf-sub" style={{ fontSize: 11 }}>
+          {model.retained.responses.toLocaleString()} rows · {model.retained.participants} participants · {model.retained.items} items
+        </span>
+        <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>scroll → for all columns</span>
+      </div>
+      <div
+        className="hf-scroll-x"
+        style={{ overflow: "auto", maxHeight: 440, border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper }}
+        dir={rtl ? "rtl" : undefined}
+      >
+        <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 11, whiteSpace: "nowrap", direction: "ltr" }}>
+          <thead>
+            <tr>
+              {model.headers.map((h) => {
+                const isBlank = blank.has(h);
+                const isPii = (CLEANED_DATA_PII as ReadonlySet<string>).has(h);
+                return (
+                  <th
+                    key={h}
+                    title={isPii ? "PII — held in the source export only; blank here by design (GDPR)" : isBlank ? "Not retained by the de-identified pipeline — blank by design" : h}
+                    style={{
+                      position: "sticky",
+                      top: 0,
+                      zIndex: 1,
+                      textAlign: "left",
+                      padding: "7px 10px",
+                      background: H.canvas,
+                      borderBottom: `1px solid ${H.line2}`,
+                      borderRight: `1px solid ${H.line}`,
+                      fontWeight: 700,
+                      color: isBlank ? H.ink3 : H.ink2,
+                    }}
+                  >
+                    {h}
+                    {isPii && <span style={{ marginLeft: 5, fontSize: 8, color: H.ink3, letterSpacing: 0.3 }}>PII</span>}
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {model.rows.map((row, ri) => (
+              <tr key={ri} style={{ background: ri % 2 ? H.canvas : H.paper }}>
+                {row.map((cell, ci) => (
+                  <td
+                    key={ci}
+                    className="hf-mono"
+                    style={{ padding: "5px 10px", borderBottom: `1px solid ${H.line}`, borderRight: `1px solid ${H.line}`, color: cell === "" ? H.ink3 : H.ink, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }}
+                    title={cell || undefined}
+                  >
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {model.rows.length === 0 && (
+              <tr>
+                <td colSpan={model.headers.length} className="hf-sub" style={{ padding: "16px 12px" }}>
+                  No cleaned rows for this subject.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 function RawOverview({ model }: { model: RawDataModel }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const stat = (n: string | number, label: string, accent?: boolean) => (
@@ -236,11 +364,13 @@ function RawOverview({ model }: { model: RawDataModel }) {
           <span className="hf-lbl">Items by major element &amp; sub-element</span>
           {model.byElement.map((el, i) => {
             const max = Math.max(...model.byElement.map((e) => e.items), 1);
+            const letter = el.letter ?? String.fromCharCode(65 + i);
+            const label = el.label ?? el.major;
             return (
               <div key={el.major} style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <span className="hf-mono" style={{ width: 16, height: 16, borderRadius: 5, background: H.tint2, color: H.ink2, fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{String.fromCharCode(65 + i)}</span>
-                <span style={{ flex: 1, fontSize: 12, color: H.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${el.major} — ${el.subs.length} sub-element${el.subs.length === 1 ? "" : "s"}: ${el.subs.join(", ")}`}>
-                  {el.major} <span className="hf-sub" style={{ fontSize: 10.5 }}>· {el.subs.length} sub</span>
+                <span className="hf-mono" style={{ width: 16, height: 16, borderRadius: 5, background: H.tint2, color: H.ink2, fontSize: 9.5, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", flex: "0 0 auto" }}>{letter}</span>
+                <span style={{ flex: 1, fontSize: 12, color: H.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${label} — ${el.subs.length} sub-element${el.subs.length === 1 ? "" : "s"}: ${el.subs.join(", ")}`}>
+                  {label} <span className="hf-sub" style={{ fontSize: 10.5 }}>· {el.subs.length} sub</span>
                 </span>
                 <div style={{ width: 90, height: 8, background: H.tint2, borderRadius: 5, flex: "0 0 auto" }}><div style={{ width: `${(el.items / max) * 100}%`, height: "100%", background: H.bar, borderRadius: 5 }} /></div>
                 <span className="hf-mono" style={{ width: 22, fontSize: 11.5, textAlign: "right", flex: "0 0 auto" }}>{el.items}</span>

@@ -31,7 +31,6 @@ import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import type { DataProvider } from "@/lib/data/provider";
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
-import { ReliabilityPanel } from "@/components/ui/reliability";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 const REASONS = [
@@ -135,7 +134,6 @@ export default function ReviewPage({
     (p) => (selectedId ? p.getItemDetail(cycleId, assessmentId, selectedId) : null),
     [cycleId, assessmentId, selectedId],
   );
-  const reliability = useProviderData((p) => p.getReliability(cycleId), [cycleId]);
 
   const elements = useMemo(
     () => (model ? [...new Set(model.items.map((i) => i.major).filter(Boolean) as string[])].sort() : []),
@@ -317,12 +315,8 @@ export default function ReviewPage({
             <div className="hf-sub" style={{ padding: "13px 26px" }}>
               Showing {view.length} of {model.items.length} questions · click a row to expand its deep-dive
             </div>
-            {/* read-only Cronbach's α (reliability) for this subject */}
-            {reliability && (
-              <div style={{ padding: "0 26px 28px" }}>
-                <ReliabilityPanel model={reliability} assessmentId={assessmentId} />
-              </div>
-            )}
+            {/* Cronbach's α moved off the Question-review step — reliability now
+                lives on the Diagnostics step (the shared computation is untouched). */}
           </div>
         </div>
       </div>

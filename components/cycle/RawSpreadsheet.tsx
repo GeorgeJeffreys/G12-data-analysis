@@ -65,10 +65,11 @@ export function RawSpreadsheet({
   const cellText = (v: number | null): ReactNode => (v === null ? "–" : v);
   const cellColor = (v: number | null): string => (v === 1 ? H.ink : v === 0 ? H.ink3 : H.line2);
 
-  // Map each major element to a stable letter (A, B, C…) in first-appearance order.
+  // Major-element letter: the configured A–E (Settings → Element labels) when the
+  // model carries it, else first-appearance order as a fallback.
   const elLetter = new Map<string, string>();
   for (const c of model.columns) {
-    if (c.major && !elLetter.has(c.major)) elLetter.set(c.major, String.fromCharCode(65 + elLetter.size));
+    if (c.major && !elLetter.has(c.major)) elLetter.set(c.major, c.elLetter ?? String.fromCharCode(65 + elLetter.size));
   }
 
   return (
@@ -95,7 +96,7 @@ export function RawSpreadsheet({
                     key={c.id}
                     className="hf-th"
                     onClick={selectable ? () => onToggleCol?.(c.id) : undefined}
-                    title={`${c.major ?? "—"}${c.sub ? " · " + c.sub : ""}`}
+                    title={`${c.elLabel ?? c.major ?? "—"}${c.sub ? " · " + c.sub : ""}`}
                     style={{
                       position: "sticky",
                       top: 0,

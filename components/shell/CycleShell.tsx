@@ -26,7 +26,7 @@ import { LockStatus } from "./LockBanner";
 import { cyclesSubnav } from "@/lib/ui/subnav";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 
-export type CycleArea = "pipeline" | "audit" | "documents";
+export type CycleArea = "pipeline" | "audit" | "documents" | "diagnostics";
 
 export function CycleShell({
   cycleId,

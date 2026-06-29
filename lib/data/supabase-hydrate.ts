@@ -36,10 +36,12 @@ import type {
   DistinctionOverrideRow,
   DocumentSettingsRow,
   WorkspaceSettingRow,
+  ElementLabelRow,
   ImportBatchRow,
   MemberRole,
 } from "@/lib/types/database";
 import type { CurrentUser, Role } from "./types";
+import type { ElementLabelsConfig } from "./element-labels";
 import type {
   Seed,
   SeedAssessment,
@@ -143,6 +145,17 @@ export interface DecisionState {
   distinctionOverrides: { studentId: string; reason: string }[];
   docSettings: Record<string, unknown> | null;
   workspace: Record<string, unknown>;
+  /** Per-subject A–E element labels (0014); absent when the table is empty. */
+  elementLabels?: ElementLabelsConfig;
+}
+
+/** Group element-label rows (already sort_order-ordered) into the config shape. */
+function groupElementLabels(rows: ElementLabelRow[]): ElementLabelsConfig {
+  const out: ElementLabelsConfig = {};
+  for (const r of rows) {
+    (out[r.subject] ??= []).push({ matchKey: r.match_key, letter: r.letter, label: r.label });
+  }
+  return out;
 }
 export interface Hydrated {
   seed: Seed;
@@ -220,6 +233,10 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       sel<DistinctionOverrideRow>(supabase.from("distinction_overrides").select("*").eq("cycle_id", cycleId)),
       sel<WorkspaceSettingRow>(supabase.from("workspace_settings").select("*")),
     ]);
+  // 0014 — per-subject A–E element labels (workspace-wide config table).
+  const elementLabelRows = await sel<ElementLabelRow>(
+    supabase.from("element_labels").select("*").order("sort_order", { ascending: true }),
+  );
   const cleanExclusionRows = await sel<CleanExclusionRow>(
     supabase.from("clean_exclusions").select("*").eq("cycle_id", cycleId),
   );
@@ -477,6 +494,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     distinctionOverrides: distOverrides.map((o) => ({ studentId: o.participant_id, reason: o.reason })),
     docSettings: (docRow?.settings as Record<string, unknown> | undefined) ?? null,
     workspace: Object.fromEntries(workspace.map((w) => [w.key, w.value])),
+    elementLabels: elementLabelRows.length ? groupElementLabels(elementLabelRows) : undefined,
   };
 
   const subjectCodeToAssessmentId = new Map<string, string>();

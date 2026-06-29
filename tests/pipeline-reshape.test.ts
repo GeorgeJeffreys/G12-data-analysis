@@ -61,10 +61,13 @@ describe("stepper order + labels", () => {
 });
 
 describe("top cycle tab bar", () => {
-  it("no longer carries a standalone Diagnostics tab, nor a per-sitting Certificates tab", () => {
-    const labels = cyclesSubnav("c", "pipeline").map((t) => t.label);
-    expect(labels).toEqual(["Pipeline", "Audit log"]);
-    expect(labels).not.toContain("Diagnostics");
+  it("carries Pipeline, Audit log and the Diagnostics tab (no per-sitting Certificates tab)", () => {
+    const tabs = cyclesSubnav("c", "pipeline");
+    const labels = tabs.map((t) => t.label);
+    expect(labels).toEqual(["Pipeline", "Audit log", "Diagnostics"]);
+    // The sitting-level Diagnostics tab routes to its own placeholder hub, distinct
+    // from the per-subject Diagnostics pipeline step at /cycles/c/diagnostics.
+    expect(tabs.find((t) => t.label === "Diagnostics")?.href).toBe("/cycles/c/diagnostics-hub");
     // Document generation moved to the cycle/overall level — no per-sitting tab.
     expect(labels).not.toContain("Certificates");
   });

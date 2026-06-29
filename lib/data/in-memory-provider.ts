@@ -128,6 +128,7 @@ import {
   type RawDataRow,
   type RawElementBreak,
   type DataCleaningModel,
+  type CleanedDataModel,
   type CleaningCheck,
   type NaiveScoresModel,
   type NaiveElementCol,
@@ -158,6 +159,18 @@ import {
   type TechnicalErrorsUpload,
   type TechnicalIncident,
 } from "./types";
+import {
+  CLEANED_DATA_COLUMNS,
+  CLEANED_DATA_UNAVAILABLE,
+  type CleanedDataColumn,
+} from "./cleaned-schema";
+import {
+  DEFAULT_ELEMENT_LABELS,
+  validateElementLabels,
+  labelMapForSubject,
+  type ElementLabelsConfig,
+  type ResolvedElementLabel,
+} from "./element-labels";
 import {
   classify,
   defaultGradingConfig,
@@ -366,6 +379,10 @@ export class InMemoryDataProvider implements DataProvider {
   // input the grade recompute reads (see marginalInfo); editable via Settings.
   // Default is the ±2% placeholder pending G12's policy value.
   private borderline: BorderlineConfig = { bandPct: DEFAULT_BORDERLINE_BAND_PCT };
+
+  // Per-subject A–E element labels (configurable in Settings). Seeded from the
+  // confirmed G12++ defaults; the Supabase provider replays the persisted set.
+  private elementLabels: ElementLabelsConfig = JSON.parse(JSON.stringify(DEFAULT_ELEMENT_LABELS));
 
   // admin / audit / config state (all MOCK — see lib/data/mock-admin.ts)
   private members: Member[] = defaultMembers();
@@ -1048,15 +1065,27 @@ export class InMemoryDataProvider implements DataProvider {
     for (const it of a.items) if (it.demand === "D1" || it.demand === "D2" || it.demand === "D3") d[it.demand] += 1;
     return d;
   }
+  /** Resolved A–E letter + display label for each major element of a subject,
+   *  driven by the configurable per-subject element labels (Settings). */
+  private elementLabelMap(a: SeedAssessment): Map<string, ResolvedElementLabel> {
+    return labelMapForSubject(this.elementLabels, a.name, this.majorsOfItems(a.items));
+  }
+
   /** Build the raw response matrix (participants × items) for a subject. */
   private rawMatrix(a: SeedAssessment): { columns: RawColumnMeta[]; rows: RawDataRow[] } {
-    const columns: RawColumnMeta[] = a.items.map((it, i) => ({
-      id: it.id,
-      qLabel: `Q${i + 1}`,
-      major: it.major,
-      sub: it.sub,
-      demand: it.demand,
-    }));
+    const labels = this.elementLabelMap(a);
+    const columns: RawColumnMeta[] = a.items.map((it, i) => {
+      const resolved = it.major ? labels.get(it.major) : undefined;
+      return {
+        id: it.id,
+        qLabel: `Q${i + 1}`,
+        major: it.major,
+        sub: it.sub,
+        demand: it.demand,
+        elLetter: resolved?.letter ?? null,
+        elLabel: resolved?.label ?? null,
+      };
+    });
     const score = new Map<string, number>();
     for (const r of a.responses) score.set(`${r.p} ${r.i}`, r.s);
     const present = this.participantsIn(a);
@@ -1115,11 +1144,13 @@ export class InMemoryDataProvider implements DataProvider {
     const a = this.assessment(assessmentId);
     if (cycleId !== this.seed.liveCycle.id || !a) return null;
     const refs = this.assessmentRefs(cycleId);
+    const labels = this.elementLabelMap(a);
     const byElement: RawElementBreak[] = this.majorsOf(a).map((major) => {
       const items = a.items.filter((it) => it.major === major);
       const subs: string[] = [];
       for (const it of items) if (it.sub && !subs.includes(it.sub)) subs.push(it.sub);
-      return { major, subs, items: items.length };
+      const resolved = labels.get(major);
+      return { major, subs, items: items.length, letter: resolved?.letter, label: resolved?.label };
     });
     const subElementsCount = byElement.reduce((n, e) => n + e.subs.length, 0);
     const { columns, rows } = this.rawMatrix(a);
@@ -1182,6 +1213,76 @@ export class InMemoryDataProvider implements DataProvider {
     };
   }
 
+  /**
+   * Read-only view of the cleaned set in the Questionmark cleaned-export column
+   * layout (lib/data/cleaned-schema.ts) — one row per retained (participant, item)
+   * response, so the Clean step mirrors the team's Excel spreadsheet. Honours the
+   * Clean-stage removals (the raw matrix is untouched). De-identified: PII and the
+   * QM-only per-response metadata columns are present in position but blank — never
+   * fabricated, never exported.
+   */
+  getCleanedData(cycleId: string, assessmentId: string): CleanedDataModel | null {
+    const a = this.assessment(assessmentId);
+    if (cycleId !== this.seed.liveCycle.id || !a) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const remRows = this.cleanRows.get(`${cycleId}:${assessmentId}`);
+    const remCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
+    const items = remCols && remCols.size ? a.items.filter((it) => !remCols.has(it.id)) : a.items;
+    const present = this.participantsIn(a);
+    const parts = this.seed.liveCycle.participants.filter((p) => present.has(p.id) && !remRows?.has(p.id));
+
+    const scoreByKey = new Map<string, number>();
+    for (const r of a.responses) scoreByKey.set(`${r.p} ${r.i}`, r.s);
+    const incident = new Map<string, string>();
+    for (const ti of a.technicalIncidents ?? []) incident.set(ti.p, ti.status);
+    const scored = items.filter((it) => (it.maxScore ?? 1) >= 1);
+    const maxTotal = scored.reduce((n, it) => n + (it.maxScore ?? 1), 0);
+
+    const rows: string[][] = [];
+    for (const p of parts) {
+      // Per-participant totals over retained, scored items (the cleaned set).
+      let total = 0;
+      for (const it of scored) total += scoreByKey.get(`${p.id} ${it.id}`) ?? 0;
+      const pct = maxTotal ? Math.round((total / maxTotal) * 1000) / 10 : 0;
+      const resultStatus = incident.get(p.id) ?? "Finished OK";
+      for (const it of items) {
+        const score = scoreByKey.get(`${p.id} ${it.id}`);
+        if (score === undefined) continue; // a row per presented (answered) question
+        const rec: Partial<Record<CleanedDataColumn, string>> = {
+          ResultId: p.id,
+          QuestionId: it.id,
+          QuestionDescription: it.wording ?? "",
+          QuestionType: "Multiple Choice",
+          QuestionSubElement: it.sub ?? "",
+          QuestionWording: it.wording ?? "",
+          QuestionMinimumScore: "0",
+          QuestionMaximumScore: String(it.maxScore ?? 1),
+          QuestionStatus: "Normal",
+          AnswerScore: String(score),
+          AssessmentId: a.id,
+          AssessmentName: a.name,
+          ResultStatus: resultStatus,
+          ResultTotalScore: String(total),
+          ResultPercentageScore: String(pct),
+          ResultMaximumScore: String(maxTotal),
+          ParticipantFullName: p.label,
+          ParticipantID: p.studentId ?? p.id,
+          QuestionMajorElement: it.major ?? "",
+        };
+        rows.push(CLEANED_DATA_COLUMNS.map((c) => rec[c] ?? ""));
+      }
+    }
+
+    return {
+      assessment: refs.find((r) => r.id === assessmentId)!,
+      assessments: refs,
+      headers: [...CLEANED_DATA_COLUMNS],
+      blankColumns: [...CLEANED_DATA_UNAVAILABLE],
+      rows,
+      retained: { participants: parts.length, items: items.length, responses: rows.length },
+    };
+  }
+
   getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null {
     const a = this.assessment(assessmentId);
     if (cycleId !== this.seed.liveCycle.id || !a) return null;
@@ -1193,11 +1294,16 @@ export class InMemoryDataProvider implements DataProvider {
     const remRows = this.cleanRows.get(`${cycleId}:${assessmentId}`);
     const cleanItems = remCols && remCols.size ? a.items.filter((it) => !remCols.has(it.id)) : a.items;
     const majors = this.majorsOfItems(cleanItems);
-    const elements: NaiveElementCol[] = majors.map((major, i) => ({
-      major,
-      shortId: String.fromCharCode(65 + i), // A, B, C…
-      items: cleanItems.filter((it) => it.major === major).length,
-    }));
+    const naiveLabels = labelMapForSubject(this.elementLabels, a.name, majors);
+    const elements: NaiveElementCol[] = majors.map((major, i) => {
+      const resolved = naiveLabels.get(major);
+      return {
+        major,
+        shortId: resolved?.letter ?? String.fromCharCode(65 + i), // configured A–E (else appearance order)
+        items: cleanItems.filter((it) => it.major === major).length,
+        label: resolved?.label ?? major,
+      };
+    });
     // Pre-exclusion raw score = sum of scores over scored (maxScore≥1) items.
     // NO item-review exclusions applied — this is the as-submitted view, distinct
     // from the post-exclusion scoring used downstream (parity untouched).
@@ -4122,6 +4228,18 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
 
+  getElementLabels(): ElementLabelsConfig {
+    return JSON.parse(JSON.stringify(this.elementLabels));
+  }
+  setElementLabels(config: ElementLabelsConfig): void {
+    if (this.user.role !== "lead_admin") return;
+    // Server-side parity: reject an invalid set (empty labels, duplicate letters).
+    if (validateElementLabels(config)) return;
+    this.elementLabels = JSON.parse(JSON.stringify(config));
+    this.audit("config", "Updated element labels", "Per-subject A–E element display labels", null);
+    this.bump();
+  }
+
   setRetention(patch: Partial<RetentionConfig>): void {
     this.retention = { ...this.retention, ...patch };
     this.bump();
@@ -4383,12 +4501,14 @@ export class InMemoryDataProvider implements DataProvider {
     const available = all.map((c) => ({ id: c.id, name: c.name, mock: c.mock, live: c.live }));
 
     // Default = the two most recent cycles (listCycles is newest → oldest).
-    const wanted = (cycleIds && cycleIds.length >= 1 ? cycleIds : available.slice(0, 2).map((c) => c.id))
+    // Dedupe the requested ids so a sitting can never be compared against itself
+    // (the same id twice would render two identical columns — "May 2026 vs May 2026").
+    const wanted = [...new Set(cycleIds && cycleIds.length >= 1 ? cycleIds : available.slice(0, 2).map((c) => c.id))]
       .filter((id) => available.some((c) => c.id === id));
-    const selected = wanted.length >= 1 ? wanted : available.slice(0, 2).map((c) => c.id);
+    const selected = wanted.length >= 1 ? wanted : [...new Set(available.slice(0, 2).map((c) => c.id))];
     // Render oldest → newest so slope/line charts read left-to-right in time.
     const orderIndex = (id: string) => available.findIndex((c) => c.id === id);
-    const selectedIds = [...selected].sort((a, b) => orderIndex(b) - orderIndex(a));
+    const selectedIds = [...new Set(selected)].sort((a, b) => orderIndex(b) - orderIndex(a));
 
     const awardLevels = this.grading.awardLevels;
     const performanceLevels = this.grading.performanceLevels;
@@ -4405,6 +4525,11 @@ export class InMemoryDataProvider implements DataProvider {
       const vs = xs.filter((v): v is number => v != null && Number.isFinite(v));
       return vs.length ? round(vs.reduce((s, v) => s + v, 0) / vs.length, 2) : null;
     };
+    // Reliability (Cronbach's α) is bounded to [0,1]; degenerate / small-sample
+    // groups can produce out-of-band values that would skew the headline average
+    // into nonsense. Average only the valid, in-band per-subject α.
+    const meanAlpha = (xs: (number | null)[]): number | null =>
+      meanOf(xs.map((v) => (v != null && v >= 0 && v <= 1 ? v : null)));
 
     const buildLive = (): CompareCycleData => {
       const grades = this.getGrades(liveId);
@@ -4459,7 +4584,7 @@ export class InMemoryDataProvider implements DataProvider {
         avgScoreAllSubjects: meanOf(Object.values(subjectsOut).map((m) => m.scoreMean)),
         passOrAboveCount: awardedCount,
         avgPValue: meanOf(Object.values(subjectsOut).map((m) => m.avgPValue)),
-        avgAlpha: meanOf(Object.values(subjectsOut).map((m) => m.alpha)),
+        avgAlpha: meanAlpha(Object.values(subjectsOut).map((m) => m.alpha)),
         awardDist,
         subjects: subjectsOut,
       };
@@ -4500,7 +4625,11 @@ export class InMemoryDataProvider implements DataProvider {
           scoreMax: m.scoreMax,
           avgPValue: m.avgPValue,
           avgPointBiserial: m.avgPointBiserial,
-          alpha: m.alpha,
+          // Reliability (Cronbach's α) needs item-level response covariance, which
+          // prior cycles don't carry — so it is genuinely unavailable, not a number
+          // we can invent. Surfacing it as null (rather than a fabricated ~0.77)
+          // stops the misleading "0.77 → 0.10" swing against the live cycle's real α.
+          alpha: null,
           itemsUsable: m.itemsUsable,
           itemsRemoved: m.itemsRemoved,
           cuts,
@@ -4531,7 +4660,8 @@ export class InMemoryDataProvider implements DataProvider {
         avgScoreAllSubjects: meanOf(Object.values(subjectsOut).map((m) => m.scoreMean)),
         passOrAboveCount: awardedCount,
         avgPValue: meanOf(Object.values(subjectsOut).map((m) => m.avgPValue)),
-        avgAlpha: meanOf(Object.values(subjectsOut).map((m) => m.alpha)),
+        // Prior cycles have no computed reliability — leave it unavailable.
+        avgAlpha: null,
         awardDist,
         subjects: subjectsOut,
       };
@@ -4541,6 +4671,24 @@ export class InMemoryDataProvider implements DataProvider {
       const ref = available.find((c) => c.id === id)!;
       return ref.live ? buildLive() : buildMock(ref);
     });
+
+    // Two distinct sittings can share a display name (e.g. two "May 2026" sittings).
+    // Disambiguate so the comparison never reads as a sitting against itself — the
+    // live sitting is marked "(current)", the others "(earlier)" / "(earlier N)".
+    const nameCounts = cycles.reduce<Record<string, number>>((acc, c) => {
+      acc[c.name] = (acc[c.name] ?? 0) + 1;
+      return acc;
+    }, {});
+    let earlierSeen = 0;
+    for (const c of cycles) {
+      if ((nameCounts[c.name] ?? 0) <= 1) continue;
+      if (c.live) {
+        c.name = `${c.name} (current)`;
+      } else {
+        earlierSeen += 1;
+        c.name = earlierSeen > 1 ? `${c.name} (earlier ${earlierSeen})` : `${c.name} (earlier)`;
+      }
+    }
 
     return {
       available,

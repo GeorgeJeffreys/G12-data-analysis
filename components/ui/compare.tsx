@@ -382,6 +382,27 @@ export function SlopeChart({
   const sorted = [...ticks].sort((a, b) => b - a);
   const ny = (v: number) => (1 - (v - min) / (max - min || 1)) * 100;
   const nx = (i: number) => (cycles.length === 1 ? 50 : (i / (cycles.length - 1)) * 100);
+
+  // De-collide the right-edge subject labels: when several lines end at similar
+  // values their labels would stack on top of one another (English / Scientific /
+  // Applicable Math). Place each at its data-point height, then push neighbours
+  // apart to keep a minimum vertical gap (shifting the block up if it overflows
+  // the bottom), and draw a faint leader from each point to its moved label.
+  const LABEL_GAP = 8; // percent of plot height
+  const slopeLabels = groups
+    .map((g) => ({ label: g.label, v: g.values[g.values.length - 1] }))
+    .filter((o): o is { label: string; v: number } => num(o.v))
+    .map((o) => ({ label: o.label, pointY: ny(o.v), y: ny(o.v) }))
+    .sort((a, b) => a.y - b.y);
+  for (let i = 1; i < slopeLabels.length; i++) {
+    const prev = slopeLabels[i - 1]!;
+    const cur = slopeLabels[i]!;
+    if (cur.y < prev.y + LABEL_GAP) cur.y = prev.y + LABEL_GAP;
+  }
+  const last = slopeLabels[slopeLabels.length - 1];
+  const overflow = last ? last.y - 98 : 0;
+  if (overflow > 0) for (const l of slopeLabels) l.y -= overflow;
+
   return (
     <div>
       <div style={{ display: "flex", gap: 6 }}>
@@ -424,13 +445,24 @@ export function SlopeChart({
               ) : null,
             ),
           )}
-          {/* right-edge subject labels at the newest value */}
-          {groups.map((g) => {
-            const v = g.values[g.values.length - 1];
-            return num(v) ? (
-              <span key={`lbl-${g.label}`} className="hf-mono" style={{ position: "absolute", right: 2, top: `${ny(v)}%`, marginTop: -7, fontSize: 8.5, color: H.ink2, background: `${H.paper}cc`, padding: "0 2px", borderRadius: 2 }}>{g.label}</span>
-            ) : null;
-          })}
+          {/* right-edge subject labels at the newest value, de-collided with a
+              faint leader connecting each data point to its (possibly moved) label */}
+          {slopeLabels.map((l) => (
+            <span
+              key={`lead-${l.label}`}
+              aria-hidden
+              style={{ position: "absolute", right: 0, top: `${Math.min(l.pointY, l.y)}%`, height: `${Math.abs(l.y - l.pointY)}%`, width: 1, background: H.line2 }}
+            />
+          ))}
+          {slopeLabels.map((l) => (
+            <span
+              key={`lbl-${l.label}`}
+              className="hf-mono"
+              style={{ position: "absolute", right: 2, top: `${l.y}%`, marginTop: -6, fontSize: 8.5, color: H.ink2, background: `${H.paper}cc`, padding: "0 2px", borderRadius: 2, whiteSpace: "nowrap" }}
+            >
+              {l.label}
+            </span>
+          ))}
         </div>
       </div>
       <XLabels labels={cycles.map((c) => c.name)} />
