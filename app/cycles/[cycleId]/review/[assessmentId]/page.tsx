@@ -121,7 +121,8 @@ export default function ReviewPage({
   const [quality, setQuality] = useState<QualityFilter>("all");
   const [element, setElement] = useState<string>("");
   const [demand, setDemand] = useState<string>("");
-  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "discrimination", dir: 1 });
+  // Default: ascending by question number (Q1…Qn), not driven by any statistic.
+  const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "q", dir: 1 });
   const [reasonFor, setReasonFor] = useState<string | null>(null);
 
   // Selection drives the inline per-question deep-dive (one row at a time);
@@ -151,8 +152,11 @@ export default function ReviewPage({
     if (element) rows = rows.filter((r) => r.major === element);
     if (demand) rows = rows.filter((r) => r.demand === demand);
     const key = sort.key;
+    // Question number is positional: Q1, Q2, … follow the item order in the
+    // model, so sort on that index numerically (Q10 after Q9, never after Q1).
+    const order = new Map(model.items.map((it, i) => [it.id, i]));
     rows.sort((a, b) => {
-      if (key === "q") return 0;
+      if (key === "q") return ((order.get(a.id) ?? 0) - (order.get(b.id) ?? 0)) * sort.dir;
       const av = key === "quality" ? a.qualityIndex : (a[key] ?? -Infinity);
       const bv = key === "quality" ? b.qualityIndex : (b[key] ?? -Infinity);
       return (Number(av) - Number(bv)) * sort.dir;

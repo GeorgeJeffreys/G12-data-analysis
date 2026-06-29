@@ -3306,7 +3306,11 @@ export class InMemoryDataProvider implements DataProvider {
     this.exclusionOverride.delete(`${cycleId}:${assessmentId}:${itemId}`);
     const a = this.assessment(assessmentId);
     if (excluded) {
-      this.audit("exclude", "Excluded item", `${a?.name ?? assessmentId} — reason: ${reason ?? "flagged in review"}`, cycleId);
+      // Name the affected question: the human Q-number (positional in a.items)
+      // plus the underlying item UUID, so the audit row says WHAT was excluded.
+      const qIdx = a ? a.items.findIndex((it) => it.id === itemId) : -1;
+      const what = qIdx >= 0 ? `Q${qIdx + 1} (item ${itemId})` : `item ${itemId}`;
+      this.audit("exclude", "Excluded item", `${a?.name ?? assessmentId} — ${what} — reason: ${reason ?? "flagged in review"}`, cycleId);
     } else {
       this.audit("exclude", "Restored item", `${a?.name ?? assessmentId} — item returned to scoring`, cycleId);
     }
@@ -3446,11 +3450,34 @@ export class InMemoryDataProvider implements DataProvider {
     for (const id of target.cols ?? []) (removed ? cols.add(id) : cols.delete(id));
     this.cleanRows.set(key, rows);
     this.cleanCols.set(key, cols);
-    const nR = target.rows?.length ?? 0;
-    const nC = target.cols?.length ?? 0;
+    const rowIds = target.rows ?? [];
+    const colIds = target.cols ?? [];
+    const nR = rowIds.length;
+    const nC = colIds.length;
     if (nR || nC) {
       const a = this.assessment(assessmentId);
-      const parts = [nR ? `${nR} row${nR === 1 ? "" : "s"}` : null, nC ? `${nC} column${nC === 1 ? "" : "s"}` : null].filter(Boolean).join(" + ");
+      // Identify the removed row by a PSEUDONYMOUS key — the candidate code
+      // (qm_participant_id), never the student's name. The audit log is
+      // exportable / GDPR-scoped, so a bare name must not land in the detail.
+      const codeOf = (rowId: string) => {
+        const p = this.seed.liveCycle.participants.find((x) => x.id === rowId);
+        return p?.studentId ?? rowId;
+      };
+      const qLabelOf = (itemId: string) => {
+        const idx = a ? a.items.findIndex((it) => it.id === itemId) : -1;
+        return idx >= 0 ? `Q${idx + 1}` : itemId;
+      };
+      const list = (xs: string[], fn: (x: string) => string) => {
+        const shown = xs.slice(0, 8).map(fn);
+        const extra = xs.length - shown.length;
+        return shown.join(", ") + (extra > 0 ? `, +${extra} more` : "");
+      };
+      const parts = [
+        nR ? `${nR} row${nR === 1 ? "" : "s"} (candidate ${list(rowIds, codeOf)})` : null,
+        nC ? `${nC} column${nC === 1 ? "" : "s"} (${list(colIds, qLabelOf)})` : null,
+      ]
+        .filter(Boolean)
+        .join(" + ");
       this.audit(
         "exclude",
         removed ? "Removed in cleaning" : "Restored in cleaning",
