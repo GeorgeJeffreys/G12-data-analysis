@@ -89,6 +89,7 @@ import {
   type SittingKey,
   type DocSettings,
   type DocumentsModel,
+  type IssuanceSignOff,
   type DuplicateStrategy,
   type GradeBandRow,
   type GradeCell,
@@ -1906,10 +1907,38 @@ export class InMemoryDataProvider implements DataProvider {
    * generator at the rolled-up best-of-two awards. Only available once the Overall
    * is signed off (both sittings locked), mirroring the per-sitting lock gate.
    */
+  /**
+   * Pre-issue methodology sign-off (O1/O2). These are open decisions G12 owns;
+   * until each is signed off, only DRAFT certificates may be exported. They stay
+   * unconfirmed in this build by design — real issuance is intentionally not
+   * silently enabled. When G12 signs off, flip the `confirmed` flags here (or
+   * back them with a settings flag) and the official-issue path unlocks.
+   */
+  private issuanceSignOff(): IssuanceSignOff {
+    const decisions = [
+      {
+        id: "O1",
+        title: "D3 cap — per-exam vs aggregate",
+        detail:
+          "Confirm whether the D3-majority safeguard caps on a per-exam basis or on the aggregate across exams. This changes which Distinction-pattern students pass the cap.",
+        confirmed: false,
+      },
+      {
+        id: "O2",
+        title: "CGJ PLD → award mapping",
+        detail:
+          "Confirm the CGJ performance-level-descriptor (PLD) → award mapping used to derive the overall award from the per-subject levels.",
+        confirmed: false,
+      },
+    ];
+    return { decisions, cleared: decisions.every((d) => d.confirmed) };
+  }
+
   getOverallDocuments(yearId: string): DocumentsModel | null {
     const overall = this.getOverallGrades(yearId);
     if (!overall) return null;
     const locked = overall.locked;
+    const signOff = this.issuanceSignOff();
 
     const refs = overall.assessments;
     const resolve = (re: RegExp) => refs.find((a) => re.test(a.id) || re.test(a.name));
@@ -1926,7 +1955,7 @@ export class InMemoryDataProvider implements DataProvider {
     const settings: DocSettings = { ...base, cycleName: `${overall.yearName} · Overall` };
 
     if (!locked) {
-      return { cycleId: yearId, locked, students: [], settings, subjectOrder };
+      return { cycleId: yearId, locked, students: [], settings, subjectOrder, signOff };
     }
 
     const students: StudentSummary[] = overall.rows.map((r) => ({
@@ -1945,7 +1974,7 @@ export class InMemoryDataProvider implements DataProvider {
       }),
     }));
 
-    return { cycleId: yearId, locked, students, settings, subjectOrder };
+    return { cycleId: yearId, locked, students, settings, subjectOrder, signOff };
   }
 
   /**

@@ -93,4 +93,19 @@ describe("getOverallDocuments — certificates issue from Overall", () => {
     // The Overall documents are labelled as the year's Overall, not a sitting.
     expect(docs.settings.cycleName).toContain("Overall");
   });
+
+  it("carries the O1/O2 pre-issue sign-off, defaulting to NOT cleared (real issuance gated)", () => {
+    const p = fresh();
+    // Present whether or not the Overall is locked — the gate is independent of locking.
+    for (const docs of [p.getOverallDocuments(YEAR)!, (p.lockCycle(MAY), p.getOverallDocuments(YEAR)!)]) {
+      const signOff = docs.signOff!;
+      expect(signOff).toBeTruthy();
+      const ids = signOff.decisions.map((d) => d.id);
+      expect(ids).toContain("O1");
+      expect(ids).toContain("O2");
+      // Both decisions are open in this build, so real (non-draft) issuance is blocked.
+      expect(signOff.decisions.every((d) => d.confirmed === false)).toBe(true);
+      expect(signOff.cleared).toBe(false);
+    }
+  });
 });

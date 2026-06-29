@@ -46,9 +46,14 @@ function safe(name: string): string {
   return (name || "Student").replace(/[\\/:*?"<>|]+/g, "_").trim();
 }
 
+/** DRAFT watermark string injected into the {{WATERMARK}} token; empty for an
+ *  official run so issued documents stay clean. Templates that don't carry the
+ *  token simply ignore it (extras are dropped). */
+export const DRAFT_WATERMARK = "DRAFT — NOT FOR ISSUE";
+
 /** The full token set for a student (templates use a subset; extras are ignored,
  *  and unknown tokens render empty via the nullGetter). */
-function tokensFor(s: StudentSummary, settings: DocSettings): Record<string, string> {
+function tokensFor(s: StudentSummary, settings: DocSettings, draft: boolean): Record<string, string> {
   const data: Record<string, string> = {
     NAME: s.name,
     AWARD: s.award,
@@ -57,6 +62,7 @@ function tokensFor(s: StudentSummary, settings: DocSettings): Record<string, str
     EXAMDATE: settings.examDate,
     ISSUEDATE: settings.issueDate,
     CYCLE: settings.cycleName,
+    WATERMARK: draft ? DRAFT_WATERMARK : "",
   };
   for (const sub of s.subjects) {
     data[`${sub.slot}_STARS`] = sub.stars;
@@ -103,6 +109,8 @@ class PptxZipDocumentGenerator implements DocumentGenerator {
   readonly mode = "Browser PPTX → zip (no server worker)";
 
   async generate(req: GenerateRequest): Promise<GenerateResult> {
+    const draft = req.draft ?? false;
+    const namePrefix = draft ? "DRAFT - " : "";
     const archive = new JSZip();
     const perStudent = new Map<string, PerStudentStatus>();
     const kinds: GenerateResult["kinds"] = {};
@@ -127,8 +135,8 @@ class PptxZipDocumentGenerator implements DocumentGenerator {
       for (const s of req.students) {
         const ps = perStudent.get(s.participantId)!;
         try {
-          const bytes = renderPptx(template, tokensFor(s, req.settings));
-          archive.file(`${KIND_LABEL[kind]} - ${safe(s.name)}.pptx`, bytes);
+          const bytes = renderPptx(template, tokensFor(s, req.settings, draft));
+          archive.file(`${namePrefix}${KIND_LABEL[kind]} - ${safe(s.name)}.pptx`, bytes);
           ps.results[kind] = { status: "complete" };
           complete += 1;
         } catch (e) {
@@ -140,7 +148,7 @@ class PptxZipDocumentGenerator implements DocumentGenerator {
 
     const blob = await archive.generateAsync({ type: "blob", compression: "DEFLATE" });
     const zipUrl = URL.createObjectURL(blob);
-    const zipName = `${safe(req.settings.cycleName) || "documents"}_documents.zip`;
+    const zipName = `${safe(req.settings.cycleName) || "documents"}${draft ? "_DRAFT" : ""}_documents.zip`;
 
     return {
       jobId: `pptx-${Date.now()}`,
@@ -148,6 +156,9 @@ class PptxZipDocumentGenerator implements DocumentGenerator {
         georgiaPresent: false,
         barlowPresent: false,
         warnings: [
+          ...(draft
+            ? [`${DRAFT_WATERMARK}: this is a draft proof, watermarked and filename-prefixed. Do not issue — official certificates require the O1/O2 methodology sign-off.`]
+            : []),
           "Generated as editable .pptx. Open each file and export to PDF to finalise. Token replacement keeps the template design; non-embedded fonts may substitute on machines without them.",
         ],
       },

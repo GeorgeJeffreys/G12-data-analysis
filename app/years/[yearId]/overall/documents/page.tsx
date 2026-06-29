@@ -6,17 +6,27 @@
  * this page reads `getOverallDocuments(yearId)` (the rolled-up best-of-two awards)
  * and feeds the same in-browser PPTX generator the per-sitting documents screen
  * uses. Available once the Overall is signed off (both sittings locked).
+ *
+ * Issuance gate: certificates have two export modes —
+ *  - DRAFT proofs: watermarked, always available once the Overall is locked.
+ *  - OFFICIAL issue: real certificates, blocked until G12 signs off the two open
+ *    methodology decisions (O1 = D3 cap per-exam vs aggregate; O2 = CGJ PLD→award
+ *    mapping) AND the operator explicitly confirms on this screen. Real issuance
+ *    is never silently enabled — see `IssuanceSignOff` in the documents model.
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
-import { Button, Card, Badge } from "@/components/ui/primitives";
+import { Button, Card, Badge, Check } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { getDocumentGenerator } from "@/lib/documents/generator";
 import type { DocKind, GenerateResult } from "@/lib/documents/types";
+import type { IssuanceSignOff } from "@/lib/data/types";
 import { BatchPreview, CertificateProof, ReportProof, studentIssues } from "@/components/documents/BatchPreview";
+
+type IssueMode = "draft" | "official";
 
 const KINDS: DocKind[] = ["certificate", "report"];
 const KIND_LABEL: Record<DocKind, string> = {
@@ -36,6 +46,9 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showBatch, setShowBatch] = useState(false);
+  const [issueMode, setIssueMode] = useState<IssueMode>("draft");
+  // Explicit operator confirmation, required before any official (non-draft) run.
+  const [officialConfirmed, setOfficialConfirmed] = useState(false);
 
   const kinds: DocKind[] = useMemo(() => KINDS.filter((k) => selected.has(k)), [selected]);
   const toggleKind = (k: DocKind) =>
@@ -88,7 +101,15 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
   const first = model.students[0];
   const flaggedCount = model.students.filter((s) => studentIssues(s, kinds).length).length;
 
+  // Issuance gate. Drafts are always allowed; official issue needs the O1/O2
+  // sign-off to be cleared in the system AND the operator's explicit tick here.
+  const signOff: IssuanceSignOff | undefined = model.signOff;
+  const signOffCleared = signOff?.cleared ?? false;
+  const draft = issueMode === "draft";
+  const canExport = draft || (signOffCleared && officialConfirmed);
+
   const doGenerate = async () => {
+    if (!canExport) return;
     setError(null);
     setStep("generating");
     try {
@@ -98,6 +119,7 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
         students: model.students,
         settings: model.settings,
         templates: {},
+        draft,
       });
       setResult(res);
       setStep("results");
@@ -108,7 +130,8 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
         a.click();
       }
       const total = Object.values(res.kinds).reduce((s, k) => s + (k?.complete ?? 0), 0);
-      provider.recordDocuments(model.cycleId, `${total} Overall .pptx across ${kinds.join(" + ")} (zip)`);
+      const tag = draft ? "DRAFT proof" : "OFFICIAL issue (O1+O2 signed off)";
+      provider.recordDocuments(model.cycleId, `${tag}: ${total} Overall .pptx across ${kinds.join(" + ")} (zip)`);
     } catch (e) {
       setError((e as Error).message);
       setStep("config");
@@ -120,7 +143,7 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 20, flex: 1, minHeight: 0, overflow: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <div className="hf-h1">{model.settings.cycleName} · Certificates</div>
-          <Badge tone="good"><Mark kind="pass" size={12} /> Overall signed off</Badge>
+          <Badge tone="good"><Mark kind="pass" size={12} /> Both sittings locked</Badge>
         </div>
         <div className="hf-sub" style={{ maxWidth: 720 }}>
           Generated from the <strong>Overall best-of-two awards</strong> ({model.students.length} students) — each student’s certificate carries the higher award across the two sittings, not a single sitting’s result. Fills the built-in PowerPoint templates and downloads one .pptx per student in a .zip.
@@ -161,6 +184,43 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
                 </div>
               </div>
 
+              <div>
+                <div className="hf-lbl" style={{ marginBottom: 10 }}>Issue mode</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {([
+                    { mode: "draft" as IssueMode, label: "Draft proof", hint: "Watermarked — safe to circulate" },
+                    { mode: "official" as IssueMode, label: "Official issue", hint: "Real certificates" },
+                  ]).map(({ mode, label, hint }) => {
+                    const on = issueMode === mode;
+                    return (
+                      <button
+                        key={mode}
+                        onClick={() => setIssueMode(mode)}
+                        title={hint}
+                        style={{
+                          padding: "8px 16px", borderRadius: 8,
+                          border: `1px solid ${on ? H.pink : H.line2}`,
+                          background: on ? H.pinkSoft : H.paper,
+                          color: on ? H.pink : H.ink2,
+                          fontWeight: on ? 700 : 600, fontSize: 12.5, cursor: "pointer",
+                          display: "inline-flex", alignItems: "center", gap: 6,
+                        }}
+                      >
+                        {on && <Mark kind="pass" size={12} />}
+                        {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <SignOffBanner
+                signOff={signOff}
+                mode={issueMode}
+                confirmed={officialConfirmed}
+                onToggleConfirm={() => setOfficialConfirmed((v) => !v)}
+              />
+
               {flaggedCount > 0 && (
                 <div style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 11.5, color: H.warn, fontWeight: 700 }}>
                   <Mark kind="warn" size={13} /> {flaggedCount} student{flaggedCount === 1 ? "" : "s"} with content issues — check before generating
@@ -168,15 +228,26 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
               )}
 
               <div style={{ display: "flex", gap: 10 }}>
-                <Button variant="pri" disabled={step === "generating"} onClick={doGenerate}>
-                  <Icon name="award" color="#fff" />
-                  {step === "generating" ? "Generating…" : `Generate ${model.students.length} document${model.students.length === 1 ? "" : "s"}`}
+                <Button variant="pri" disabled={step === "generating" || !canExport} onClick={doGenerate}>
+                  <Icon name={draft ? "doc" : "award"} color="#fff" />
+                  {step === "generating"
+                    ? "Generating…"
+                    : draft
+                      ? `Export ${model.students.length} draft proof${model.students.length === 1 ? "" : "s"}`
+                      : `Issue ${model.students.length} certificate${model.students.length === 1 ? "" : "s"}`}
                 </Button>
                 <Button onClick={() => setShowBatch(true)} disabled={!model.students.length}>
                   <Icon name="search" />
                   Preview &amp; verify
                 </Button>
               </div>
+              {!draft && !canExport && (
+                <div className="hf-sub" style={{ fontSize: 11, color: H.ink3 }}>
+                  {signOffCleared
+                    ? "Tick the confirmation above to issue official certificates."
+                    : "Official issue is locked until O1 and O2 are signed off. Export draft proofs in the meantime."}
+                </div>
+              )}
             </div>
 
             <Card style={{ flex: "0 1 320px", minWidth: 280, padding: 16, display: "flex", flexDirection: "column", gap: 10, alignItems: "center" }}>
@@ -201,6 +272,81 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
         <BatchPreview students={model.students} settings={model.settings} kinds={kinds} onClose={() => setShowBatch(false)} />
       )}
     </Shell>
+  );
+}
+
+/**
+ * Pre-issue checklist / sign-off banner. Lists the open methodology decisions
+ * (O1, O2) that gate real certificate issuance and, in official mode, carries the
+ * explicit confirmation tick. Drafts ignore the gate (watermarked), so in draft
+ * mode this reads as informational.
+ */
+function SignOffBanner({
+  signOff,
+  mode,
+  confirmed,
+  onToggleConfirm,
+}: {
+  signOff?: IssuanceSignOff;
+  mode: IssueMode;
+  confirmed: boolean;
+  onToggleConfirm: () => void;
+}) {
+  if (!signOff) return null;
+  const cleared = signOff.cleared;
+  const official = mode === "official";
+  const tone = cleared ? H.goodSoft : H.warnSoft;
+  return (
+    <Card style={{ padding: "14px 16px", background: tone, display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+        <Mark kind={cleared ? "pass" : "warn"} size={16} />
+        <div style={{ fontWeight: 700, fontSize: 13 }}>
+          {cleared ? "Methodology signed off" : "Pre-issue sign-off required"}
+        </div>
+        <div style={{ flex: 1 }} />
+        <Badge tone={cleared ? "good" : "warn"}>
+          {signOff.decisions.filter((d) => d.confirmed).length}/{signOff.decisions.length} confirmed
+        </Badge>
+      </div>
+      <div className="hf-sub" style={{ fontSize: 11.5 }}>
+        Real certificates carry the cohort’s awards, so two open methodology decisions must be signed off by G12 before official issue. Until then, draft proofs are watermarked <strong>{`“DRAFT — NOT FOR ISSUE”`}</strong>.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {signOff.decisions.map((d) => (
+          <div key={d.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+            <Mark kind={d.confirmed ? "pass" : "warn"} size={14} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 700 }}>
+                <span className="hf-mono" style={{ color: H.ink3, marginRight: 6 }}>{d.id}</span>
+                {d.title}
+                <span style={{ marginLeft: 8, fontWeight: 600, color: d.confirmed ? H.good : H.warn }}>
+                  {d.confirmed ? "signed off" : "awaiting sign-off"}
+                </span>
+              </div>
+              <div className="hf-sub" style={{ fontSize: 11 }}>{d.detail}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+      {official && (
+        cleared ? (
+          <button
+            onClick={onToggleConfirm}
+            style={{ display: "flex", gap: 9, alignItems: "center", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
+          >
+            <Check on={confirmed} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: H.ink }}>
+              I confirm O1 and O2 are signed off and these are for official issue.
+            </span>
+          </button>
+        ) : (
+          <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, fontWeight: 700, color: H.warn }}>
+            <Icon name="lock" size={13} color={H.warn} />
+            Official issue is blocked until both decisions are signed off.
+          </div>
+        )
+      )}
+    </Card>
   );
 }
 
