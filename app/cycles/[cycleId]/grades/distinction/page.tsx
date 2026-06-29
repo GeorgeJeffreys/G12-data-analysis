@@ -57,7 +57,7 @@ export default function DistinctionPage({ params }: { params: { cycleId: string 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Distinction safeguard"
-      stageIndex={9}
+      stageIndex={10}
       primary={
         <Link href={`/cycles/${cycleId}/grades`}>
           <Button variant="pri" onClick={() => provider.confirmDistinctionCaps(cycleId)}>

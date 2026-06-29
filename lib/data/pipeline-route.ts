@@ -5,7 +5,7 @@
  *
  * The 11-stage order (see PIPELINE): Upload → Clean → Raw scores →
  * Question review → Diagnostics → Essay marks → Technical adjustments → Score →
- * Cut scores → Grades → Export. `stageIndex` is the first INCOMPLETE stage for a
+ * Cut scores → CGJ → Grades. `stageIndex` is the first INCOMPLETE stage for a
  * cycle, so routing to it lands the user on the earliest action whose
  * prerequisites already exist — never deep in the pipeline on a screen
  * (Review/Cut scores/…) whose data hasn't been produced yet.
@@ -36,9 +36,12 @@ export function stageRoute(cycleId: string, index: number): string {
       return `${base}/score`;
     case 8: // Cut scores
       return `${base}/boundaries`;
-    case 9: // Grades — final per-sitting step. Document/certificate generation is
-            // NOT a per-sitting step: it issues from the cycle/overall best-of-two
-            // award (app/years/[yearId]/overall/documents), not a single sitting.
+    case 9: // CGJ (Centre Grade Judgement) — centre-expected vs actual, sits
+            // directly after Cut scores as a check before grades are confirmed.
+      return `${base}/cgj`;
+    case 10: // Grades — final per-sitting step. Document/certificate generation is
+             // NOT a per-sitting step: it issues from the cycle/overall best-of-two
+             // award (app/years/[yearId]/overall/documents), not a single sitting.
       return `${base}/grades`;
     default:
       return base;
@@ -57,6 +60,7 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Apply technical adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to technical adjustments" },
   { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },
   { title: "Set cut scores", body: "Scores are confirmed — set cut scores for each subject to derive grades.", cta: "Go to cut scores" },
+  { title: "Check centre judgement", body: "Compare the partner centre's expected grades against the actuals as a check on the cut scores.", cta: "Go to CGJ" },
   { title: "Confirm grades", body: "Cut scores are set — review and confirm the resulting grades.", cta: "Go to grades" },
 ];
 

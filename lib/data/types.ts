@@ -37,6 +37,11 @@ export const PIPELINE = [
   "Technical adjustments",
   "Score",
   "Cut scores",
+  // CGJ (Centre Grade Judgement) sits directly after Cut scores, before Grades:
+  // once the boundaries are set the partner centre's EXPECTED grades can be lined
+  // up against the actuals, as a check on the cut scores before grades are
+  // confirmed. Upload + comparison only — not a full standard-setting method.
+  "CGJ",
   "Grades",
 ] as const;
 export type PipelineStage = (typeof PIPELINE)[number];
@@ -801,6 +806,79 @@ export interface GradesModel {
   performanceLevels: string[];
   locked: boolean;
   canLock: boolean;
+}
+
+// --- CGJ (Centre Grade Judgement) — expected-vs-actual comparison ------------
+/**
+ * How an actual performance level compares to the centre's expectation, by RANK:
+ * `match` (same level), `above` (student did better than expected), `below`
+ * (worse), `missing` (no expectation supplied, or the student isn't in that
+ * subject — nothing to compare).
+ */
+export type CgjMatch = "match" | "above" | "below" | "missing";
+
+/** One subject cell in the CGJ comparison: centre-expected vs pipeline-actual. */
+export interface CgjSubjectCompare {
+  assessmentId: string;
+  /** Expected performance level from the centre file (null = not supplied). */
+  expected: string | null;
+  /** Actual performance level the pipeline produced (null = student absent here). */
+  actual: string | null;
+  match: CgjMatch;
+}
+
+/** One student row: their centre-expected vs actual levels across every subject. */
+export interface CgjStudentRow {
+  participantId: string;
+  studentId: string;
+  name: string;
+  /** Per-subject expected-vs-actual, keyed by assessment id. */
+  subjects: Record<string, CgjSubjectCompare>;
+  /** True when this student was found in the uploaded centre file. */
+  inCentreFile: boolean;
+  /** Per-row tally over the subjects that had BOTH an expectation and an actual. */
+  summary: { matched: number; above: number; below: number; compared: number };
+}
+
+/**
+ * One row of the assumed PLD→award alignment (O2 — open for G12). Surfaced as a
+ * labelled assumption; never used to recompute an award.
+ */
+export interface PldAwardMapEntry {
+  performanceLevel: string;
+  awardLevel: string;
+}
+
+export interface CgjModel {
+  cycleId: string;
+  /** Whether a centre expectations file has been uploaded for this sitting. */
+  uploaded: boolean;
+  /** True when populated from the labelled sample rather than a real file. */
+  sample: boolean;
+  fileName: string | null;
+  assessments: AssessmentRef[];
+  rows: CgjStudentRow[];
+  /** Performance levels best → lowest (the comparison vocabulary). */
+  performanceLevels: string[];
+  /** Award levels best → lowest. */
+  awardLevels: string[];
+  /** Tally across every compared subject cell (both expectation + actual present). */
+  counts: {
+    studentsInFile: number;
+    /** Centre-file students not matched to a roster student. */
+    unmatchedStudents: number;
+    matched: number;
+    above: number;
+    below: number;
+    compared: number;
+  };
+  /**
+   * The ASSUMED PLD→award mapping (O2). Rendered as a labelled assumption in the
+   * UI; not signed off and not baked into grading.
+   */
+  pldAwardMap: PldAwardMapEntry[];
+  /** Always true here — the mapping above is unconfirmed (drives the UI banner). */
+  pldAwardMapAssumed: boolean;
 }
 
 // --- Overall (best-of-two across the year's two sittings) --------------------

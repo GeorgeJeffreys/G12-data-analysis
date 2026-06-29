@@ -52,9 +52,15 @@ import type {
   SetBoundaryInput,
   TechnicalErrorRow,
   EssayUploadRow,
+  CgjUploadRow,
   IncidentInput,
   IncidentDecisionInput,
 } from "./provider";
+import {
+  assumedPldAwardMap,
+  compareLevels,
+  normalizePerformanceLevel,
+} from "./cgj";
 import {
   PIPELINE,
   type AnalyticsCompare,
@@ -95,6 +101,9 @@ import {
   type GradeCell,
   type GradeMatrixRow,
   type GradesModel,
+  type CgjModel,
+  type CgjStudentRow,
+  type CgjSubjectCompare,
   type ManualMarkAdjustment,
   type OverallGradesModel,
   type GradingDefaultsModel,
@@ -326,6 +335,20 @@ export class InMemoryDataProvider implements DataProvider {
     { uploaded: boolean; sample: boolean; fileName: string | null; incidents: AdjustmentIncident[] }
   >();
   private adjIncidentSeq = 0;
+  // CGJ (Centre Grade Judgement): the centre's EXPECTED level per student per
+  // subject, keyed by cycle. Pure comparison input — never feeds scoring.
+  // `expected` maps assessmentId → expected performance level (raw rows are
+  // resolved to assessments + normalised at upload time).
+  private cgjByCycle = new Map<
+    string,
+    {
+      uploaded: boolean;
+      sample: boolean;
+      fileName: string | null;
+      /** studentName (as supplied) → { assessmentId → expected level }. */
+      students: { name: string; expected: Record<string, string> }[];
+    }
+  >();
   private distinctionOverrides = new Map<string, Map<string, { reason: string; by: string }>>();
   private distinctionConfirmed = new Set<string>();
   // safeguard config; empty topDifficultyDemand → resolve to the highest demand present.
@@ -2607,6 +2630,152 @@ export class InMemoryDataProvider implements DataProvider {
       subjects,
       counts: { incidents: incidents.length, decided, awaiting: incidents.length - decided, alterations },
       netBySubject,
+    };
+  }
+
+  // ── CGJ (Centre Grade Judgement) — expected vs actual ─────────────────────
+  /**
+   * Resolve the raw rows of a centre expectations file into the stored shape:
+   * each student's expected level keyed by the assessment id its column maps to,
+   * with the level normalised into a canonical performance level. Unrecognised
+   * subject columns / level strings are dropped (a blank expectation, never a
+   * wrong one) — the file is operational, not authoritative.
+   */
+  private buildCgjStudents(rows: CgjUploadRow[]): { name: string; expected: Record<string, string> }[] {
+    const levels = this.grading.performanceLevels;
+    return rows
+      .map((r) => {
+        const expected: Record<string, string> = {};
+        for (const [header, raw] of Object.entries(r.levels)) {
+          const subj = this.subjectForExamCode(header);
+          if (!subj) continue;
+          const level = normalizePerformanceLevel(raw, levels);
+          if (level) expected[subj.id] = level;
+        }
+        return { name: r.studentName, expected };
+      })
+      .filter((s) => Object.keys(s.expected).length > 0);
+  }
+
+  uploadCgjFile(cycleId: string, fileName: string, rows: CgjUploadRow[]): void {
+    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const students = this.buildCgjStudents(rows);
+    this.cgjByCycle.set(cycleId, { uploaded: true, sample: false, fileName, students });
+    this.audit("upload", "Added centre grade judgement", `${fileName} — expected grades for ${students.length} student(s)`, cycleId);
+    this.bump();
+  }
+
+  /**
+   * Load a small, clearly-labelled SAMPLE centre expectations set. Names
+   * reference real roster labels so the match resolves; the expected levels are
+   * deliberately a mix (some match the actuals, some sit above/below) so the
+   * comparison shows all four outcomes. Flagged `sample: true` everywhere.
+   */
+  loadSampleCgj(cycleId: string): void {
+    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
+    const grades = this.getGrades(cycleId);
+    const levels = this.grading.performanceLevels;
+    const assessments = this.seed.liveCycle.assessments;
+    // Build sample expectations off the ACTUAL grades of the first few students,
+    // nudging each subject up/down a rank so the file is not a trivial all-match.
+    const rows: CgjUploadRow[] = (grades?.rows ?? []).slice(0, 8).map((row, ri) => {
+      const out: Record<string, string> = {};
+      assessments.forEach((a, ai) => {
+        const actual = row.grades[a.id]?.level;
+        if (!actual) return;
+        const rank = levels.indexOf(actual);
+        if (rank < 0) return;
+        // Deterministic nudge: vary by student+subject so we get matches, a few
+        // above (centre expected less) and a few below (centre expected more).
+        const shift = ((ri + ai) % 3) - 1; // −1, 0, +1
+        const expectedRank = Math.min(levels.length - 1, Math.max(0, rank + shift));
+        out[a.shortName] = levels[expectedRank]!;
+      });
+      return { studentName: row.label, levels: out };
+    });
+    const students = this.buildCgjStudents(rows);
+    this.cgjByCycle.set(cycleId, { uploaded: true, sample: true, fileName: "sample_centre_expectations.xlsx", students });
+    this.audit("upload", "Loaded sample centre grade judgement", `${students.length} labelled sample expectations (not from a real file)`, cycleId);
+    this.bump();
+  }
+
+  clearCgj(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    if (!this.cgjByCycle.has(cycleId)) return;
+    this.cgjByCycle.delete(cycleId);
+    this.audit("upload", "Removed centre grade judgement", "Centre expectations cleared from the comparison", cycleId);
+    this.bump();
+  }
+
+  getCgj(cycleId: string): CgjModel | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const grades = this.getGrades(cycleId);
+    const refs = this.assessmentRefs(cycleId);
+    const perfLevels = this.grading.performanceLevels;
+    const awardLevels = this.grading.awardLevels;
+    const st = this.cgjByCycle.get(cycleId);
+
+    // Actual per-student per-subject levels from the (already-computed) grades.
+    const actualByStudent = new Map<string, GradeMatrixRow>();
+    for (const r of grades?.rows ?? []) actualByStudent.set(r.id, r);
+
+    // Match each centre-file student to a roster student (by the same fuzzy name
+    // resolver the incident triage uses). One expected set per matched student.
+    const expectedByParticipant = new Map<string, Record<string, string>>();
+    let unmatchedStudents = 0;
+    for (const s of st?.students ?? []) {
+      const pid = this.suggestStudentId(s.name);
+      if (pid) expectedByParticipant.set(pid, s.expected);
+      else unmatchedStudents += 1;
+    }
+
+    let matched = 0, above = 0, below = 0, compared = 0;
+    const rows: CgjStudentRow[] = (grades?.rows ?? []).map((g) => {
+      const expected = expectedByParticipant.get(g.id) ?? {};
+      const inCentreFile = expectedByParticipant.has(g.id);
+      const subjects: Record<string, CgjSubjectCompare> = {};
+      let rMatched = 0, rAbove = 0, rBelow = 0, rCompared = 0;
+      for (const a of this.seed.liveCycle.assessments) {
+        const exp = expected[a.id] ?? null;
+        const act = g.grades[a.id]?.level || null;
+        const m = compareLevels(exp, act, perfLevels);
+        subjects[a.id] = { assessmentId: a.id, expected: exp, actual: act, match: m };
+        if (m !== "missing") {
+          rCompared += 1; compared += 1;
+          if (m === "match") { rMatched += 1; matched += 1; }
+          else if (m === "above") { rAbove += 1; above += 1; }
+          else { rBelow += 1; below += 1; }
+        }
+      }
+      return {
+        participantId: g.id,
+        studentId: g.studentId,
+        name: g.label,
+        subjects,
+        inCentreFile,
+        summary: { matched: rMatched, above: rAbove, below: rBelow, compared: rCompared },
+      };
+    });
+
+    return {
+      cycleId,
+      uploaded: !!st?.uploaded,
+      sample: !!st?.sample,
+      fileName: st?.fileName ?? null,
+      assessments: refs,
+      rows,
+      performanceLevels: perfLevels,
+      awardLevels,
+      counts: {
+        studentsInFile: st?.students.length ?? 0,
+        unmatchedStudents,
+        matched,
+        above,
+        below,
+        compared,
+      },
+      pldAwardMap: assumedPldAwardMap(perfLevels, awardLevels),
+      pldAwardMapAssumed: true,
     };
   }
 

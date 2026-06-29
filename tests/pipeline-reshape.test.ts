@@ -27,11 +27,12 @@ const EXPECTED_ORDER = [
   "Technical adjustments",
   "Score",
   "Cut scores",
+  "CGJ",
   "Grades",
 ];
 
 describe("stepper order + labels", () => {
-  it("PIPELINE_STAGES is the 10-step order, ending at Grades (no per-sitting Export)", () => {
+  it("PIPELINE_STAGES is the 11-step order, ending at Grades (no per-sitting Export)", () => {
     expect([...PIPELINE_STAGES]).toEqual(EXPECTED_ORDER);
     // Document/certificate generation is not a per-sitting step — it lives at the
     // cycle/overall level — so the stepper no longer carries an "Export" stage.
@@ -48,6 +49,14 @@ describe("stepper order + labels", () => {
     expect(PIPELINE_STAGES).not.toContain("Adjustments");
     expect(PIPELINE_STAGES).not.toContain("Boundaries");
     expect(PIPELINE_STAGES).not.toContain("Raw data");
+  });
+
+  it("CGJ sits directly after Cut scores, before Grades", () => {
+    const cut = [...PIPELINE_STAGES].indexOf("Cut scores");
+    const cgj = [...PIPELINE_STAGES].indexOf("CGJ");
+    const grades = [...PIPELINE_STAGES].indexOf("Grades");
+    expect(cgj).toBe(cut + 1);
+    expect(grades).toBe(cgj + 1);
   });
 });
 
@@ -68,7 +77,9 @@ describe("routing follows the new order with nothing skipped", () => {
     expect(stageRoute("c", 5)).toBe("/cycles/c/essays");
     expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments");
     expect(stageRoute("c", 8)).toBe("/cycles/c/boundaries");
-    for (let i = 0; i <= 9; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
+    expect(stageRoute("c", 9)).toBe("/cycles/c/cgj");
+    expect(stageRoute("c", 10)).toBe("/cycles/c/grades");
+    for (let i = 0; i <= 10; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
   });
 });
 
@@ -163,11 +174,19 @@ describe("continue buttons follow the new order", () => {
     expect(out).toContain(`/cycles/${CYCLE}/score`);
   });
 
-  it("Cut scores → Grades", async () => {
+  it("Cut scores → CGJ", async () => {
     active = new InMemoryDataProvider();
     const { default: BoundariesPage } = await import("@/app/cycles/[cycleId]/boundaries/page");
     const out = html(e(BoundariesPage, { params: { cycleId: CYCLE } }));
     expect(out).toContain("Confirm cut scores");
+    expect(out).toContain(`/cycles/${CYCLE}/cgj`);
+  });
+
+  it("CGJ → Grades", async () => {
+    active = new InMemoryDataProvider();
+    const { default: CgjPage } = await import("@/app/cycles/[cycleId]/cgj/page");
+    const out = html(e(CgjPage, { params: { cycleId: CYCLE } }));
+    expect(out).toContain("Centre grade judgement");
     expect(out).toContain(`/cycles/${CYCLE}/grades`);
   });
 });

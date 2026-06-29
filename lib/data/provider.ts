@@ -39,6 +39,7 @@ import type {
   DocumentsModel,
   DuplicateStrategy,
   GradesModel,
+  CgjModel,
   OverallGradesModel,
   GradingDefaultsModel,
   IngestModel,
@@ -103,6 +104,17 @@ export interface IncidentDecisionInput {
   /** Raw marks added (+) or subtracted (−). */
   marks?: number;
   reason?: string | null;
+}
+
+/**
+ * One row of the optional CGJ centre-expectations file: a student plus their
+ * expected level per subject. `levels` is keyed by the raw subject header from
+ * the file (a code like "AM"/"ESL" or a full subject name); the provider resolves
+ * those to assessments and normalises the level strings.
+ */
+export interface CgjUploadRow {
+  studentName: string;
+  levels: Record<string, string>;
 }
 
 /** One essay row from the optional essay-marks spreadsheet (one per essay). */
@@ -359,6 +371,21 @@ export interface DataProvider {
   decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void;
   /** Transparent per-student per-subject composition: MCQ + Essay + Alterations = total. */
   getComposition(cycleId: string): CompositionModel | null;
+
+  // CGJ (Centre Grade Judgement) — centre-expected vs actual, after Cut scores ─
+  /**
+   * The CGJ comparison for a sitting: each student's centre-EXPECTED level per
+   * subject lined up against the ACTUAL level the pipeline produced (read from
+   * `getGrades` — no recompute). Includes the assumed PLD→award mapping as a
+   * labelled, unconfirmed assumption (O2). Null for a non-live cycle.
+   */
+  getCgj(cycleId: string): CgjModel | null;
+  /** Upload a centre expectations file (parsed client-side into rows). Audited. */
+  uploadCgjFile(cycleId: string, fileName: string, rows: CgjUploadRow[]): void;
+  /** Load a small, clearly-labelled SAMPLE centre expectations set. */
+  loadSampleCgj(cycleId: string): void;
+  /** Remove the uploaded centre expectations file. */
+  clearCgj(cycleId: string): void;
   /** Speededness & timing diagnostics (informational; not part of grading). */
   getDiagnostics(cycleId: string): DiagnosticsModel | null;
   /** Cronbach's-α reliability at every construct grouping (read-only, additive). */
