@@ -105,6 +105,21 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
           <Alert tone="info">This subject includes an essay-scored element marked offline; it’s added later in Adjustments. The raw score here is the MCQ items only.</Alert>
         )}
 
+        {/* Key: the A–E columns are the paper's major elements (kept as short
+            letters so the table stays compact). Spell each one out here. */}
+        {model.elements.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 16px" }}>
+            <span className="hf-lbl" style={{ fontSize: 11 }}>Major elements (score / items):</span>
+            {model.elements.map((e) => (
+              <span key={e.major} style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 12 }}>
+                <span className="hf-mono" style={{ fontWeight: 700, color: H.ink }}>{e.shortId}</span>
+                <span style={{ color: H.ink2 }}>{e.major}</span>
+                <span className="hf-mono" style={{ color: H.ink3 }}>/{e.items}</span>
+              </span>
+            ))}
+          </div>
+        )}
+
         <div ref={scrollRef} className="hf-card" style={{ overflow: "auto", flex: 1, minWidth: 0, padding: 0 }}>
           <div style={zoomWrapStyle}>
             <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: 0, fontSize: 13 }}>

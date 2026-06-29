@@ -13,6 +13,16 @@ import type { AssessmentDiagnostics } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { TestCentreSummary } from "./types";
 
+/** One multiple-choice answer option for a question (from the QM export). */
+export interface SeedAnswerOption {
+  /** Display label for the choice — A, B, C… in presented order. */
+  label: string;
+  /** Cleaned option text (HTML/entities stripped). */
+  text: string;
+  /** True when this option is (one of) the correct answer(s). */
+  correct: boolean;
+}
+
 export interface SeedItem {
   id: string;
   wording: string | null;
@@ -20,6 +30,12 @@ export interface SeedItem {
   sub: string | null;
   demand: string | null;
   maxScore: number;
+  /**
+   * The question's multiple-choice answer options, from the QM export
+   * (`QuestionPossibleAnswers` / `QuestionCorrectAnswers`). Optional — only the
+   * generated demo seed carries these; live/DB-hydrated items leave it absent.
+   */
+  options?: SeedAnswerOption[] | null;
   /** Participants who answered (engine n) and were presented the item. */
   participantsAnswered: number;
   participantsPresented: number;

@@ -20,7 +20,7 @@
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import type { ItemRow, ItemDetailModel } from "@/lib/data/types";
+import type { ItemRow, ItemDetailModel, AnswerOption } from "@/lib/data/types";
 import { H, ratingColor } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { CycleShell } from "@/components/shell/CycleShell";
@@ -402,12 +402,20 @@ function ItemRowView({
       <td style={{ ...td, verticalAlign: "top", maxWidth: 360 }}>
         <div style={{ display: "flex", gap: 8, alignItems: expanded ? "flex-start" : "center" }}>
           <span style={{ display: "flex", flexDirection: "column", flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>
-            <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, lineHeight: 1.1 }}>{qLabel}</span>
-            <span className="hf-mono hf-sub" style={{ fontSize: 9.5, lineHeight: 1.2 }} title="Question ID (from the Questionmark export)">{it.id}</span>
+            {/* Clean question number (exam order). The internal Questionmark item
+                ID is kept only as a hover tooltip, not shown as a raw long number. */}
+            <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, lineHeight: 1.1 }} title={`Question ID (Questionmark): ${it.id}`}>{qLabel}</span>
           </span>
-          <span style={{ flex: 1, minWidth: 0, fontSize: FONT, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
-            {expanded ? (it.wording ?? "—") : firstLine(it.wording)}
-          </span>
+          <div style={{ flex: 1, minWidth: 0, fontSize: FONT, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
+            {expanded ? (
+              <>
+                {it.wording ?? "—"}
+                {it.options && it.options.length > 0 && <AnswerOptions options={it.options} />}
+              </>
+            ) : (
+              firstLine(it.wording)
+            )}
+          </div>
           {(it.wording ?? "").length > 40 ? (
             <button
               onClick={(e) => { stop(e); onToggleExpand(); }}
@@ -456,6 +464,40 @@ function ItemRowView({
   );
 }
 
+/**
+ * The question's multiple-choice answer options (from the Questionmark export),
+ * lettered A–D in presented order. The correct option is marked with a check and
+ * green tint; options with no correct answer recorded simply omit the marker.
+ */
+function AnswerOptions({ options }: { options: AnswerOption[] }) {
+  return (
+    <div style={{ marginTop: 9 }}>
+      <div className="hf-lbl" style={{ marginBottom: 5 }}>Answer options</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {options.map((o) => (
+          <div
+            key={o.label}
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 8,
+              fontSize: 12,
+              padding: "3px 8px",
+              borderRadius: 6,
+              background: o.correct ? H.goodSoft : "transparent",
+              border: `1px solid ${o.correct ? H.good : H.line}`,
+            }}
+          >
+            <span className="hf-mono" style={{ fontWeight: 700, color: o.correct ? H.good : H.ink2, flex: "0 0 auto" }}>{o.label}</span>
+            <span style={{ flex: 1, color: H.ink }}>{o.text}</span>
+            {o.correct && <span style={{ fontSize: 10.5, fontWeight: 700, color: H.good, flex: "0 0 auto" }}>✓ correct</span>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function RatingChip({ rating }: { rating: "Good" | "Review" | "Flag" }) {
   const c = ratingColor(rating);
   const bg = rating === "Good" ? H.goodSoft : rating === "Review" ? H.warnSoft : H.badSoft;
@@ -488,8 +530,7 @@ function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel;
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* header — statistics only, no question wording */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-        <span className="hf-mono" style={{ fontWeight: 700, fontSize: 15 }}>{detail.qLabel}</span>
-        <span className="hf-mono hf-sub" style={{ fontSize: 11 }} title="Question ID (from the Questionmark export)">ID {detail.id}</span>
+        <span className="hf-mono" style={{ fontWeight: 700, fontSize: 15 }} title={`Question ID (Questionmark): ${detail.id}`}>{detail.qLabel}</span>
         {detail.demand && <Pill>{detail.demand}</Pill>}
         {detail.major && <span className="hf-sub" style={{ fontSize: 11 }}>{detail.major}</span>}
         <div style={{ flex: 1 }} />
@@ -538,6 +579,9 @@ function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel;
           ))}
         </div>
       </div>
+
+      {/* answer options — the question's multiple-choice choices */}
+      {detail.options && detail.options.length > 0 && <AnswerOptions options={detail.options} />}
 
       {/* exclude / restore */}
       <div style={{ borderTop: `1px solid ${H.line}`, paddingTop: 12 }}>
