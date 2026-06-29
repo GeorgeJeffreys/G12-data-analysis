@@ -140,7 +140,10 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       stageIndex={8}
       actions={<ExportButtons onCsv={exportBoundariesCsv} onXlsx={exportBoundariesXlsx} />}
       primary={
-        <Link href={`/cycles/${cycleId}/grades`}>
+        // Cut scores → CGJ (step 10) → Grades (step 11): the next step is the
+        // centre-grade-judgement comparison, a check on the boundaries before
+        // grades are confirmed.
+        <Link href={`/cycles/${cycleId}/cgj`}>
           <Button variant="pri" title="Confirm cut scores">
             Continue
             <Icon name="arrow" color="#fff" />

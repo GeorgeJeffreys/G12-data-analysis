@@ -38,6 +38,7 @@ import type {
   IncidentInput,
   IncidentDecisionInput,
   EssayUploadRow,
+  CgjUploadRow,
 } from "./provider";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
@@ -60,6 +61,7 @@ import type {
   DocumentsModel,
   DuplicateStrategy,
   GradesModel,
+  CgjModel,
   OverallGradesModel,
   GradingDefaultsModel,
   IngestModel,
@@ -320,6 +322,7 @@ export class SupabaseDataProvider implements DataProvider {
   getNewCycle(): NewCycleModel { return this.inner.getNewCycle(); }
   getEssayMarks(cycleId: string): EssayMarksModel | null { return this.inner.getEssayMarks(cycleId); }
   getAdjustments(cycleId: string): AdjustmentsModel | null { return this.inner.getAdjustments(cycleId); }
+  getCgj(cycleId: string): CgjModel | null { return this.inner.getCgj(cycleId); }
   getComposition(cycleId: string): CompositionModel | null { return this.inner.getComposition(cycleId); }
   getDiagnostics(cycleId: string): DiagnosticsModel | null { return this.inner.getDiagnostics(cycleId); }
   getReliability(cycleId: string): ReliabilityModel | null { return this.inner.getReliability(cycleId); }
@@ -562,6 +565,22 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.clearIncidentLog(cycleId);
     this.bump();
     void this.rpcThenRehydrate("clear_incidents", { p_cycle: cycleId });
+  }
+
+  // CGJ (Centre Grade Judgement) — comparison-only, no scoring impact. Held in
+  // the inner provider for now (local to the session); a persistence RPC can be
+  // added later without touching the UI.
+  uploadCgjFile(cycleId: string, fileName: string, rows: CgjUploadRow[]): void {
+    this.inner.uploadCgjFile(cycleId, fileName, rows);
+    this.bump();
+  }
+  loadSampleCgj(cycleId: string): void {
+    this.inner.loadSampleCgj(cycleId);
+    this.bump();
+  }
+  clearCgj(cycleId: string): void {
+    this.inner.clearCgj(cycleId);
+    this.bump();
   }
   decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void {
     this.inner.decideIncident(cycleId, incidentId, decision);

@@ -22,7 +22,7 @@ import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import type { Seed } from "@/lib/data/seed-types";
 import type { DataProvider } from "@/lib/data/provider";
 
-const TOTAL = PIPELINE.length; // the real, single-sourced step count (10)
+const TOTAL = PIPELINE.length; // the real, single-sourced step count (11)
 
 // The "done" circle renders this checkmark path; counting it counts completed steps.
 const CHECK = "M2.5 6.2l2.2 2.2L9.5 3.5";
@@ -72,7 +72,7 @@ describe("step list is single-sourced", () => {
     // Re-exported, not duplicated — so the tracker, the total and the completed
     // count can never drift apart.
     expect(PIPELINE_STAGES).toBe(PIPELINE);
-    expect(TOTAL).toBe(10);
+    expect(TOTAL).toBe(11);
   });
 });
 
@@ -108,22 +108,22 @@ describe("Technical adjustments page renders all prior steps complete", () => {
 
 describe("Years card 'k/N steps' label", () => {
   it("an advanced sitting reads k/total with total = the real step count (no '9/8')", async () => {
-    // stageIndex 9 = on Grades, 9 steps complete — the exact state that read "9/8".
+    // stageIndex 9 = on CGJ, 9 steps complete — the exact state class that read "9/8".
     const html = await renderYear(seedAt(9), "year-2026");
-    expect(html).toContain(`9/${TOTAL} steps`); // i.e. "9/10 steps"
+    expect(html).toContain(`9/${TOTAL} steps`); // i.e. "9/11 steps"
     expect(html).not.toContain("/8 steps");
     expect(html).not.toContain("9/8");
   });
 
   it("the completed count can never exceed the total (clamped against stale sources)", async () => {
-    // A stale prior carrying the old 11-step count must still render k ≤ total.
+    // A stale prior carrying a count above the real total must still render k ≤ total.
     const prior: Seed["priorCycles"] = [
-      { id: "may-2025", name: "May 2025", testCentreId: "tc-a", stageIndex: 10, stepsDone: 11, participants: 0, assessments: 0, lastActivity: "2025", locked: true, mock: true },
+      { id: "may-2025", name: "May 2025", testCentreId: "tc-a", stageIndex: 12, stepsDone: 13, participants: 0, assessments: 0, lastActivity: "2025", locked: true, mock: true },
     ];
     const html = await renderYear(seedAt(1, prior), "year-2025");
-    expect(html).toContain(`${TOTAL}/${TOTAL} steps`); // clamped to "10/10"
-    expect(html).not.toContain(`11/${TOTAL}`);
-    expect(html).not.toContain("11/8");
+    expect(html).toContain(`${TOTAL}/${TOTAL} steps`); // clamped to "11/11"
+    expect(html).not.toContain(`13/${TOTAL}`);
+    expect(html).not.toContain("13/8");
   });
 
   it("k ≤ total for every reachable stageIndex", async () => {
