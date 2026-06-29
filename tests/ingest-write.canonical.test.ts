@@ -54,10 +54,17 @@ describe("ingestCleanResponses — richer canonical persistence (single rpc)", (
     expect(p.items.some((i) => (i.question_status as string)?.toLowerCase() === "beta")).toBe(true);
     expect(p.items.some((i) => i.topic_path)).toBe(true);
 
-    // result_totals: one per graded result, with QM's trusted totals + sitting.
-    expect(p.result_totals.length).toBe(canonical.results.length);
+    // result_totals: one per GRADED result (re-sit forms are surfaced separately,
+    // not persisted as graded subjects), with QM's trusted totals + sitting.
+    const resitNames = new Set(canonical.resitForms.map((f) => f.name));
+    const gradedResults = canonical.results.filter((r) => !resitNames.has(r.subject));
+    expect(gradedResults.length).toBe(canonical.results.length - 1); // one "Applicable Maths" re-sit held out
+    expect(p.result_totals.length).toBe(gradedResults.length);
     expect(p.result_totals.every((r) => typeof r.maximum_score === "number")).toBe(true);
-    expect(p.result_totals.some((r) => r.attempt_number === 2)).toBe(true);
+    // The only attempt-2 sitting is the "Applicable Maths" re-sit, held out of the
+    // graded set (surfaced via resitForms + the validation report instead).
+    expect(canonical.results.some((r) => r.attemptNumber === 2)).toBe(true);
+    expect(p.result_totals.some((r) => r.attempt_number === 2)).toBe(false);
     expect(p.result_totals.every((r) => r.sitting === "MAY2026")).toBe(true);
     expect(p.result_totals.every((r) => r.reconciled === true)).toBe(true);
 

@@ -130,6 +130,24 @@ export interface ReconcileIssue {
   totalOk: boolean;
 }
 
+/**
+ * A subject name that looks like a re-sit / alternate FORM of another subject —
+ * its canonical name collapses to the same base (ignoring case, whitespace and a
+ * trailing plural "s" on the final word) as a larger subject, but it carries a
+ * DIFFERENT item set. Surfaced for review and NOT merged into the base subject
+ * (its items must never inflate the base subject's scored set).
+ */
+export interface ResitForm {
+  /** The re-sit form's canonical subject name (e.g. "G12++ Applicable Maths"). */
+  name: string;
+  /** The base subject it most likely re-sits (e.g. "G12++ Applicable Math"). */
+  baseName: string;
+  /** Distinct participants who sat the re-sit form. */
+  participantCount: number;
+  /** Distinct items in the re-sit form. */
+  itemCount: number;
+}
+
 /** Integrity-guard outcome over every graded result. */
 export interface IntegrityReport {
   resultsChecked: number;
@@ -150,6 +168,12 @@ export interface CanonicalModel {
   /** One per graded participant-sitting. */
   results: QmResult[];
   integrity: IntegrityReport;
+  /**
+   * Subjects that look like re-sit / alternate forms of another subject (same
+   * canonical base, different item set). Surfaced for analyst review — their
+   * items are NOT merged into the base subject. Empty when no such form exists.
+   */
+  resitForms: ResitForm[];
   /** Distinct raw assessment names dropped as surveys/UX. */
   excludedSurveys: string[];
   stats: {

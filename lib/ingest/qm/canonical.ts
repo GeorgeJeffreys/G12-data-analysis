@@ -15,8 +15,10 @@ import type {
   QmItem,
   QmParticipant,
   QmResult,
+  QmSubject,
   QmTopicRollup,
   ReconcileIssue,
+  ResitForm,
   Sitting,
 } from "./model";
 
@@ -39,13 +41,70 @@ function text(value: string | undefined): string | null {
 }
 
 /**
- * Normalise a raw `AssessmentName` to its canonical subject name: repair
- * encoding, collapse whitespace, and merge the "Applicable Maths" variant into
- * "Applicable Math" (per the data-map decision — one subject, not two).
+ * A small, configurable alias map for GENUINE subject-name variants (encoding or
+ * spelling differences that denote the SAME exam form). Default empty: nothing is
+ * merged unless an analyst adds an explicit alias here. A typo'd re-sit form that
+ * carries a DIFFERENT item set (e.g. "Applicable Maths") is deliberately NOT an
+ * alias — it is surfaced as a re-sit form, never merged (see `detectResitForms`).
+ *
+ * Keys are matched case-insensitively against the trimmed, whitespace-collapsed
+ * raw name; the value is the canonical display name.
  */
-export function normalizeSubjectName(raw: string): string {
-  const repaired = repairText(raw).replace(/\s+/g, " ").trim();
-  return repaired.replace(/Applicable\s+Maths\b/gi, "Applicable Math");
+export type SubjectAliasMap = Readonly<Record<string, string>>;
+export const DEFAULT_SUBJECT_ALIASES: SubjectAliasMap = {};
+
+/**
+ * Canonicalise a raw `AssessmentName`: repair encoding, collapse whitespace, trim,
+ * then apply the configurable alias map (case-insensitive). It does NOT merge
+ * "Applicable Maths" into "Applicable Math" — that trailing-"s" form is a distinct
+ * 44-question re-sit, surfaced separately so its items never inflate the real
+ * Applicable Math item set.
+ */
+export function normalizeSubjectName(raw: string, aliases: SubjectAliasMap = DEFAULT_SUBJECT_ALIASES): string {
+  const cleaned = repairText(raw).replace(/\s+/g, " ").trim();
+  const alias = aliases[cleaned.toLowerCase()];
+  return alias ?? cleaned;
+}
+
+/**
+ * Collapse a canonical subject name to a comparison BASE: lowercase, drop the
+ * "G12++" prefix, and strip a trailing plural "s" from the final word. Two names
+ * that share a base but differ otherwise (e.g. "Applicable Math" vs "Applicable
+ * Maths") are re-sit-form candidates. RTL/Arabic names have no Latin plural and
+ * collapse to themselves.
+ */
+export function subjectBaseKey(name: string): string {
+  const base = name.replace(/^G12\+\+\s*/i, "").replace(/\s+/g, " ").trim().toLowerCase();
+  return base.replace(/s\b/g, (m, off: number) => (off === base.length - 1 ? "" : m));
+}
+
+/**
+ * Detect re-sit / alternate forms: when two canonical subjects share a base key
+ * but have DIFFERENT item sets, the one with fewer participants is flagged as a
+ * re-sit of the larger (base) subject. Surfaced for review; never merged.
+ */
+export function detectResitForms(subjects: readonly QmSubject[]): ResitForm[] {
+  const byBase = new Map<string, QmSubject[]>();
+  for (const s of subjects) {
+    const k = subjectBaseKey(s.name);
+    (byBase.get(k) ?? byBase.set(k, []).get(k)!).push(s);
+  }
+  const forms: ResitForm[] = [];
+  for (const group of byBase.values()) {
+    if (group.length < 2) continue;
+    // Largest participant count is the base subject; the rest are re-sit forms.
+    const sorted = [...group].sort((a, b) => b.resultCount - a.resultCount);
+    const base = sorted[0]!;
+    for (const form of sorted.slice(1)) {
+      forms.push({
+        name: form.name,
+        baseName: base.name,
+        participantCount: form.resultCount,
+        itemCount: form.itemCount,
+      });
+    }
+  }
+  return forms;
 }
 
 const MONTH_TO_PERIOD: Record<string, "february" | "may"> = {
@@ -267,6 +326,9 @@ export function buildCanonicalModelFromTables(
     };
   });
 
+  // ── 4b. Surface re-sit / alternate forms (same base, different item set) ─────
+  const resitForms = detectResitForms(subjects);
+
   // ── 5. Integrity guard: QM totals must equal the item-level sums ─────────────
   const issues: ReconcileIssue[] = [];
   for (const r of results) {
@@ -310,6 +372,7 @@ export function buildCanonicalModelFromTables(
     items: allItems,
     results,
     integrity,
+    resitForms,
     excludedSurveys: [...excludedSurveys],
     stats: {
       assessmentRows: assessments.rows.length,

@@ -21,8 +21,12 @@ export {
   buildCanonicalModel,
   buildCanonicalModelFromTables,
   normalizeSubjectName,
+  detectResitForms,
+  subjectBaseKey,
+  DEFAULT_SUBJECT_ALIASES,
   parseSitting,
 } from "./canonical";
+export type { SubjectAliasMap } from "./canonical";
 export { toCombinedRows } from "./bridge";
 export type * from "./model";
 
@@ -71,6 +75,18 @@ function augmentReport(report: ValidationReport, model: CanonicalModel): Validat
     count: model.excludedSurveys.length,
   });
 
+  if (model.resitForms.length > 0) {
+    checks.push({
+      id: "resit_forms",
+      label: "Re-sit / alternate forms surfaced (not merged)",
+      status: "warn",
+      detail: `${model.resitForms.length} re-sit form(s) detected and held out of the graded subjects for review: ${model.resitForms
+        .map((f) => `"${f.name}" (${f.participantCount} participant(s), ${f.itemCount} items) — likely a re-sit of "${f.baseName}"`)
+        .join("; ")}. Their items are NOT merged into the base subject.`,
+      count: model.resitForms.length,
+    });
+  }
+
   checks.push({
     id: "sitting",
     label: "Sitting tag captured",
@@ -91,10 +107,15 @@ export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIng
   const canonical = buildCanonicalModelFromTables(items, assessments, topics);
   const combined = toCombinedRows(items, assessments);
   const { clean, droppedSurveyRows, droppedNonMcqRows } = normalizeResponses(combined);
-  const validationReport = validate(combined, clean, droppedSurveyRows, droppedNonMcqRows);
+  // Hold re-sit / alternate forms out of the GRADED response set so their items
+  // never inflate the base subject's scored set (root cause A). The form's data is
+  // retained on `canonical` (results + resitForms) for analyst review.
+  const resitNames = new Set(canonical.resitForms.map((f) => f.name));
+  const graded = resitNames.size ? clean.filter((r) => !resitNames.has(r.assessmentName)) : clean;
+  const validationReport = validate(combined, graded, droppedSurveyRows, droppedNonMcqRows);
   return {
     canonical,
-    cleanedResponses: clean,
+    cleanedResponses: graded,
     validationReport: augmentReport(validationReport, canonical),
     sources,
   };

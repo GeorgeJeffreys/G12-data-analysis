@@ -83,16 +83,25 @@ describe("header-signature detection", () => {
 });
 
 describe("subject-name normalisation", () => {
-  it("merges the 'Applicable Maths' variant into one subject", () => {
-    expect(normalizeSubjectName("G12++ Applicable Maths")).toBe("G12++ Applicable Math");
+  it("canonicalises (trim/whitespace/alias) but does NOT merge the 'Applicable Maths' re-sit", () => {
+    // Trailing-"s" form is a distinct 44-question re-sit, NOT an alias — keep it separate.
+    expect(normalizeSubjectName("G12++ Applicable Maths")).toBe("G12++ Applicable Maths");
     expect(normalizeSubjectName("G12++ Applicable Math")).toBe("G12++ Applicable Math");
+    // Whitespace/encoding canonicalisation still applies.
+    expect(normalizeSubjectName("  G12++   Applicable Math ")).toBe("G12++ Applicable Math");
+    // A genuine alias is merged only when configured explicitly.
+    expect(normalizeSubjectName("Maths AM", { "maths am": "G12++ Applicable Math" })).toBe(
+      "G12++ Applicable Math",
+    );
   });
 
-  it("yields exactly the five graded subjects (no survey, no 'Maths' duplicate)", () => {
+  it("keeps the re-sit form as its own subject + surfaces it (never merged into Applicable Math)", () => {
     const names = model.subjects.map((s) => s.name).sort();
+    // Five base subjects PLUS the surfaced re-sit form — six distinct subjects.
     expect(names).toEqual(
       [
         "G12++ Applicable Math",
+        "G12++ Applicable Maths",
         "G12++ English as a 2nd Language",
         "G12++ Life Success Skills",
         "G12++ Scientific Thinking",
@@ -100,10 +109,16 @@ describe("subject-name normalisation", () => {
       ].sort(),
     );
     const am = model.subjects.find((s) => s.name === "G12++ Applicable Math")!;
-    // Both raw variants folded into this one subject.
-    expect(am.rawNames).toEqual(
-      expect.arrayContaining(["G12++ Applicable Math", "G12++ Applicable Maths"]),
-    );
+    // Applicable Math carries ONLY its own raw name — the re-sit is not folded in.
+    expect(am.rawNames).toEqual(["G12++ Applicable Math"]);
+    // The re-sit form is surfaced for review, attributed to the base subject.
+    expect(model.resitForms).toHaveLength(1);
+    expect(model.resitForms[0]).toMatchObject({
+      name: "G12++ Applicable Maths",
+      baseName: "G12++ Applicable Math",
+      participantCount: 1,
+      itemCount: 44,
+    });
   });
 });
 
@@ -134,9 +149,10 @@ describe("every question counts (no QuestionStatus filtering)", () => {
     expect(by.get("G12++ English as a 2nd Language")!.itemCount).toBe(66);
     expect(by.get("G12++ English as a 2nd Language")!.qmMaximumScore).toBe(88);
     expect(by.get("G12++ English as a 2nd Language")!.betaItemCount).toBe(9);
-    // Applicable Math folds in the attempt-2 "Maths" pilot's 44 distinct items
-    // (42 real + 44 pilot = 86) — merged, never dropped, so scoring can decide later.
-    expect(by.get("G12++ Applicable Math")!.itemCount).toBe(86);
+    // Applicable Math is its OWN 42-item set (41 MCQ + 1 max-0 stimulus); the
+    // attempt-2 "Maths" re-sit is a SEPARATE 44-item subject, never merged in.
+    expect(by.get("G12++ Applicable Math")!.itemCount).toBe(42);
+    expect(by.get("G12++ Applicable Maths")!.itemCount).toBe(44);
   });
 });
 
@@ -203,9 +219,16 @@ describe("bridge to the engine path + report", () => {
     expect(cleanedResponses.length).toBeGreaterThan(0);
     for (const r of cleanedResponses) expect(r.questionType).toBe("Multiple Choice");
     const ids = validationReport.checks.map((c) => c.id);
-    expect(ids).toEqual(expect.arrayContaining(["qm_reconciliation", "surveys_excluded", "sitting"]));
+    expect(ids).toEqual(
+      expect.arrayContaining(["qm_reconciliation", "surveys_excluded", "sitting", "resit_forms"]),
+    );
     expect(validationReport.passed).toBe(true);
-    expect(canonical.subjects.length).toBe(5);
+    // Six canonical subjects (five base + the surfaced re-sit form)…
+    expect(canonical.subjects.length).toBe(6);
+    expect(canonical.resitForms).toHaveLength(1);
+    // …but the re-sit form's responses are HELD OUT of the graded engine matrix,
+    // so its 44 items never inflate Applicable Math.
+    for (const r of cleanedResponses) expect(r.assessmentName).not.toBe("G12++ Applicable Maths");
   });
 });
 

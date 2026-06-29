@@ -77,9 +77,22 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
   }
 
   // Participants in stable, sorted pseudonym order (no PII leaves the pseudonym).
+  // INVARIANT (root cause D): the participant key must be GUARANTEED-UNIQUE — one
+  // pseudonym per real participant id and vice versa. A non-bijective key would
+  // silently overwrite participants in the per-subject maps below (the "fewer
+  // output participants than input results" signature), so we fail loudly here.
   const realIdByPseudonym = new Map<string, string>();
+  const pseudonymByRealId = new Map<string, string>();
   for (const r of clean) {
     if (!realIdByPseudonym.has(r.participantPseudonym)) realIdByPseudonym.set(r.participantPseudonym, r.qmParticipantId);
+    if (!pseudonymByRealId.has(r.qmParticipantId)) pseudonymByRealId.set(r.qmParticipantId, r.participantPseudonym);
+    const mappedId = realIdByPseudonym.get(r.participantPseudonym);
+    const mappedPseudo = pseudonymByRealId.get(r.qmParticipantId);
+    if (mappedId !== r.qmParticipantId || mappedPseudo !== r.participantPseudonym) {
+      throw new Error(
+        `buildLiveCycleData: non-unique participant key — pseudonym "${r.participantPseudonym}" / id "${r.qmParticipantId}" collides (mapped to "${mappedId}" / "${mappedPseudo}"). Aggregation would drop or corrupt participants.`,
+      );
+    }
   }
   const partOrder = [...realIdByPseudonym.keys()].sort();
   const participants: SeedParticipant[] = partOrder.map((id, i) => ({
@@ -168,6 +181,16 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       if (!r.answerGiven) resp.a = false;
       return resp;
     });
+
+    // INVARIANT (root cause D): every distinct participant in this subject's input
+    // responses must survive to a distinct output participant — no silent overwrite.
+    const inParticipants = new Set(recs.map((r) => r.participantPseudonym)).size;
+    const outParticipants = new Set(seedResponses.map((r) => r.p)).size;
+    if (inParticipants !== outParticipants) {
+      throw new Error(
+        `buildLiveCycleData: ${name} aggregated ${inParticipants} input participants into ${outParticipants} output participants — participant collapse.`,
+      );
+    }
 
     // Per-participant technical incidents from the sitting's result_status flag.
     const statusByP = new Map<string, string>();

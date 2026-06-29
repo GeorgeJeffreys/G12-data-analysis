@@ -331,6 +331,20 @@ export interface DataProvider {
   ): void;
   /** Restore every clean-stage removal for one subject ("Revert all"). */
   clearCleanRemovals(cycleId: string, assessmentId: string): void;
+  /**
+   * Flag (or un-flag) a participant as a staff / test account excluded from the
+   * ENTIRE cohort — one authoritative action, not a per-subject removal. An
+   * excluded participant drops from every downstream stage (raw scores, score, cut
+   * scores, grades, analytics) and the headline counts. `excluded=false` restores
+   * them. Persisted by the Supabase provider; in-memory in the demo. The caller
+   * supplies the participant id (never a hardcoded email).
+   */
+  excludeParticipantFromCohort(
+    cycleId: string,
+    participantId: string,
+    excluded: boolean,
+    reason?: string | null,
+  ): void;
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void;
   setGradingDefaults(patch: Partial<GradingConfig>): void;
   /** Edit the engine's item-quality Good/Review/Flag thresholds (Lead/Admin only). */

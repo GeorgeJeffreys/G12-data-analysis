@@ -354,6 +354,34 @@ export class SupabaseDataProvider implements DataProvider {
     this.rpc("clear_clean_removals", { p_cycle: cycleId, p_assessment: assessmentId });
   }
 
+  excludeParticipantFromCohort(
+    cycleId: string,
+    participantId: string,
+    excluded: boolean,
+    reason?: string | null,
+  ): void {
+    this.inner.excludeParticipantFromCohort(cycleId, participantId, excluded, reason);
+    this.bump();
+    // Persist durably by recording the removal on every subject the participant
+    // sat. This reuses the clean_exclusions store + RPC (no new migration); on
+    // reload hydrate replays the per-subject rows and `cohortRemovedParticipants`
+    // re-derives the cohort-wide exclusion. getRawData reads the untouched raw
+    // matrix, so presence is computed before the exclusion takes effect.
+    const cyc = this.inner.getCycle(cycleId);
+    for (const a of cyc?.assessments ?? []) {
+      const raw = this.inner.getRawData(cycleId, a.id);
+      if (raw?.rows.some((r) => r.id === participantId)) {
+        this.rpc("set_clean_removal", {
+          p_cycle: cycleId,
+          p_assessment: a.id,
+          p_kind: "row",
+          p_targets: [participantId],
+          p_remove: excluded,
+        });
+      }
+    }
+  }
+
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void {
     this.inner.setBoundary(cycleId, scope, input);
     this.bump();

@@ -292,6 +292,12 @@ export class InMemoryDataProvider implements DataProvider {
   // sets filter the cleaned view and fold into the engine-facing reads.
   private cleanRows = new Map<string, Set<string>>(); // cycle:assessment -> participantIds
   private cleanCols = new Map<string, Set<string>>(); // cycle:assessment -> itemIds
+  // Authoritative cohort-wide participant exclusions (staff / test accounts).
+  // Keyed cycle -> participantId -> reason. Distinct from per-subject clean rows:
+  // ONE action drops the participant from every subject + every cohort view. This
+  // is the single cleaned source the downstream stages read for "is this a real
+  // student?" (root causes B + C).
+  private participantExclusions = new Map<string, Map<string, string>>(); // cycle -> pid -> reason
   private boundaries = new Map<string, BoundaryState>(); // cycle:scope -> state
   private locked = new Set<string>();
   private grading: GradingConfig = defaultGradingConfig();
@@ -514,6 +520,10 @@ export class InMemoryDataProvider implements DataProvider {
   private cleanRowSet(assessmentId: string): Set<string> | undefined {
     return this.cleanRows.get(`${this.seed.liveCycle.id}:${assessmentId}`);
   }
+  /** Participant ids excluded cohort-wide (staff / test accounts) for the live cycle. */
+  private cohortExcludedSet(): Set<string> {
+    return new Set(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
+  }
   /**
    * Participants removed from the COHORT entirely — those cleaned out (Clean-stage
    * row removal) of EVERY subject in which they have responses. The test/staff
@@ -524,7 +534,9 @@ export class InMemoryDataProvider implements DataProvider {
    * their cohort row and simply carry a blank cell for the subject(s) they left.
    */
   private cohortRemovedParticipants(): Set<string> {
-    const out = new Set<string>();
+    // Authoritative cohort exclusions (staff/test) drop out unconditionally; the
+    // per-subject "removed from every subject" rule below is the legacy path.
+    const out = new Set<string>(this.cohortExcludedSet());
     const assessments = this.seed.liveCycle.assessments;
     const presence = assessments.map((a) => this.participantsIn(a));
     for (const p of this.seed.liveCycle.participants) {
@@ -551,7 +563,9 @@ export class InMemoryDataProvider implements DataProvider {
     // cohort the engine scores already reflects the cleaned set. Only the single
     // live cycle has real data, so keying by liveCycle.id is sufficient.
     const removed = this.cleanRowSet(a.id);
-    const src = removed && removed.size ? a.responses.filter((r) => !removed.has(r.p)) : a.responses;
+    const cohortExcluded = this.cohortExcludedSet();
+    const drop = removed && removed.size ? new Set([...removed, ...cohortExcluded]) : cohortExcluded;
+    const src = drop.size ? a.responses.filter((r) => !drop.has(r.p)) : a.responses;
     return src.map((r) => ({
       participantId: r.p,
       itemId: r.i,
@@ -1193,8 +1207,9 @@ export class InMemoryDataProvider implements DataProvider {
     for (const major of majors) itemsByMajor.set(major, new Set(cleanItems.filter((it) => it.major === major).map((it) => it.id)));
 
     const present = this.participantsIn(a);
+    const cohortExcluded = this.cohortExcludedSet();
     const students: NaiveStudentRow[] = this.seed.liveCycle.participants
-      .filter((p) => present.has(p.id) && !remRows?.has(p.id))
+      .filter((p) => present.has(p.id) && !remRows?.has(p.id) && !cohortExcluded.has(p.id))
       .map((p) => {
         const myScores = a.responses.filter((r) => r.p === p.id);
         const byId = new Map(myScores.map((r) => [r.i, r.s]));
@@ -3702,6 +3717,34 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
 
+  excludeParticipantFromCohort(
+    cycleId: string,
+    participantId: string,
+    excluded: boolean,
+    reason?: string | null,
+  ): void {
+    if (this.locked.has(cycleId)) return;
+    let m = this.participantExclusions.get(cycleId);
+    if (!m) this.participantExclusions.set(cycleId, (m = new Map<string, string>()));
+    const was = m.has(participantId);
+    if (excluded) m.set(participantId, (reason ?? "").trim() || "Staff / test account");
+    else m.delete(participantId);
+    if (was === excluded) return; // no-op
+    // Audit by the PSEUDONYMOUS candidate code, never the student's name (the log
+    // is exportable / GDPR-scoped).
+    const p = this.seed.liveCycle.participants.find((x) => x.id === participantId);
+    const code = p?.studentId ?? participantId;
+    this.audit(
+      "exclude",
+      excluded ? "Excluded participant from cohort" : "Restored participant to cohort",
+      excluded
+        ? `Candidate ${code} excluded from the whole cohort (staff/test account) — ${m.get(participantId)}`
+        : `Candidate ${code} restored to the cohort`,
+      cycleId,
+    );
+    this.bump();
+  }
+
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void {
     if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${scope}`;
@@ -3870,6 +3913,9 @@ export class InMemoryDataProvider implements DataProvider {
     for (const key of [...this.exclusions.keys()]) if (key.startsWith(`${cycleId}:`)) this.exclusions.delete(key);
     for (const key of [...this.reasons.keys()]) if (key.startsWith(`${cycleId}:`)) this.reasons.delete(key);
     for (const key of [...this.boundaries.keys()]) if (key.startsWith(`${cycleId}:`)) this.boundaries.delete(key);
+    for (const key of [...this.cleanRows.keys()]) if (key.startsWith(`${cycleId}:`)) this.cleanRows.delete(key);
+    for (const key of [...this.cleanCols.keys()]) if (key.startsWith(`${cycleId}:`)) this.cleanCols.delete(key);
+    this.participantExclusions.delete(cycleId);
     this.locked.delete(cycleId);
 
     lc.fileName = file.name;
