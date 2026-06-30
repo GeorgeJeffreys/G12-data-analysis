@@ -9,6 +9,7 @@
 
 import type { DemandLevel } from "@/lib/types/database";
 import { repairText, repairValue } from "./repair";
+import { assignParticipantIdentities, type IdentityInputRow } from "./participant-identity";
 import type { CleanResponse, RawExportRow } from "./types";
 
 export const MCQ_QUESTION_TYPE = "Multiple Choice";
@@ -126,11 +127,28 @@ export interface NormalizeResult {
  * Turn raw rows into clean MCQ responses, dropping surveys and non-MCQ rows.
  * Participants are given a stable sequential pseudonym (P0001, P0002 …) in order
  * of first appearance, so downstream consumers never need the PII identifier.
+ *
+ * Participant identity is resolved up-front from the export's guaranteed-unique
+ * field (ParticipantID / email / result→participant mapping), NEVER from the
+ * collision-prone ResultParticipantName — so distinct students never fold into one
+ * record. The pseudonym maps 1:1 from that resolved identity.
  */
 export function normalizeResponses(rows: readonly RawExportRow[]): NormalizeResult {
   const clean: CleanResponse[] = [];
   let droppedSurveyRows = 0;
   let droppedNonMcqRows = 0;
+
+  // Resolve a guaranteed-unique identity per result before assigning pseudonyms.
+  const identityInputs: IdentityInputRow[] = rows.map((row) => ({
+    resultId: str(row["ResultId"]),
+    subject: repairText(str(row["AssessmentName"])),
+    row: row as Record<string, unknown>,
+  }));
+  const identityByResult = assignParticipantIdentities(identityInputs);
+  const resolveIdentity = (row: RawExportRow): string => {
+    const resultId = str(row["ResultId"]);
+    return identityByResult.get(resultId)?.id ?? (resultId ? `result:${resultId}` : "result:unknown");
+  };
 
   const pseudonymByParticipant = new Map<string, string>();
   const pseudonym = (participantId: string): string => {
@@ -155,13 +173,13 @@ export function normalizeResponses(rows: readonly RawExportRow[]): NormalizeResu
       continue;
     }
 
-    const qmParticipantId =
-      str(row["ResultParticipantName"]) || str(row["ResultId"]);
+    const qmParticipantId = resolveIdentity(row);
     const { major, sub } = deriveElements(row["QuestionTopicPath"]);
 
     clean.push({
       assessmentName,
       qmQuestionId: str(row["QuestionId"]),
+      qmResultId: str(row["ResultId"]),
       qmParticipantId,
       participantPseudonym: pseudonym(qmParticipantId),
       wording: stripHtml(row["QuestionWording"]),

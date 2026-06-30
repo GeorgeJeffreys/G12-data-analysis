@@ -96,6 +96,42 @@ export function summarizeSubjects(clean: readonly CleanResponse[]): SubjectSumma
 }
 
 /**
+ * Participant-collapse guard at the ingest/detection boundary (root cause: identity
+ * collapse). This is the `#distinct-input == #distinct-output participants`
+ * invariant, extended to the EARLIEST point — the per-subject participant count
+ * shown on Upload — so a collapse fails loudly here instead of silently surfacing
+ * as "8 participants when 15 sat it" and corrupting the per-student score matrix.
+ *
+ * Each distinct `ResultId` is one participant's sitting of one subject, so a
+ * subject's distinct OUTPUT participants (pseudonyms) must equal its distinct
+ * sitters (results). Fewer means the identity step folded distinct students into
+ * one record. (Re-sit / alternate forms are held out as separate subjects upstream,
+ * so a graded subject carries exactly one result per sitter.)
+ */
+export function assertParticipantIdentityIntact(clean: readonly CleanResponse[]): void {
+  const bySubject = new Map<string, { results: Set<string>; participants: Set<string> }>();
+  for (const r of clean) {
+    let g = bySubject.get(r.assessmentName);
+    if (!g) {
+      g = { results: new Set(), participants: new Set() };
+      bySubject.set(r.assessmentName, g);
+    }
+    if (r.qmResultId) g.results.add(r.qmResultId);
+    g.participants.add(r.participantPseudonym);
+  }
+  for (const [subject, g] of bySubject) {
+    if (g.participants.size < g.results.size) {
+      throw new Error(
+        `participant identity collapse at ingest: "${subject}" has ${g.results.size} sitter(s) ` +
+          `(distinct ResultIds) but only ${g.participants.size} distinct participant(s) — distinct ` +
+          `students folded into one identity. Key participant identity on a guaranteed-unique field ` +
+          `(ParticipantID / email / the result→participant mapping), never ResultParticipantName.`,
+      );
+    }
+  }
+}
+
+/**
  * Merge several parsed row sets (multiple files or sheets) into one combined
  * dataset before cleaning. Rows are concatenated as-is — each already carries its
  * own AssessmentName / participant id, so the subsequent split re-groups them

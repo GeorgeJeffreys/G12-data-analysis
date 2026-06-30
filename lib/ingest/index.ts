@@ -9,6 +9,7 @@
 
 import { normalizeResponses } from "./normalize";
 import { validate } from "./validate";
+import { assertParticipantIdentityIntact } from "./split";
 import type { CleanResponse, RawExportRow, ValidationReport } from "./types";
 
 export { parseExport } from "./parse";
@@ -29,6 +30,7 @@ export {
   splitBySubject,
   summarizeSubject,
   summarizeSubjects,
+  assertParticipantIdentityIntact,
   mergeRawExports,
 } from "./split";
 export type { SubjectSummary, SubjectElementSummary } from "./split";
@@ -72,6 +74,9 @@ export function ingestAndClean(
 ): IngestAndCleanResult {
   const { clean, droppedSurveyRows, droppedNonMcqRows } =
     normalizeResponses(rawExport);
+  // Detection-boundary guard: fail loudly here if the identity step collapsed
+  // distinct sitters into fewer participants (see assertParticipantIdentityIntact).
+  assertParticipantIdentityIntact(clean);
   const validationReport = validate(
     rawExport,
     clean,

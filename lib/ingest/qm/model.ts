@@ -20,9 +20,12 @@ export interface Sitting {
   label: string;
 }
 
-/** A participant, keyed by email — every personal field retained (GDPR: live only). */
+/** A participant, keyed by the resolved unique identity — every personal field
+ *  retained (GDPR: live only). */
 export interface QmParticipant {
-  /** Lowercased `ResultParticipantName` (the email). The stable cross-subject key. */
+  /** The lowercased guaranteed-unique identity (ParticipantID / email / result
+   *  mapping; see participant-identity.ts). The stable cross-subject key — NEVER
+   *  the collision-prone ResultParticipantName. */
   email: string;
   firstName: string | null;
   lastName: string | null;
@@ -80,6 +83,8 @@ export interface QmResult {
   subject: string;
   /** The raw `AssessmentName` before normalisation. */
   rawSubjectName: string;
+  /** The lowercased guaranteed-unique participant identity for this result (joins
+   *  back to `QmParticipant.email`). NEVER the collision-prone ResultParticipantName. */
   participantEmail: string;
   groupName: string | null;
   sitting: Sitting | null;

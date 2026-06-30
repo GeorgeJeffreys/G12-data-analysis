@@ -7,6 +7,7 @@
 
 import { normalizeResponses } from "../normalize";
 import { validate } from "../validate";
+import { assertParticipantIdentityIntact } from "../split";
 import type { CleanResponse, ValidationReport } from "../types";
 import { detectThreeExports, type NamedInput, type QmFileKind } from "./detect";
 import { buildCanonicalModelFromTables } from "./canonical";
@@ -112,6 +113,9 @@ export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIng
   // retained on `canonical` (results + resitForms) for analyst review.
   const resitNames = new Set(canonical.resitForms.map((f) => f.name));
   const graded = resitNames.size ? clean.filter((r) => !resitNames.has(r.assessmentName)) : clean;
+  // Detection-boundary guard: any participant collapse fails loudly here, before
+  // the per-subject count is shown on Upload (see assertParticipantIdentityIntact).
+  assertParticipantIdentityIntact(graded);
   const validationReport = validate(combined, graded, droppedSurveyRows, droppedNonMcqRows);
   return {
     canonical,

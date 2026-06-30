@@ -11,6 +11,7 @@
  */
 
 import type { RawExportRow } from "../types";
+import { PARTICIPANT_IDENTITY_COLUMNS } from "../participant-identity";
 import type { CsvTable } from "./csv";
 import { normalizeSubjectName } from "./canonical";
 
@@ -31,10 +32,18 @@ export function toCombinedRows(items: CsvTable, assessments: CsvTable): RawExpor
     const rid = (it["ResultId"] ?? "").trim();
     const a = assessmentByResult.get(rid);
     if (!a) continue;
+    // Every participant-identity column from the Assessments row, so the legacy
+    // normaliser resolves the SAME guaranteed-unique identity the canonical model
+    // does (and never collapses on a non-unique ResultParticipantName).
+    const identityCols: Record<string, string> = {};
+    for (const col of PARTICIPANT_IDENTITY_COLUMNS) {
+      if (a[col] !== undefined) identityCols[col] = a[col] ?? "";
+    }
     combined.push({
       ...it,
       // Assessment-level columns the legacy normaliser reads.
       AssessmentName: normalizeSubjectName(a["AssessmentName"] ?? ""),
+      ...identityCols,
       ResultParticipantName: a["ResultParticipantName"] ?? "",
       ResultStatus: a["ResultStatus"] ?? "",
     });

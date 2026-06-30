@@ -7,6 +7,7 @@
 
 import { repairText } from "../repair";
 import { isSurveyAssessment, stripHtml } from "../normalize";
+import { assignParticipantIdentities, type IdentityInputRow } from "../participant-identity";
 import type { CsvTable } from "./csv";
 import { detectThreeExports, type NamedInput } from "./detect";
 import type {
@@ -179,6 +180,25 @@ export function buildCanonicalModelFromTables(
   let surveyResults = 0;
   const sittingTally = new Map<string, { sitting: Sitting; count: number }>();
 
+  // ── 0. Resolve a guaranteed-unique participant identity per graded result ────
+  // Keyed on ParticipantID / email / the result→participant mapping — NEVER the
+  // collision-prone ResultParticipantName — so distinct students never fold into
+  // one participant record. Resolved from the SAME inputs the legacy normaliser
+  // sees, so both ingest paths agree on each result's identity.
+  const identityInputs: IdentityInputRow[] = [];
+  for (const row of assessments.rows) {
+    const rawName = repairText(row["AssessmentName"] ?? "").trim();
+    if (isSurveyAssessment(rawName)) continue;
+    const resultId = (row["ResultId"] ?? "").trim();
+    if (!resultId) continue;
+    identityInputs.push({ resultId, subject: normalizeSubjectName(rawName), row });
+  }
+  const identityByResult = assignParticipantIdentities(identityInputs);
+  /** The lowercased identity key used to group participants + join result/topic
+   *  rows back to them (case-folded so the join is stable). */
+  const identityKey = (resultId: string): string =>
+    (identityByResult.get(resultId)?.id ?? `result:${resultId}`).toLowerCase();
+
   // ── 1. One QmResult per graded assessment row, joined to its items + topics ──
   for (const row of assessments.rows) {
     const rawName = repairText(row["AssessmentName"] ?? "").trim();
@@ -224,7 +244,7 @@ export function buildCanonicalModelFromTables(
       resultId,
       subject,
       rawSubjectName: rawName,
-      participantEmail: (text(row["ResultParticipantName"]) ?? "").toLowerCase(),
+      participantEmail: identityKey(resultId),
       groupName,
       sitting,
       status: text(row["ResultStatus"]),
@@ -238,19 +258,21 @@ export function buildCanonicalModelFromTables(
     });
   }
 
-  // ── 2. Participants, keyed by email, retaining every personal field ──────────
+  // ── 2. Participants, keyed by the resolved unique identity, retaining every
+  //       personal field. NEVER keyed on ResultParticipantName (which collides). ──
   const participantMap = new Map<string, QmParticipant>();
   for (const row of assessments.rows) {
     const rawName = repairText(row["AssessmentName"] ?? "").trim();
     if (isSurveyAssessment(rawName)) continue;
-    const email = (text(row["ResultParticipantName"]) ?? "").toLowerCase();
-    if (!email) continue;
-    let p = participantMap.get(email);
+    const resultId = (row["ResultId"] ?? "").trim();
+    if (!resultId) continue;
+    const key = identityKey(resultId);
+    let p = participantMap.get(key);
     if (!p) {
       const first = text(row["ResultParticipantFirstName"]);
       const last = text(row["ResultParticipantLastName"]);
       p = {
-        email,
+        email: key,
         firstName: first,
         lastName: last,
         fullName: [first, last].filter(Boolean).join(" ") || null,
@@ -259,7 +281,7 @@ export function buildCanonicalModelFromTables(
         details: text(row["ResultParticipantDetails"]),
         groupNames: [],
       };
-      participantMap.set(email, p);
+      participantMap.set(key, p);
     }
     const group = text(row["ResultGroupName"]);
     if (group && !p.groupNames.includes(group)) p.groupNames.push(group);

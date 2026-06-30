@@ -11,6 +11,12 @@ export type RawExportRow = Record<string, unknown>;
 export interface CleanResponse {
   assessmentName: string;
   qmQuestionId: string;
+  /** The export's `ResultId` — the result→participant mapping. Carried so the
+   *  detection-boundary invariant can compare distinct sitters (results) against
+   *  distinct output participants (pseudonyms) per subject. */
+  qmResultId: string;
+  /** Guaranteed-unique participant identity (ParticipantID / email / result id);
+   *  never the collision-prone ResultParticipantName. See participant-identity.ts. */
   qmParticipantId: string;
   participantPseudonym: string;
   wording: string | null;

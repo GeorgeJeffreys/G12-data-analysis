@@ -23,6 +23,7 @@ function sampleRecs(): CleanResponse[] {
   const mk = (q: string, p: string): CleanResponse => ({
     assessmentName: "Applicable Mathematics",
     qmQuestionId: q,
+    qmResultId: `R-${p}`,
     qmParticipantId: p,
     participantPseudonym: `pseudo-${p}`,
     wording: null,
