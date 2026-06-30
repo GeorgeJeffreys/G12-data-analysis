@@ -999,6 +999,12 @@ export interface SubjectResult {
   assessment: string;
   level: string;
   stars: string;
+  /**
+   * Which sitting supplied this best-of-two level (Overall documents only). Lets
+   * performance reports carry the same Feb/May provenance the Overall table shows.
+   * Undefined for a per-sitting document or a subject with no result.
+   */
+  source?: OverallSource;
 }
 
 /** One sub-element's achieved level within a major element (unofficial report). */
@@ -1069,9 +1075,43 @@ export interface IssuanceSignOff {
   cleared: boolean;
 }
 
+/** Stable id for each hard issuance gate (see `IssuanceReadiness`). */
+export type IssuanceGateId = "scores" | "locked" | "signoff" | "live";
+
+/**
+ * One hard gate that must be satisfied before OFFICIAL (non-draft) issuance.
+ * Draft/preview ignores these — they are always available — so corrupted or
+ * provisional data can be inspected but never issued.
+ */
+export interface IssuanceGate {
+  id: IssuanceGateId;
+  /** Short label for the checklist row. */
+  label: string;
+  /** True when this gate is satisfied. */
+  met: boolean;
+  /** What the gate checks / why it is (un)met — shown under the label. */
+  detail: string;
+}
+
+/**
+ * The full pre-issue gate set for Overall certificate/report issuance. Official
+ * issuance is permitted only when EVERY gate is met; draft/preview is always fine.
+ */
+export interface IssuanceReadiness {
+  gates: IssuanceGate[];
+  /** True only when every gate is met — official (non-draft) issuance permitted. */
+  officialAllowed: boolean;
+  /** First unmet gate's reason, for a one-line blocked message (null when allowed). */
+  blockedReason: string | null;
+}
+
 export interface DocumentsModel {
   cycleId: string;
-  /** Document generation is only available once grades are locked. */
+  /**
+   * True once all contributing sittings are locked/signed off. Note: `students`
+   * is populated regardless (provisional or final) so draft proofs and the
+   * preview always work; `locked` only gates OFFICIAL issuance via `readiness`.
+   */
   locked: boolean;
   students: StudentSummary[];
   settings: DocSettings;
@@ -1083,6 +1123,12 @@ export interface DocumentsModel {
    * per-sitting documents model (drafts/diagnostics only) need not carry it.
    */
   signOff?: IssuanceSignOff;
+  /**
+   * Hard issuance gates (scores reconciled, sittings locked, O1/O2 signed off, no
+   * synthetic data). Official issuance requires `readiness.officialAllowed`; draft
+   * and preview are always available. Present on the Overall documents model.
+   */
+  readiness?: IssuanceReadiness;
 }
 
 // --- Users & access (Settings) ----------------------------------------------

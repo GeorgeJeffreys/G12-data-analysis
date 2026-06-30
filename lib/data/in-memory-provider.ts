@@ -32,7 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
-import { rollupOverall } from "./overall";
+import { rollupOverall, overallAwardsReconcile } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
 import type { CleanResponse } from "@/lib/ingest/types";
@@ -96,6 +96,7 @@ import {
   type DocSettings,
   type DocumentsModel,
   type IssuanceSignOff,
+  type IssuanceReadiness,
   type DuplicateStrategy,
   type GradeBandRow,
   type GradeCell,
@@ -2080,11 +2081,72 @@ export class InMemoryDataProvider implements DataProvider {
     return { decisions, cleared: decisions.every((d) => d.confirmed) };
   }
 
+  /**
+   * Hard issuance gates for Overall certificates/reports (P5). Official issuance
+   * requires EVERY gate met; draft/preview is always available. Gates:
+   *  - scores:  the export data reconciles to truth (each student's overall award
+   *             matches their best-of-two subject levels — guards against issuing
+   *             certificates off corrupted overall scores; P1-followup must land).
+   *  - locked:  every contributing sitting is locked / signed off (not provisional).
+   *  - signoff: the O1/O2 methodology decisions are signed off.
+   *  - live:    the Overall is built from REAL signed-off sittings, not synthetic /
+   *             demo data (e.g. a February baseline generated because live Supabase
+   *             is unreachable) — synthetic data is draft/preview only.
+   */
+  private issuanceReadiness(overall: OverallGradesModel, signOff: IssuanceSignOff): IssuanceReadiness {
+    const reconciled = overallAwardsReconcile(overall.rows, {
+      assessments: overall.assessments,
+      performanceLevels: overall.performanceLevels,
+      awardLevels: overall.awardLevels,
+    });
+    const gates = [
+      {
+        id: "scores" as const,
+        label: "Upstream scores verified",
+        met: reconciled,
+        detail: reconciled
+          ? "Each student's overall award reconciles with their best-of-two subject levels."
+          : "Exports do not reconcile to truth — an overall award disagrees with its subject levels. Land the per-student score-integrity fix (P1-followup) first.",
+      },
+      {
+        id: "locked" as const,
+        label: "All sittings locked",
+        met: overall.ready,
+        detail: overall.ready
+          ? "Both contributing sittings are locked / signed off."
+          : "A contributing sitting is still provisional — lock both sittings' grades first.",
+      },
+      {
+        id: "signoff" as const,
+        label: "O1 & O2 signed off",
+        met: signOff.cleared,
+        detail: signOff.cleared
+          ? "Both open methodology decisions are signed off."
+          : "D3 cap (O1) and CGJ PLD→award mapping (O2) must be signed off by G12.",
+      },
+      {
+        id: "live" as const,
+        label: "Real (non-synthetic) data",
+        met: !overall.demo,
+        detail: overall.demo
+          ? "The February baseline is generated from the May cohort because live Supabase is unreachable — draft/preview only until real two-sitting data is available."
+          : "Built from real signed-off sittings.",
+      },
+    ];
+    const firstUnmet = gates.find((g) => !g.met) ?? null;
+    return {
+      gates,
+      officialAllowed: gates.every((g) => g.met),
+      blockedReason: firstUnmet ? `${firstUnmet.label}: ${firstUnmet.detail}` : null,
+    };
+  }
+
   getOverallDocuments(yearId: string): DocumentsModel | null {
     const overall = this.getOverallGrades(yearId);
     if (!overall) return null;
     const locked = overall.locked;
     const signOff = this.issuanceSignOff();
+    const readiness = this.issuanceReadiness(overall, signOff);
 
     const refs = overall.assessments;
     const resolve = (re: RegExp) => refs.find((a) => re.test(a.id) || re.test(a.name));
@@ -2100,10 +2162,10 @@ export class InMemoryDataProvider implements DataProvider {
     const base = this.docSettings(overall.may?.cycleId ?? yearId);
     const settings: DocSettings = { ...base, cycleName: `${overall.yearName} · Overall` };
 
-    if (!locked) {
-      return { cycleId: yearId, locked, students: [], settings, subjectOrder, signOff };
-    }
-
+    // Students are populated whether or not the Overall is locked, so draft proofs
+    // and the preview always work (P5). Each subject carries its Feb/May provenance
+    // so performance reports reflect the same best-of-two breakdown as the table.
+    // OFFICIAL issuance is gated on `readiness`, not on whether students exist.
     const students: StudentSummary[] = overall.rows.map((r) => ({
       participantId: r.id,
       name: r.label,
@@ -2116,11 +2178,12 @@ export class InMemoryDataProvider implements DataProvider {
           assessment: ref?.name ?? d.slot,
           level: cell?.level ?? "",
           stars: cell?.stars ?? "",
+          source: cell?.source,
         };
       }),
     }));
 
-    return { cycleId: yearId, locked, students, settings, subjectOrder, signOff };
+    return { cycleId: yearId, locked, students, settings, subjectOrder, signOff, readiness };
   }
 
   /**

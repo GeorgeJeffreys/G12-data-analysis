@@ -71,11 +71,13 @@ describe("getOverallGrades — year best-of-two", () => {
 });
 
 describe("getOverallDocuments — certificates issue from Overall", () => {
-  it("is gated until the Overall is signed off (both sittings locked)", () => {
+  it("populates students for draft/preview even while provisional (P5) — locked flag still reflects sittings", () => {
     const p = fresh();
+    const overall = p.getOverallGrades(YEAR)!;
     const docs = p.getOverallDocuments(YEAR)!;
+    // Provisional: not locked, but students ARE available so draft/preview works.
     expect(docs.locked).toBe(false);
-    expect(docs.students).toHaveLength(0);
+    expect(docs.students.length).toBe(overall.rows.length);
   });
 
   it("reads the Overall best-of-two awards once signed off — not a single sitting", () => {
@@ -94,6 +96,24 @@ describe("getOverallDocuments — certificates issue from Overall", () => {
     expect(docs.settings.cycleName).toContain("Overall");
   });
 
+  it("each subject carries Feb/May best-of-two provenance for the performance report (P5)", () => {
+    const p = fresh();
+    p.lockCycle(MAY);
+    const docs = p.getOverallDocuments(YEAR)!;
+    let sawFeb = false;
+    let sawMay = false;
+    for (const s of docs.students) {
+      for (const subj of s.subjects) {
+        if (subj.level) expect(["february", "may"]).toContain(subj.source);
+        if (subj.source === "february") sawFeb = true;
+        if (subj.source === "may") sawMay = true;
+      }
+    }
+    // The best-of-two genuinely draws from both sittings.
+    expect(sawFeb).toBe(true);
+    expect(sawMay).toBe(true);
+  });
+
   it("carries the O1/O2 pre-issue sign-off, defaulting to NOT cleared (real issuance gated)", () => {
     const p = fresh();
     // Present whether or not the Overall is locked — the gate is independent of locking.
@@ -107,5 +127,21 @@ describe("getOverallDocuments — certificates issue from Overall", () => {
       expect(signOff.decisions.every((d) => d.confirmed === false)).toBe(true);
       expect(signOff.cleared).toBe(false);
     }
+  });
+
+  it("blocks official issuance via the hard gates (P5): O1/O2 unsigned + synthetic Feb data", () => {
+    const p = fresh();
+    p.lockCycle(MAY); // both sittings locked, but Feb is the demo baseline
+    const r = p.getOverallDocuments(YEAR)!.readiness!;
+    expect(r).toBeTruthy();
+    const gate = (id: string) => r.gates.find((g) => g.id === id)!;
+    // Locked gate is met once both sittings are locked…
+    expect(gate("locked").met).toBe(true);
+    // …but O1/O2 are unsigned and the February baseline is synthetic, so:
+    expect(gate("signoff").met).toBe(false);
+    expect(gate("live").met).toBe(false);
+    // Therefore official issuance is NOT allowed and a reason is surfaced.
+    expect(r.officialAllowed).toBe(false);
+    expect(r.blockedReason).toBeTruthy();
   });
 });
