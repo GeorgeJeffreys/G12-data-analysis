@@ -23,7 +23,7 @@ import { Button, Card, Badge, Check } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { getDocumentGenerator } from "@/lib/documents/generator";
 import type { DocKind, GenerateResult } from "@/lib/documents/types";
-import type { IssuanceSignOff } from "@/lib/data/types";
+import type { IssuanceSignOff, IssuanceReadiness } from "@/lib/data/types";
 import { BatchPreview, CertificateProof, ReportProof, studentIssues } from "@/components/documents/BatchPreview";
 
 type IssueMode = "draft" | "official";
@@ -75,38 +75,18 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
     );
   }
 
-  // Gate: Overall must be signed off (both sittings locked).
-  if (!model.locked) {
-    return (
-      <Shell active="Cycles" crumb={crumb}>
-        <div style={{ padding: "40px 32px", maxWidth: 640 }}>
-          <div className="hf-h1">Overall certificates</div>
-          <Card style={{ marginTop: 18, padding: "18px 20px", display: "flex", gap: 13, alignItems: "flex-start", background: H.warnSoft }}>
-            <Mark kind="warn" size={18} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>Lock both sittings first</div>
-              <div className="hf-sub" style={{ marginTop: 5 }}>
-                Certificates issue from the Overall best-of-two result, which is final only once both the February and May sittings are signed off. Lock each sitting’s grades, then come back here.
-              </div>
-              <Link href={`/years/${yearId}`} style={{ display: "inline-block", marginTop: 12 }}>
-                <Button variant="pri">Back to {year?.name ?? "year"}<Icon name="arrow" color="#fff" /></Button>
-              </Link>
-            </div>
-          </Card>
-        </div>
-      </Shell>
-    );
-  }
-
   const first = model.students[0];
   const flaggedCount = model.students.filter((s) => studentIssues(s, kinds).length).length;
 
-  // Issuance gate. Drafts are always allowed; official issue needs the O1/O2
-  // sign-off to be cleared in the system AND the operator's explicit tick here.
+  // Issuance gate (P5). Draft/preview is ALWAYS allowed — even on provisional or
+  // synthetic data — so staff can inspect proofs. OFFICIAL issue needs every hard
+  // gate met (scores reconciled, sittings locked, O1/O2 signed off, real data) AND
+  // the operator's explicit tick.
   const signOff: IssuanceSignOff | undefined = model.signOff;
-  const signOffCleared = signOff?.cleared ?? false;
+  const readiness: IssuanceReadiness | undefined = model.readiness;
+  const officialAllowed = readiness?.officialAllowed ?? false;
   const draft = issueMode === "draft";
-  const canExport = draft || (signOffCleared && officialConfirmed);
+  const canExport = draft || (officialAllowed && officialConfirmed);
 
   const doGenerate = async () => {
     if (!canExport) return;
@@ -130,7 +110,7 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
         a.click();
       }
       const total = Object.values(res.kinds).reduce((s, k) => s + (k?.complete ?? 0), 0);
-      const tag = draft ? "DRAFT proof" : "OFFICIAL issue (O1+O2 signed off)";
+      const tag = draft ? "DRAFT proof" : "OFFICIAL issue (all pre-issue gates passed)";
       provider.recordDocuments(model.cycleId, `${tag}: ${total} Overall .pptx across ${kinds.join(" + ")} (zip)`);
     } catch (e) {
       setError((e as Error).message);
@@ -142,11 +122,15 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
     <Shell active="Cycles" crumb={crumb}>
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 32px", gap: 20, flex: 1, minHeight: 0, overflow: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          <div className="hf-h1">{model.settings.cycleName} · Certificates</div>
-          <Badge tone="good"><Mark kind="pass" size={12} /> Both sittings locked</Badge>
+          <div className="hf-h1">{model.settings.cycleName} · Certificates &amp; reports</div>
+          {officialAllowed ? (
+            <Badge tone="good"><Mark kind="pass" size={12} /> Ready to issue</Badge>
+          ) : (
+            <Badge tone="warn"><Mark kind="warn" size={12} /> Draft / preview only</Badge>
+          )}
         </div>
         <div className="hf-sub" style={{ maxWidth: 720 }}>
-          Generated from the <strong>Overall best-of-two awards</strong> ({model.students.length} students) — each student’s certificate carries the higher award across the two sittings, not a single sitting’s result. Fills the built-in PowerPoint templates and downloads one .pptx per student in a .zip.
+          Certificates &amp; performance reports for the <strong>Overall best-of-two awards</strong> ({model.students.length} students) — each carries the higher award across the two sittings (with Feb/May provenance), not a single sitting’s result. Fills the built-in PowerPoint templates and downloads one .pptx per student in a .zip.
         </div>
 
         {error && (
@@ -214,7 +198,8 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
                 </div>
               </div>
 
-              <SignOffBanner
+              <IssuanceChecklist
+                readiness={readiness}
                 signOff={signOff}
                 mode={issueMode}
                 confirmed={officialConfirmed}
@@ -243,9 +228,9 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
               </div>
               {!draft && !canExport && (
                 <div className="hf-sub" style={{ fontSize: 11, color: H.ink3 }}>
-                  {signOffCleared
-                    ? "Tick the confirmation above to issue official certificates."
-                    : "Official issue is locked until O1 and O2 are signed off. Export draft proofs in the meantime."}
+                  {officialAllowed
+                    ? "Tick the confirmation above to issue official documents."
+                    : `Official issue is blocked — ${readiness?.blockedReason ?? "a pre-issue gate is unmet"}. Export draft proofs in the meantime.`}
                 </div>
               )}
             </div>
@@ -276,74 +261,84 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
 }
 
 /**
- * Pre-issue checklist / sign-off banner. Lists the open methodology decisions
- * (O1, O2) that gate real certificate issuance and, in official mode, carries the
- * explicit confirmation tick. Drafts ignore the gate (watermarked), so in draft
- * mode this reads as informational.
+ * Pre-issue checklist (P5). Lists every hard issuance gate — upstream scores
+ * verified, all sittings locked, O1/O2 signed off, and real (non-synthetic) data —
+ * with a met/unmet mark and a reason. The O1/O2 methodology decisions nest under
+ * the sign-off gate. In official mode it carries the explicit confirmation tick
+ * (enabled only when every gate is met); draft/preview ignores all of this.
  */
-function SignOffBanner({
+function IssuanceChecklist({
+  readiness,
   signOff,
   mode,
   confirmed,
   onToggleConfirm,
 }: {
+  readiness?: IssuanceReadiness;
   signOff?: IssuanceSignOff;
   mode: IssueMode;
   confirmed: boolean;
   onToggleConfirm: () => void;
 }) {
-  if (!signOff) return null;
-  const cleared = signOff.cleared;
+  if (!readiness) return null;
+  const allowed = readiness.officialAllowed;
   const official = mode === "official";
-  const tone = cleared ? H.goodSoft : H.warnSoft;
+  const metCount = readiness.gates.filter((g) => g.met).length;
   return (
-    <Card style={{ padding: "14px 16px", background: tone, display: "flex", flexDirection: "column", gap: 12 }}>
+    <Card style={{ padding: "14px 16px", background: allowed ? H.goodSoft : H.warnSoft, display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-        <Mark kind={cleared ? "pass" : "warn"} size={16} />
+        <Mark kind={allowed ? "pass" : "warn"} size={16} />
         <div style={{ fontWeight: 700, fontSize: 13 }}>
-          {cleared ? "Methodology signed off" : "Pre-issue sign-off required"}
+          {allowed ? "Cleared for official issue" : "Pre-issue checklist"}
         </div>
         <div style={{ flex: 1 }} />
-        <Badge tone={cleared ? "good" : "warn"}>
-          {signOff.decisions.filter((d) => d.confirmed).length}/{signOff.decisions.length} confirmed
-        </Badge>
+        <Badge tone={allowed ? "good" : "warn"}>{metCount}/{readiness.gates.length} ready</Badge>
       </div>
       <div className="hf-sub" style={{ fontSize: 11.5 }}>
-        Real certificates carry the cohort’s awards, so two open methodology decisions must be signed off by G12 before official issue. Until then, draft proofs are watermarked <strong>{`“DRAFT — NOT FOR ISSUE”`}</strong>.
+        Official issue requires every gate below. Until then, draft proofs are watermarked <strong>{`“DRAFT — NOT FOR ISSUE”`}</strong> and stay safe to circulate.
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {signOff.decisions.map((d) => (
-          <div key={d.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
-            <Mark kind={d.confirmed ? "pass" : "warn"} size={14} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {readiness.gates.map((g) => (
+          <div key={g.id} style={{ display: "flex", gap: 9, alignItems: "flex-start" }}>
+            <Mark kind={g.met ? "pass" : "warn"} size={14} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700 }}>
-                <span className="hf-mono" style={{ color: H.ink3, marginRight: 6 }}>{d.id}</span>
-                {d.title}
-                <span style={{ marginLeft: 8, fontWeight: 600, color: d.confirmed ? H.good : H.warn }}>
-                  {d.confirmed ? "signed off" : "awaiting sign-off"}
-                </span>
-              </div>
-              <div className="hf-sub" style={{ fontSize: 11 }}>{d.detail}</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: g.met ? H.ink : H.warn }}>{g.label}</div>
+              <div className="hf-sub" style={{ fontSize: 11 }}>{g.detail}</div>
+              {/* The O1/O2 methodology decisions nest under the sign-off gate. */}
+              {g.id === "signoff" && signOff && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 5 }}>
+                  {signOff.decisions.map((d) => (
+                    <div key={d.id} style={{ display: "flex", gap: 6, alignItems: "baseline", fontSize: 11 }}>
+                      <span className="hf-mono" style={{ color: H.ink3 }}>{d.id}</span>
+                      <span style={{ fontWeight: 600 }}>{d.title}</span>
+                      <span style={{ color: d.confirmed ? H.good : H.warn, fontWeight: 600 }}>
+                        {d.confirmed ? "signed off" : "awaiting sign-off"}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         ))}
       </div>
-      {official && (
-        cleared ? (
+      {!allowed ? (
+        // Surfaced in BOTH modes so it's always clear why real issuance is unavailable.
+        <div style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11.5, fontWeight: 700, color: H.warn }}>
+          <Icon name="lock" size={13} color={H.warn} />
+          <span>Official issue is blocked — {readiness.blockedReason ?? "a pre-issue gate is unmet"}.</span>
+        </div>
+      ) : (
+        official && (
           <button
             onClick={onToggleConfirm}
             style={{ display: "flex", gap: 9, alignItems: "center", background: "none", border: "none", padding: 0, cursor: "pointer", textAlign: "left" }}
           >
             <Check on={confirmed} />
             <span style={{ fontSize: 12, fontWeight: 600, color: H.ink }}>
-              I confirm O1 and O2 are signed off and these are for official issue.
+              I confirm every gate is satisfied and these documents are for official issue.
             </span>
           </button>
-        ) : (
-          <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 11.5, fontWeight: 700, color: H.warn }}>
-            <Icon name="lock" size={13} color={H.warn} />
-            Official issue is blocked until both decisions are signed off.
-          </div>
         )
       )}
     </Card>

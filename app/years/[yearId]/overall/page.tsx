@@ -156,11 +156,11 @@ export default function YearOverallPage({ params }: { params: { yearId: string }
             </span>
           )}
           <div style={{ flex: 1, minWidth: 12 }} />
-          {model?.ready && (
+          {model && (
             <Link href={`/years/${year.id}/overall/documents`}>
               <Button variant="pri">
                 <Icon name="award" color="#fff" />
-                Generate certificates
+                Generate certificates &amp; reports
               </Button>
             </Link>
           )}

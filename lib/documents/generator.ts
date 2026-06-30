@@ -67,6 +67,10 @@ function tokensFor(s: StudentSummary, settings: DocSettings, draft: boolean): Re
   for (const sub of s.subjects) {
     data[`${sub.slot}_STARS`] = sub.stars;
     data[`${sub.slot}_LEVEL`] = sub.level;
+    // Feb/May provenance for the best-of-two level (Overall performance reports).
+    // Empty for a per-sitting document or a subject with no result; templates that
+    // don't carry the token simply ignore it.
+    data[`${sub.slot}_SOURCE`] = sub.source === "february" ? "Feb" : sub.source === "may" ? "May" : "";
   }
   // Element/sub-element tokens for the unofficial diagnostic report (populated
   // only when the locked-grades read-model carries the breakdown). Each subject

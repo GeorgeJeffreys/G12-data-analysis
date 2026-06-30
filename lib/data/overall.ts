@@ -147,3 +147,31 @@ export function rollupOverall(args: RollupArgs): OverallGradeRow[] {
   }
   return rows;
 }
+
+export interface ReconcileArgs {
+  /** Subjects the award is derived over. */
+  assessments: AssessmentRef[];
+  performanceLevels: readonly string[];
+  awardLevels: readonly string[];
+}
+
+/**
+ * Reconcile each Overall row's stated award against the award RE-DERIVED from its
+ * own best-of-two per-subject levels. The certificate states the overall award,
+ * so this guards against issuing off a corrupted/mismatched score: if any row's
+ * award no longer equals what its subject levels imply, the exports do not
+ * reconcile to truth and official issuance must be blocked. Pure — no provider or
+ * engine state beyond the shared `deriveAward` rule.
+ */
+export function overallAwardsReconcile(rows: OverallGradeRow[], args: ReconcileArgs): boolean {
+  const { assessments, performanceLevels, awardLevels } = args;
+  for (const r of rows) {
+    const subjectLevels = assessments.map((a) => r.grades[a.id]?.level ?? "");
+    const { award } = deriveAward(
+      { subjectLevels, d3Pass: true },
+      { performanceLevels, awardLevels },
+    );
+    if (award !== r.award) return false;
+  }
+  return true;
+}
