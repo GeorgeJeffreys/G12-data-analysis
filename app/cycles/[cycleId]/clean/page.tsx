@@ -1,13 +1,24 @@
 "use client";
 
 /**
- * Screen 02 — Clean data (the merged Raw data + Clean step). The raw-data view
- * and the cleaning controls now live together: a summary band + element / demand
- * breakdown of exactly what was uploaded, then the select rows / columns to
- * remove + validation report (must-fix blockers vs warnings) with the
- * before → after effect. The raw file is never touched — removals are a recorded,
- * non-destructive decision (like duplicate resolution), so scoring and parity are
- * unaffected.
+ * Screen 02 — Clean data. The cleaning surface: staff/test/invalid results are
+ * soft-deleted (struck through, not destroyed) before scoring, with the impact of
+ * every removal visible in real time.
+ *
+ * Layout:
+ *   - a prominent, live BEFORE → AFTER "cleaning impact" panel pinned at the top
+ *     (Participants / Records / per-subject / per-element), recomputed on every
+ *     soft-delete, restore and undo;
+ *   - a "Clean" sub-tab: the per-subject participant/result table where rows are
+ *     soft-deleted (strike-through) + restored + undone, plus the validation report;
+ *   - a "Summary" sub-tab: fuller before-vs-after summary statistics (scored exams
+ *     only, engine scored denominator) — no per-row data.
+ *
+ * Soft-delete writes through the prompt-09 `excludeParticipantFromCohort` mechanism
+ * (keyed on the participant's stable id), so a removal propagates to Scores/Grades
+ * and survives re-import. The raw file is never touched — removals are a recorded,
+ * reversible decision. The question-level cleaned stats table now lives in Question
+ * Review (03a) and is no longer shown here.
  */
 import { useMemo, useState } from "react";
 import Link from "next/link";
@@ -19,8 +30,16 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
-import type { RawDataModel, CleanedDataModel } from "@/lib/data/types";
-import { CLEANED_DATA_PII } from "@/lib/data/cleaned-schema";
+import { downloadWorkbook, fileStem } from "@/lib/ui/export";
+import type {
+  RawDataModel,
+  CleaningImpactModel,
+  CleaningImpactStat,
+  CleaningSummaryModel,
+} from "@/lib/data/types";
+
+/** A queued cleaning action, so the last one can be undone. */
+type CleanAction = { kind: "remove" | "restore"; ids: string[] };
 
 export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -30,56 +49,75 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
   const [scope, setScope] = useState<string | undefined>(undefined);
   const assessmentId = scope ?? first ?? "";
   const model = useProviderData((p) => (assessmentId ? p.getDataCleaning(cycleId, assessmentId) : null), [cycleId, assessmentId]);
-  // Raw-data view (summary band + element/demand breakdown) folded into Clean:
-  // the same read-only overview that used to live on the separate Raw data step.
   const raw = useProviderData((p) => (assessmentId ? p.getRawData(cycleId, assessmentId) : null), [cycleId, assessmentId]);
-  // Cleaned-set view in the QM cleaned-export column layout (mirrors the team's
-  // Excel spreadsheet). Read-only; the raw data is untouched.
-  const cleaned = useProviderData((p) => (assessmentId ? p.getCleanedData(cycleId, assessmentId) : null), [cycleId, assessmentId]);
+  // Live, cohort-wide cleaning-impact figures for the pinned top panel + Summary.
+  const impact = useProviderData((p) => p.getCleaningImpact(cycleId), [cycleId]);
+  const summary = useProviderData((p) => p.getCleaningSummary(cycleId), [cycleId]);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
-  // Which table is shown: the selection matrix (remove rows/cols) or the cleaned
-  // spreadsheet view that mirrors the Excel cleaned export.
-  const [tableView, setTableView] = useState<"select" | "cleaned">("select");
+  // Which sub-tab: the cleaning surface, or the fuller summary statistics.
+  const [subTab, setSubTab] = useState<"clean" | "summary">("clean");
 
-  // local, non-destructive selection of rows / columns to remove
-  const [selCols, setSelCols] = useState<Set<string>>(new Set());
+  // Local, session-scoped selection + undo stack (the exclusion state itself lives
+  // in the provider and persists; the stack only lets us reverse the last action).
   const [selRows, setSelRows] = useState<Set<string>>(new Set());
-  const toggle = (set: Set<string>, id: string) => {
-    const next = new Set(set);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    return next;
+  const [undoStack, setUndoStack] = useState<CleanAction[]>([]);
+
+  const excludedRows = useMemo(() => new Set(model?.excludedRows ?? []), [model]);
+  const toggleRow = (id: string) =>
+    setSelRows((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSel = () => setSelRows(new Set());
+
+  const selectedActive = [...selRows].filter((id) => !excludedRows.has(id));
+  const selectedExcluded = [...selRows].filter((id) => excludedRows.has(id));
+
+  // Soft-delete: exclude the selected participant(s) from the whole cohort via the
+  // prompt-09 mechanism (strike-through + downstream propagation). Non-destructive.
+  const removeSelected = () => {
+    if (selectedActive.length === 0) return;
+    for (const id of selectedActive) provider.excludeParticipantFromCohort(cycleId, id, true, "Removed in cleaning");
+    setUndoStack((s) => [...s, { kind: "remove", ids: selectedActive }]);
+    clearSel();
+  };
+  // Restore: put the selected struck-through row(s) back into the cohort.
+  const restoreSelected = () => {
+    if (selectedExcluded.length === 0) return;
+    for (const id of selectedExcluded) provider.excludeParticipantFromCohort(cycleId, id, false);
+    setUndoStack((s) => [...s, { kind: "restore", ids: selectedExcluded }]);
+    clearSel();
+  };
+  // Restore every soft-deleted row currently shown for this subject.
+  const restoreAll = () => {
+    const ids = [...excludedRows];
+    if (ids.length === 0) return;
+    for (const id of ids) provider.excludeParticipantFromCohort(cycleId, id, false);
+    setUndoStack((s) => [...s, { kind: "restore", ids }]);
+    clearSel();
+  };
+  // Undo the last soft-delete / restore (reverse it exactly).
+  const undo = () => {
+    setUndoStack((s) => {
+      const last = s[s.length - 1];
+      if (!last) return s;
+      const restore = last.kind === "remove"; // undoing a remove = restore
+      for (const id of last.ids) provider.excludeParticipantFromCohort(cycleId, id, !restore, restore ? undefined : "Removed in cleaning (redo)");
+      return s.slice(0, -1);
+    });
+    clearSel();
   };
 
-  // `rowsAfter` reflects the committed clean-stage removals; subtract the pending
-  // selection so the band previews the result of deleting it.
-  const after = useMemo(() => (model ? model.rowsAfter - selRows.size : 0), [model, selRows]);
-
-  // Commit the current selection as a non-destructive removal (rows = participant
-  // ids, cols = item ids), then clear the pending selection. The provider filters
-  // them out of the cleaned view + every downstream read; the raw data is untouched.
-  const deleteSelected = () => {
-    if (selRows.size === 0 && selCols.size === 0) return;
-    provider.setCleanRemoval(cycleId, assessmentId, { rows: [...selRows], cols: [...selCols] }, true);
-    setSelCols(new Set());
-    setSelRows(new Set());
-  };
-  // "Revert all": restore every clean-stage removal for this subject + drop selection.
-  const revertAll = () => {
-    provider.clearCleanRemovals(cycleId, assessmentId);
-    setSelCols(new Set());
-    setSelRows(new Set());
-  };
-  // Minimal cohort-exclusion trigger (prompt 09, part 4): flag the selected
-  // participant(s) as staff/test excluded from the WHOLE cohort — one authoritative
-  // action, keyed on the participant's stable id, that drops them from every subject
-  // and from Candidate Scores (not just this subject's cleaned view). Prompt 03b
-  // layers the polished strike-through/restore UX over this same mechanism.
-  const excludeFromCohort = () => {
-    if (selRows.size === 0) return;
-    for (const id of selRows) provider.excludeParticipantFromCohort(cycleId, id, true, "Excluded from cohort (Clean)");
-    setSelRows(new Set());
+  const exportExcel = async () => {
+    const ds = provider.getCleanedMasterDataset(cycleId);
+    if (!ds) return;
+    const { buildCleanedMasterWorkbook } = await import("@/lib/export/cleaned-master");
+    const wb = buildCleanedMasterWorkbook(ds.headers, ds.rows);
+    await downloadWorkbook(`${fileStem("cleaned_master_dataset", cycleName)}.xlsx`, wb);
+    provider.recordExport(cycleId, "Cleaned master dataset (Excel)");
   };
 
   if (!model) {
@@ -91,7 +129,6 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
   }
 
   const blocked = !model.canProceed;
-  const selCount = selCols.size + selRows.size;
 
   return (
     <CycleShell
@@ -99,7 +136,11 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
       cycleName={cycleName}
       page="Clean data"
       stageIndex={1}
-      actions={<Button variant="ghost" onClick={revertAll}><Icon name="refresh" />Revert all</Button>}
+      actions={
+        <Button variant="ghost" onClick={exportExcel} title="Export the cleaned master dataset (current post-clean state) to Excel">
+          <Icon name="download" />Export to Excel
+        </Button>
+      }
       primary={
         <Link href={blocked ? "#" : `/cycles/${cycleId}/raw-scores`} tabIndex={blocked ? -1 : undefined}>
           <Button variant="pri" disabled={blocked} title={blocked ? "Resolve the blocker first" : "Clean & continue"}>
@@ -109,86 +150,84 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
         </Link>
       }
       subjectTabs={
-        <AssessmentTabs
-          activeId={assessmentId}
-          tabs={model.assessments.map((a) => ({ id: a.id, label: a.shortName, rtl: a.rtl }))}
-          onSelect={(id) => { setScope(id); setSelCols(new Set()); setSelRows(new Set()); }}
-          right={<ZoomControl zoom={zoom} onZoom={setZoom} />}
-        />
+        subTab === "clean" ? (
+          <AssessmentTabs
+            activeId={assessmentId}
+            tabs={model.assessments.map((a) => ({ id: a.id, label: a.shortName, rtl: a.rtl }))}
+            onSelect={(id) => { setScope(id); clearSel(); }}
+            right={<ZoomControl zoom={zoom} onZoom={setZoom} />}
+          />
+        ) : undefined
       }
     >
-      <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
-        {/* main: raw-data overview + select + table */}
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "16px 24px", gap: 12, minWidth: 0 }}>
-          {/* Raw-data view (folded in from the old Raw data step): a read-only
-              summary of exactly what was uploaded, before any cleaning. */}
-          {raw && <RawOverview model={raw} />}
-          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div className="hf-h2" style={{ fontSize: 16 }}>Clean data — {model.assessment.shortName}</div>
-              <div className="hf-sub" style={{ fontSize: 12, marginTop: 2 }}>Remove columns and rows you don’t need, work any flagged values, then continue. Your raw file is never touched.</div>
-            </div>
-            {/* table view toggle: the selection matrix vs the cleaned-export mirror */}
-            <div style={{ display: "flex", gap: 2, padding: 3, borderRadius: 9, background: H.canvas, border: `1px solid ${H.line2}` }}>
-              {([["select", "Selection"], ["cleaned", "Cleaned data"]] as const).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() => setTableView(key)}
-                  aria-pressed={tableView === key}
-                  style={{
-                    padding: "5px 12px",
-                    borderRadius: 7,
-                    border: "none",
-                    cursor: "pointer",
-                    font: "inherit",
-                    fontSize: 12,
-                    fontWeight: tableView === key ? 700 : 500,
-                    color: tableView === key ? H.pink : H.ink2,
-                    background: tableView === key ? H.pinkSoft : "transparent",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            {tableView === "select" && (
-              <div className="hf-card" style={{ padding: "8px 16px", display: "flex", gap: 14, alignItems: "center", background: H.canvas }}>
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span className="hf-mono" style={{ fontSize: 16, fontWeight: 600, color: H.ink3 }}>{model.rowsBefore}</span><span className="hf-lbl" style={{ fontSize: 9 }}>before</span></div>
-                <Icon name="arrow" size={14} color={H.ink3} />
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}><span className="hf-mono" style={{ fontSize: 16, fontWeight: 600, color: after < model.rowsBefore ? H.pink : H.ink }}>{after}</span><span className="hf-lbl" style={{ fontSize: 9 }}>after</span></div>
-                <div style={{ width: 1, height: 28, background: H.line2 }} />
-                <span className="hf-sub" style={{ fontSize: 11 }}>{selRows.size} row{selRows.size === 1 ? "" : "s"} ·<br />{selCols.size} column{selCols.size === 1 ? "" : "s"} selected</span>
-              </div>
-            )}
-          </div>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        {/* Pinned, live cleaning-impact panel — always visible while cleaning. */}
+        {impact && <ImpactPanel model={impact} />}
 
-          {tableView === "select" ? (
-            <>
-              {/* selection action bar */}
-              <div style={{ display: "flex", gap: 12, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center" }}>
+        {/* Sub-tab switcher: Clean surface vs fuller Summary statistics. */}
+        <div style={{ display: "flex", gap: 4, padding: "10px 24px 0", alignItems: "center" }}>
+          {([["clean", "Clean"], ["summary", "Summary"]] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setSubTab(key)}
+              aria-pressed={subTab === key}
+              style={{
+                padding: "7px 16px",
+                borderRadius: "9px 9px 0 0",
+                border: `1px solid ${subTab === key ? H.line2 : "transparent"}`,
+                borderBottom: "none",
+                cursor: "pointer",
+                font: "inherit",
+                fontSize: 13,
+                fontWeight: subTab === key ? 700 : 500,
+                color: subTab === key ? H.pink : H.ink2,
+                background: subTab === key ? H.paper : "transparent",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+          <div style={{ flex: 1, borderBottom: `1px solid ${H.line2}` }} />
+        </div>
+
+        {subTab === "clean" ? (
+          <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
+            <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "16px 24px", gap: 12, minWidth: 0 }}>
+              {raw && <RawOverview model={raw} />}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="hf-h2" style={{ fontSize: 16 }}>Clean data — {model.assessment.shortName}</div>
+                <div className="hf-sub" style={{ fontSize: 12, marginTop: 2 }}>
+                  Select participant rows and remove staff / test / invalid results. Removed rows are struck through (not deleted) and stay reversible; your raw file is never touched.
+                </div>
+              </div>
+
+              {/* selection + soft-delete action bar */}
+              <div style={{ display: "flex", gap: 10, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: "#fff" }}>
-                  {selCount === 0 ? "Click a column header or a row to select it for removal" : `${selCols.size} column · ${selRows.size} row selected`}
+                  {selRows.size === 0 ? "Click a participant row to select it" : `${selRows.size} row${selRows.size === 1 ? "" : "s"} selected`}
                 </span>
+                {excludedRows.size > 0 && <Badge tone="bad">{excludedRows.size} removed</Badge>}
                 <div style={{ flex: 1 }} />
-                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}>Clear</Button>
-                <Button
-                  disabled={selRows.size === 0}
-                  onClick={excludeFromCohort}
-                  title="Exclude the selected participant(s) from the whole cohort (staff / test accounts) — drops them from every subject and from Candidate Scores"
-                  style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }}
-                >
-                  <Icon name="x" size={12} color={H.cream} />Exclude from cohort
+                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selRows.size === 0} onClick={clearSel}>Clear</Button>
+                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={undoStack.length === 0} onClick={undo} title="Undo the last remove / restore">
+                  <Icon name="refresh" size={12} color={H.cream} />Undo
                 </Button>
-                <Button variant="danger" disabled={selCount === 0} onClick={deleteSelected} style={{ fontSize: 11.5, background: H.paper }}>
-                  <Icon name="trash" size={12} color={H.bad} />Delete selected
+                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selectedExcluded.length === 0} onClick={restoreSelected}>
+                  Restore selected
+                </Button>
+                <Button variant="danger" disabled={selectedActive.length === 0} onClick={removeSelected} style={{ fontSize: 11.5, background: H.paper }}>
+                  <Icon name="trash" size={12} color={H.bad} />Remove selected
                 </Button>
               </div>
 
               <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <span className="hf-lbl">Select rows / columns to remove</span>
+                <span className="hf-lbl">Participants / results</span>
+                {excludedRows.size > 0 && (
+                  <button type="button" onClick={restoreAll} className="hf-btn ghost" style={{ fontSize: 11 }}>Restore all removed</button>
+                )}
                 <div style={{ flex: 1 }} />
-                <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>scroll → for all items · click headers/rows to select</span>
+                <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>struck-through = removed (excluded from scores) · click a row to select</span>
               </div>
 
               <RawSpreadsheet
@@ -198,147 +237,233 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
                 maxHeight={440}
                 rtl={model.assessment.rtl}
                 selectable
-                selCols={selCols}
                 selRows={selRows}
-                onToggleCol={(id) => setSelCols((s) => toggle(s, id))}
-                onToggleRow={(id) => setSelRows((s) => toggle(s, id))}
+                struckRows={excludedRows}
+                onToggleRow={toggleRow}
               />
-            </>
-          ) : (
-            cleaned && <CleanedDataTable model={cleaned} rtl={model.assessment.rtl} />
-          )}
-        </div>
-
-        {/* right rail: validation report */}
-        <aside style={{ width: 320, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, padding: "18px 18px", display: "flex", flexDirection: "column", gap: 12, overflow: "auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="hf-lbl">Validation report</span>
-            <div style={{ flex: 1 }} />
-            {model.counts.fail > 0 && <Badge tone="bad">{model.counts.fail} must fix</Badge>}
-            {model.counts.warn > 0 && <Badge tone="warn">{model.counts.warn} warnings</Badge>}
-          </div>
-          {model.checks.map((c) => (
-            <div key={c.id} className="hf-card" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, borderColor: c.status === "fail" ? H.bad : H.line2, background: c.status === "fail" ? H.badSoft : H.paper }}>
-              <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
-                <Mark kind={c.status as MarkKind} size={15} />
-                <span style={{ flex: 1, fontSize: 12.5, fontWeight: c.status === "pass" ? 500 : 700 }}>{c.title}</span>
-                {c.count && <span className="hf-mono" style={{ fontSize: 11, color: c.status === "fail" ? H.bad : c.status === "warn" ? H.warn : H.ink3 }}>{c.count}</span>}
-              </div>
-              {c.detail && <div className="hf-sub" style={{ fontSize: 11, paddingLeft: 24 }}>{c.detail}</div>}
-              {c.action && <div style={{ paddingLeft: 24 }}><Button variant={c.status === "fail" ? "pri" : "default"} style={{ fontSize: 11, padding: "5px 11px" }}>{c.action}</Button></div>}
             </div>
-          ))}
-          <div style={{ display: "flex", gap: 10, padding: "10px 12px", borderRadius: 10, background: blocked ? H.badSoft : H.goodSoft, alignItems: "center" }}>
-            <Mark kind={blocked ? "fail" : "pass"} size={15} />
-            <span style={{ fontSize: 11.5, color: H.ink }}>
-              {blocked ? `${model.counts.fail} blocker${model.counts.fail === 1 ? "" : "s"} must be resolved. Warnings are your call.` : "No blockers — warnings are your call. Ready to continue."}
-            </span>
+
+            {/* right rail: validation report */}
+            <aside style={{ width: 320, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, padding: "18px 18px", display: "flex", flexDirection: "column", gap: 12, overflow: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <span className="hf-lbl">Validation report</span>
+                <div style={{ flex: 1 }} />
+                {model.counts.fail > 0 && <Badge tone="bad">{model.counts.fail} must fix</Badge>}
+                {model.counts.warn > 0 && <Badge tone="warn">{model.counts.warn} warnings</Badge>}
+              </div>
+              {model.checks.map((c) => (
+                <div key={c.id} className="hf-card" style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 6, borderColor: c.status === "fail" ? H.bad : H.line2, background: c.status === "fail" ? H.badSoft : H.paper }}>
+                  <div style={{ display: "flex", gap: 9, alignItems: "center" }}>
+                    <Mark kind={c.status as MarkKind} size={15} />
+                    <span style={{ flex: 1, fontSize: 12.5, fontWeight: c.status === "pass" ? 500 : 700 }}>{c.title}</span>
+                    {c.count && <span className="hf-mono" style={{ fontSize: 11, color: c.status === "fail" ? H.bad : c.status === "warn" ? H.warn : H.ink3 }}>{c.count}</span>}
+                  </div>
+                  {c.detail && <div className="hf-sub" style={{ fontSize: 11, paddingLeft: 24 }}>{c.detail}</div>}
+                  {c.action && <div style={{ paddingLeft: 24 }}><Button variant={c.status === "fail" ? "pri" : "default"} style={{ fontSize: 11, padding: "5px 11px" }}>{c.action}</Button></div>}
+                </div>
+              ))}
+              <div style={{ display: "flex", gap: 10, padding: "10px 12px", borderRadius: 10, background: blocked ? H.badSoft : H.goodSoft, alignItems: "center" }}>
+                <Mark kind={blocked ? "fail" : "pass"} size={15} />
+                <span style={{ fontSize: 11.5, color: H.ink }}>
+                  {blocked ? `${model.counts.fail} blocker${model.counts.fail === 1 ? "" : "s"} must be resolved. Warnings are your call.` : "No blockers — warnings are your call. Ready to continue."}
+                </span>
+              </div>
+            </aside>
           </div>
-        </aside>
+        ) : (
+          <div style={{ flex: 1, padding: "16px 24px", overflow: "auto", minHeight: 0 }}>
+            {summary && <SummaryTab model={summary} />}
+          </div>
+        )}
       </div>
     </CycleShell>
+  );
+}
+
+/** before → after with the delta highlighted. */
+function StatPair({ label, stat, big }: { label: string; stat: CleaningImpactStat; big?: boolean }) {
+  const delta = stat.after - stat.before;
+  const changed = delta !== 0;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
+      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 600, color: H.ink3 }}>{stat.before.toLocaleString()}</span>
+        <Icon name="arrow" size={big ? 15 : 12} color={H.ink3} />
+        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 700, color: changed ? H.pink : H.ink }}>{stat.after.toLocaleString()}</span>
+      </div>
+      {changed && <span className="hf-mono" style={{ fontSize: 10.5, fontWeight: 700, color: H.pink }}>{delta > 0 ? "+" : ""}{delta.toLocaleString()}</span>}
+    </div>
+  );
+}
+
+/**
+ * The prominent, always-visible cleaning-impact panel pinned at the top of Clean.
+ * "Before" is the full ingested set; "after" is the set minus currently-excluded
+ * rows — both recompute live on every soft-delete / restore / undo.
+ */
+function ImpactPanel({ model }: { model: CleaningImpactModel }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ borderBottom: `1px solid ${H.line2}`, background: H.canvas, padding: "12px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", paddingRight: 4 }}>
+          <span className="hf-h2" style={{ fontSize: 14 }}>Cleaning impact</span>
+          <span className="hf-sub" style={{ fontSize: 10.5 }}>before → after · live</span>
+        </div>
+        <StatPair label="Participants" stat={model.participants} big />
+        <StatPair label="Records (all exams)" stat={model.records} big />
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
+          <span className="hf-lbl" style={{ fontSize: 9.5 }}>Records excluded</span>
+          <span className="hf-mono" style={{ fontSize: 20, fontWeight: 700, color: model.excludedRecords ? H.bad : H.ink }}>
+            {model.excludedRecords.toLocaleString()}
+          </span>
+          <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{model.excludedParticipants} participant{model.excludedParticipants === 1 ? "" : "s"}</span>
+        </div>
+        <div style={{ flex: 1, minWidth: 12 }} />
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className="hf-btn ghost"
+          style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
+        >
+          {open ? "Hide detail" : "By subject & element"}
+          <span style={{ display: "inline-flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+            <Icon name="chev" size={12} color={H.ink3} />
+          </span>
+        </button>
+      </div>
+
+      {open && (
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", paddingTop: 4 }}>
+          <div style={{ flex: 1, minWidth: 320 }}>
+            <span className="hf-lbl">Records per subject (before → after)</span>
+            <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
+              <tbody>
+                {model.bySubject.map((s) => {
+                  const d = s.records.after - s.records.before;
+                  return (
+                    <tr key={s.assessmentId}>
+                      <td style={{ padding: "3px 8px 3px 0", color: H.ink }}>{s.shortName}</td>
+                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{s.records.before.toLocaleString()}</td>
+                      <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
+                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{s.records.after.toLocaleString()}</td>
+                      <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <span className="hf-lbl">Records per major element (before → after)</span>
+            <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
+              <tbody>
+                {model.byElement.map((e) => {
+                  const d = e.records.after - e.records.before;
+                  return (
+                    <tr key={e.major}>
+                      <td style={{ padding: "3px 8px 3px 0", color: H.ink, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.label}>{e.label}</td>
+                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{e.records.before.toLocaleString()}</td>
+                      <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
+                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{e.records.after.toLocaleString()}</td>
+                      <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The "Summary" sub-tab: fuller before-vs-after summary statistics (no per-row
+ * data). Per-subject score distribution (scored exams only, engine scored
+ * denominator) and completion counts by ResultStatus.
+ */
+function SummaryTab({ model }: { model: CleaningSummaryModel }) {
+  const distCell = (before: number, after: number, suffix = "") => {
+    const changed = Math.abs(after - before) > 1e-9;
+    return (
+      <span>
+        <span className="hf-mono" style={{ color: H.ink3 }}>{before}{suffix}</span>
+        <span style={{ color: H.ink3 }}> → </span>
+        <span className="hf-mono" style={{ color: changed ? H.pink : H.ink, fontWeight: 600 }}>{after}{suffix}</span>
+      </span>
+    );
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 900 }}>
+      <div>
+        <div className="hf-h2" style={{ fontSize: 16 }}>Summary statistics</div>
+        <div className="hf-sub" style={{ fontSize: 12, marginTop: 2 }}>{model.note}</div>
+      </div>
+
+      <div>
+        <span className="hf-lbl">Score distribution by subject (before → after cleaning)</span>
+        <div className="hf-card" style={{ padding: 0, marginTop: 8, overflow: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: H.canvas }}>
+                {["Subject", "Students", "Mean %", "Median %", "Std dev"].map((h, i) => (
+                  <th key={h} style={{ textAlign: i === 0 ? "left" : "right", padding: "8px 12px", borderBottom: `1px solid ${H.line2}`, fontWeight: 700, color: H.ink2 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {model.subjects.map((s) => (
+                <tr key={s.assessmentId} style={{ borderBottom: `1px solid ${H.line}` }}>
+                  <td style={{ padding: "8px 12px", fontWeight: 600, color: H.ink }}>{s.name}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right" }}>{distCell(s.before.n, s.after.n)}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right" }}>{distCell(s.before.mean, s.after.mean)}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right" }}>{distCell(s.before.median, s.after.median)}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right" }}>{distCell(s.before.sd, s.after.sd)}</td>
+                </tr>
+              ))}
+              {model.subjects.length === 0 && (
+                <tr><td colSpan={5} className="hf-sub" style={{ padding: "14px 12px" }}>No scored exams for this sitting.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div>
+        <span className="hf-lbl">Completion by result status (before → after cleaning)</span>
+        <div className="hf-card" style={{ padding: 0, marginTop: 8, overflow: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
+            <thead>
+              <tr style={{ background: H.canvas }}>
+                {["Result status", "Sittings (before → after)"].map((h, i) => (
+                  <th key={h} style={{ textAlign: i === 0 ? "left" : "right", padding: "8px 12px", borderBottom: `1px solid ${H.line2}`, fontWeight: 700, color: H.ink2 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {model.statusCounts.map((r) => (
+                <tr key={r.status} style={{ borderBottom: `1px solid ${H.line}` }}>
+                  <td style={{ padding: "8px 12px", color: H.ink }}>{r.status}</td>
+                  <td style={{ padding: "8px 12px", textAlign: "right" }}>{distCell(r.before, r.after)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   );
 }
 
 /**
  * Read-only raw-data overview, folded in from the old standalone Raw data step:
  * exactly what was uploaded, before any cleaning — a compact summary band plus the
- * by-element and by-demand breakdowns. The editable spreadsheet below is the
- * cleaning surface; this block is purely "show me my data".
- *
- * The breakdown panels are COLLAPSED BY DEFAULT so the overview keeps a small
- * vertical footprint and the selectable table below stays reachable within the
- * viewport (even at full screen on a laptop). The key figures stay visible in the
- * always-on summary band; the per-element / per-demand detail expands on demand.
+ * by-element and by-demand breakdowns (collapsed by default).
  */
-/**
- * The cleaned set rendered in the Questionmark cleaned-export column layout, so
- * the on-screen view mirrors the team's Excel spreadsheet column-for-column. Wide
- * table → horizontal scroll. Read-only; the raw data is untouched.
- *
- * The pipeline is de-identified, so the PII columns (email, date of birth, gender)
- * and the QM-only per-response metadata columns are present in their canonical
- * position but blank — the layout matches the spreadsheet without surfacing PII the
- * app never held. Blank columns are muted; PII columns are tagged so it's clear
- * they are intentionally empty (GDPR), not missing data.
- */
-function CleanedDataTable({ model, rtl }: { model: CleanedDataModel; rtl?: boolean }) {
-  const blank = new Set(model.blankColumns);
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 0 }}>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-        <span className="hf-lbl">Cleaned data — mirrors the Excel cleaned export</span>
-        <Badge tone="neutral">{model.headers.length} columns</Badge>
-        <div style={{ flex: 1 }} />
-        <span className="hf-sub" style={{ fontSize: 11 }}>
-          {model.retained.responses.toLocaleString()} rows · {model.retained.participants} participants · {model.retained.items} items
-        </span>
-        <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>scroll → for all columns</span>
-      </div>
-      <div
-        className="hf-scroll-x"
-        style={{ overflow: "auto", maxHeight: 440, border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper }}
-        dir={rtl ? "rtl" : undefined}
-      >
-        <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 11, whiteSpace: "nowrap", direction: "ltr" }}>
-          <thead>
-            <tr>
-              {model.headers.map((h) => {
-                const isBlank = blank.has(h);
-                const isPii = (CLEANED_DATA_PII as ReadonlySet<string>).has(h);
-                return (
-                  <th
-                    key={h}
-                    title={isPii ? "PII — held in the source export only; blank here by design (GDPR)" : isBlank ? "Not retained by the de-identified pipeline — blank by design" : h}
-                    style={{
-                      position: "sticky",
-                      top: 0,
-                      zIndex: 1,
-                      textAlign: "left",
-                      padding: "7px 10px",
-                      background: H.canvas,
-                      borderBottom: `1px solid ${H.line2}`,
-                      borderRight: `1px solid ${H.line}`,
-                      fontWeight: 700,
-                      color: isBlank ? H.ink3 : H.ink2,
-                    }}
-                  >
-                    {h}
-                    {isPii && <span style={{ marginLeft: 5, fontSize: 8, color: H.ink3, letterSpacing: 0.3 }}>PII</span>}
-                  </th>
-                );
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {model.rows.map((row, ri) => (
-              <tr key={ri} style={{ background: ri % 2 ? H.canvas : H.paper }}>
-                {row.map((cell, ci) => (
-                  <td
-                    key={ci}
-                    className="hf-mono"
-                    style={{ padding: "5px 10px", borderBottom: `1px solid ${H.line}`, borderRight: `1px solid ${H.line}`, color: cell === "" ? H.ink3 : H.ink, maxWidth: 240, overflow: "hidden", textOverflow: "ellipsis" }}
-                    title={cell || undefined}
-                  >
-                    {cell}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {model.rows.length === 0 && (
-              <tr>
-                <td colSpan={model.headers.length} className="hf-sub" style={{ padding: "16px 12px" }}>
-                  No cleaned rows for this subject.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 function RawOverview({ model }: { model: RawDataModel }) {
   const [showBreakdown, setShowBreakdown] = useState(false);
   const stat = (n: string | number, label: string, accent?: boolean) => (
@@ -349,8 +474,6 @@ function RawOverview({ model }: { model: RawDataModel }) {
   );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {/* summary band — always on, compact. Carries the headline figures and the
-          single toggle that reveals the (taller) per-element / per-demand panels. */}
       <div style={{ display: "flex", alignItems: "center", border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper, padding: "9px 0", flexWrap: "wrap" }}>
         <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 16px" }}>
           <span className="hf-mono" style={{ fontSize: 18, fontWeight: 600 }}>{model.participants}</span>
@@ -375,7 +498,6 @@ function RawOverview({ model }: { model: RawDataModel }) {
         </button>
       </div>
 
-      {/* breakdowns: by major element + by demand — collapsed by default */}
       {showBreakdown && (
       <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "14px 18px", border: `1px solid ${H.line}`, borderRadius: 10, background: H.paper }}>
         <div style={{ flex: 2, minWidth: 280, display: "flex", flexDirection: "column", gap: 9 }}>

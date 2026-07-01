@@ -39,8 +39,9 @@ import { doNextForStage } from "./pipeline-route";
 import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
-import { SUBJECT_CATALOG } from "./subject-catalog";
+import { SUBJECT_CATALOG, isSurveyAssessment } from "./subject-catalog";
 import { isStaffTestEmail } from "./staff-exclusions";
+import { isTechnicalIncidentStatus } from "./result-status";
 import { isEssaySubject, reservedEssayMax } from "./essays";
 import type {
   AssembleScoreAnalysisArgs,
@@ -133,6 +134,14 @@ import {
   type RawElementBreak,
   type DataCleaningModel,
   type CleanedDataModel,
+  type CleaningImpactModel,
+  type CleaningImpactSubject,
+  type CleaningImpactElement,
+  type CleaningSummaryModel,
+  type CleaningSummaryDist,
+  type CleaningSummarySubject,
+  type CleaningSummaryStatusRow,
+  type CleanedMasterDataset,
   type CleaningCheck,
   type NaiveScoresModel,
   type NaiveElementCol,
@@ -1247,6 +1256,11 @@ export class InMemoryDataProvider implements DataProvider {
     const cleanedRows = rows
       .filter((r) => !remRows?.has(r.id))
       .map((r) => (remCols && remCols.size ? { ...r, cells: colKeep.map((x) => r.cells[x.i] ?? null) } : r));
+    // Soft-deleted rows: participants excluded cohort-wide (staff/test email list
+    // + ad-hoc `excludeParticipantFromCohort`) are KEPT visible but flagged so the
+    // table can strike them through. Restricted to rows actually shown.
+    const cohortExcluded = this.cohortExcludedSet();
+    const excludedRows = cleanedRows.filter((r) => cohortExcluded.has(r.id)).map((r) => r.id);
     return {
       assessment: refs.find((r) => r.id === assessmentId)!,
       assessments: refs,
@@ -1257,6 +1271,7 @@ export class InMemoryDataProvider implements DataProvider {
       canProceed: counts.fail === 0,
       columns: cleanedColumns,
       rows: cleanedRows,
+      excludedRows,
     };
   }
 
@@ -1276,7 +1291,13 @@ export class InMemoryDataProvider implements DataProvider {
     const remCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
     const items = remCols && remCols.size ? a.items.filter((it) => !remCols.has(it.id)) : a.items;
     const present = this.participantsIn(a);
-    const parts = this.seed.liveCycle.participants.filter((p) => present.has(p.id) && !remRows?.has(p.id));
+    // Post-clean state: drop both per-subject removed rows AND cohort-excluded
+    // (soft-deleted / staff-test) participants, so this mirror — and the Excel
+    // export built from it — reflects exactly what survives cleaning.
+    const cohortExcluded = this.cohortExcludedSet();
+    const parts = this.seed.liveCycle.participants.filter(
+      (p) => present.has(p.id) && !remRows?.has(p.id) && !cohortExcluded.has(p.id),
+    );
 
     const scoreByKey = new Map<string, number>();
     for (const r of a.responses) scoreByKey.set(`${r.p} ${r.i}`, r.s);
@@ -1327,6 +1348,184 @@ export class InMemoryDataProvider implements DataProvider {
       blankColumns: [...CLEANED_DATA_UNAVAILABLE],
       rows,
       retained: { participants: parts.length, items: items.length, responses: rows.length },
+    };
+  }
+
+  /** The scored-exam assessments for the live cycle (surveys excluded). */
+  private examAssessments(): SeedAssessment[] {
+    return this.seed.liveCycle.assessments.filter((a) => !isSurveyAssessment(a.name));
+  }
+
+  getCleaningImpact(cycleId: string): CleaningImpactModel | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const exams = this.examAssessments();
+    const cohortRemoved = this.cohortRemovedParticipants();
+    const cohortExcluded = this.cohortExcludedSet();
+
+    // Cohort-wide distinct participants across the scored exams.
+    const beforeParts = new Set<string>();
+    for (const a of exams) for (const id of this.participantsIn(a)) beforeParts.add(id);
+    const afterParts = new Set([...beforeParts].filter((id) => !cohortRemoved.has(id)));
+
+    // Element labels + record tallies, grouped by QuestionMajorElement.
+    const elBefore = new Map<string, number>();
+    const elAfter = new Map<string, number>();
+    const elLabel = new Map<string, string>();
+
+    const bySubject: CleaningImpactSubject[] = [];
+    let recBefore = 0;
+    let recAfter = 0;
+    for (const a of exams) {
+      const dropRows = new Set([...cohortExcluded, ...(this.cleanRows.get(`${cycleId}:${a.id}`) ?? [])]);
+      const dropCols = this.cleanCols.get(`${cycleId}:${a.id}`) ?? new Set<string>();
+      const labels = this.elementLabelMap(a);
+      const itemMajor = new Map(a.items.map((it) => [it.id, it.major]));
+      let sBefore = 0;
+      let sAfter = 0;
+      const sParts = new Set<string>();
+      const sPartsAfter = new Set<string>();
+      for (const r of a.responses) {
+        const major = itemMajor.get(r.i) ?? null;
+        sBefore += 1;
+        sParts.add(r.p);
+        if (major) {
+          elBefore.set(major, (elBefore.get(major) ?? 0) + 1);
+          if (!elLabel.has(major)) elLabel.set(major, labels.get(major)?.label ?? major);
+        }
+        if (dropRows.has(r.p) || dropCols.has(r.i)) continue;
+        sAfter += 1;
+        sPartsAfter.add(r.p);
+        if (major) elAfter.set(major, (elAfter.get(major) ?? 0) + 1);
+      }
+      recBefore += sBefore;
+      recAfter += sAfter;
+      const ref = refs.find((x) => x.id === a.id)!;
+      bySubject.push({
+        assessmentId: a.id,
+        shortName: ref.shortName,
+        name: a.name,
+        records: { before: sBefore, after: sAfter },
+        participants: { before: sParts.size, after: sPartsAfter.size },
+      });
+    }
+
+    const byElement: CleaningImpactElement[] = [...elBefore.keys()].map((major) => ({
+      major,
+      label: elLabel.get(major) ?? major,
+      records: { before: elBefore.get(major) ?? 0, after: elAfter.get(major) ?? 0 },
+    }));
+
+    return {
+      cycleId,
+      participants: { before: beforeParts.size, after: afterParts.size },
+      records: { before: recBefore, after: recAfter },
+      bySubject,
+      byElement,
+      excludedRecords: recBefore - recAfter,
+      excludedParticipants: beforeParts.size - afterParts.size,
+    };
+  }
+
+  getCleaningSummary(cycleId: string): CleaningSummaryModel | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const refs = this.assessmentRefs(cycleId);
+    const exams = this.examAssessments();
+    const cohortExcluded = this.cohortExcludedSet();
+
+    // Per-subject score distribution — reuse the engine's `computeScores` so the
+    // scored denominator is exactly the one used downstream (max-0 stimulus items
+    // contribute 0 to the max and never inflate/deflate the average). `drop` is the
+    // rows removed at Clean; `excludedItems` the columns removed at Clean. Cleaning
+    // is isolated from the later item-review exclusions (not applied here).
+    const distOf = (a: SeedAssessment, drop: Set<string>, excludedItems: string[]): CleaningSummaryDist => {
+      const responses = a.responses
+        .filter((r) => !drop.has(r.p))
+        .map((r) => ({ participantId: r.p, itemId: r.i, assessmentId: a.id, score: r.s }));
+      const scores = engine.computeScores(responses, excludedItems, {
+        essayMarks: this.essayMarksFor(cycleId, a.id),
+        alterations: this.alterationsFor(cycleId, a.id),
+        essayAssessmentIds: this.essaySubjectIds(),
+        essayMax: reservedEssayMax(a),
+        items: this.itemMetasFor(a),
+      });
+      const pcts = scores.map((s) => s.pct);
+      return {
+        n: pcts.length,
+        mean: round(mean(pcts), 1),
+        median: round(median(pcts), 0),
+        sd: round(stddev(pcts), 1),
+      };
+    };
+
+    const subjects: CleaningSummarySubject[] = exams.map((a) => {
+      const cleanRowSet = this.cleanRows.get(`${cycleId}:${a.id}`) ?? new Set<string>();
+      const cleanColSet = [...(this.cleanCols.get(`${cycleId}:${a.id}`) ?? [])];
+      const afterDrop = new Set([...cohortExcluded, ...cleanRowSet]);
+      const ref = refs.find((x) => x.id === a.id)!;
+      return {
+        assessmentId: a.id,
+        shortName: ref.shortName,
+        name: a.name,
+        before: distOf(a, new Set(), []),
+        after: distOf(a, afterDrop, cleanColSet),
+      };
+    });
+
+    // Completion counts by ResultStatus (sittings across the scored exams).
+    const before = new Map<string, number>();
+    const after = new Map<string, number>();
+    for (const a of exams) {
+      const status = new Map<string, string>();
+      for (const ti of a.technicalIncidents ?? []) status.set(ti.p, ti.status);
+      const afterDrop = new Set([...cohortExcluded, ...(this.cleanRows.get(`${cycleId}:${a.id}`) ?? [])]);
+      for (const p of this.participantsIn(a)) {
+        const s = status.get(p) ?? "Finished OK";
+        before.set(s, (before.get(s) ?? 0) + 1);
+        if (!afterDrop.has(p)) after.set(s, (after.get(s) ?? 0) + 1);
+      }
+    }
+    // Order: "Finished OK" first, then technical statuses alphabetically.
+    const statusKeys = [...new Set([...before.keys(), ...after.keys()])].sort((x, y) => {
+      const nx = isTechnicalIncidentStatus(x) ? 1 : 0;
+      const ny = isTechnicalIncidentStatus(y) ? 1 : 0;
+      return nx - ny || x.localeCompare(y);
+    });
+    const statusCounts: CleaningSummaryStatusRow[] = statusKeys.map((status) => ({
+      status,
+      before: before.get(status) ?? 0,
+      after: after.get(status) ?? 0,
+    }));
+
+    return {
+      cycleId,
+      subjects,
+      statusCounts,
+      note:
+        "Summary statistics for the five scored exams only (survey instruments are excluded so they can’t skew cohort averages). Percentages use the scoring engine’s scored denominator (max-0 stimulus items excluded), shown before vs after the current cleaning. Labelled “Summary” to avoid confusion with the year-level Overall page.",
+    };
+  }
+
+  getCleanedMasterDataset(cycleId: string): CleanedMasterDataset | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const exams = this.examAssessments();
+    const rows: string[][] = [];
+    const idIdx = CLEANED_DATA_COLUMNS.indexOf("ParticipantID" as CleanedDataColumn);
+    const participants = new Set<string>();
+    let subjects = 0;
+    for (const a of exams) {
+      const model = this.getCleanedData(cycleId, a.id);
+      if (!model) continue;
+      subjects += 1;
+      for (const row of model.rows) {
+        rows.push(row);
+        if (idIdx >= 0 && row[idIdx]) participants.add(row[idIdx]!);
+      }
+    }
+    return {
+      headers: [...CLEANED_DATA_COLUMNS],
+      rows,
+      retained: { participants: participants.size, responses: rows.length, subjects },
     };
   }
 

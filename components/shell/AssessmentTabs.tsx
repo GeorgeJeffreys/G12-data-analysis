@@ -56,7 +56,6 @@ export function AssessmentTabs({
         const inner = (
           <>
             {t.label}
-            {t.rtl && <span className="hf-mono" style={{ fontSize: 9, color: H.ink3, marginLeft: 6 }}>RTL</span>}
           </>
         );
         return t.href ? (
