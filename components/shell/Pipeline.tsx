@@ -1,8 +1,9 @@
 /**
- * Pipeline stepper: Upload → Clean → Raw scores → Question review → Diagnostics →
- * Essay marks → Technical adjustments → Score → Cut scores → Grades → Export.
- * Ported from design/hf.jsx (HPipeline). Appears on every cycle screen. (Raw data
- * was merged into Clean; Diagnostics and Essay marks are now steps.)
+ * Pipeline stepper: Upload → Clean → Raw scores → Question review →
+ * Assessment Health → Essay marks → Technical adjustments → Score → Cut scores →
+ * CGJ → Grades. Ported from design/hf.jsx (HPipeline). Appears on every cycle
+ * screen. (Raw data was merged into Clean; Assessment Health and Essay marks are
+ * now steps.)
  *
  * When a `cycleId` is supplied (and not `compact`), each stage is a navigable
  * link to that stage's screen, so the stepper doubles as cycle navigation.

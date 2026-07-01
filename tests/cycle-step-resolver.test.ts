@@ -44,7 +44,7 @@ describe("stageRoute / doNextForStage", () => {
     expect(stageRoute("c", 1)).toBe("/cycles/c/clean"); // Clean (raw data folded in)
     expect(stageRoute("c", 2)).toBe("/cycles/c/raw-scores"); // Raw scores
     expect(stageRoute("c", 3)).toBe("/cycles/c/review"); // Question review
-    expect(stageRoute("c", 4)).toBe("/cycles/c/diagnostics"); // Diagnostics (now a step)
+    expect(stageRoute("c", 4)).toBe("/cycles/c/diagnostics"); // Assessment Health (route unchanged)
     expect(stageRoute("c", 5)).toBe("/cycles/c/essays"); // Essay marks
     expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments"); // Technical adjustments
     expect(stageRoute("c", 7)).toBe("/cycles/c/score"); // Score
@@ -82,7 +82,7 @@ describe("getCycle current-step resolution", () => {
     expect(new InMemoryDataProvider(seedAtStage(1)).getCycle("c")!.doNext.href).toBe("/cycles/c/clean");
     // stageIndex 3 = Question review.
     expect(new InMemoryDataProvider(seedAtStage(3)).getCycle("c")!.doNext.href).toBe("/cycles/c/review");
-    // stageIndex 4 = Diagnostics (now a pipeline step, not a tab).
+    // stageIndex 4 = Assessment Health (whole-assessment check; route unchanged).
     expect(new InMemoryDataProvider(seedAtStage(4)).getCycle("c")!.doNext.href).toBe("/cycles/c/diagnostics");
   });
 

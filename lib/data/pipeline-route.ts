@@ -4,8 +4,8 @@
  * each stage to its screen) so the two never disagree about where a stage lives.
  *
  * The 11-stage order (see PIPELINE): Upload → Clean → Raw scores →
- * Question review → Diagnostics → Essay marks → Technical adjustments → Score →
- * Cut scores → CGJ → Grades. `stageIndex` is the first INCOMPLETE stage for a
+ * Question review → Assessment Health → Essay marks → Technical adjustments →
+ * Score → Cut scores → CGJ → Grades. `stageIndex` is the first INCOMPLETE stage for a
  * cycle, so routing to it lands the user on the earliest action whose
  * prerequisites already exist — never deep in the pipeline on a screen
  * (Review/Cut scores/…) whose data hasn't been produced yet.
@@ -26,7 +26,7 @@ export function stageRoute(cycleId: string, index: number): string {
       return `${base}/raw-scores`;
     case 3: // Question review
       return `${base}/review`;
-    case 4: // Diagnostics
+    case 4: // Assessment Health (whole-assessment speededness/timing/reliability)
       return `${base}/diagnostics`;
     case 5: // Essay marks
       return `${base}/essays`;
@@ -55,7 +55,7 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Clean the data", body: "Review the raw response matrix and resolve any validation issues so the dataset is ready to score.", cta: "Go to cleaning" },
   { title: "Check raw scores", body: "Review the naïve (pre-adjustment) scores produced from the cleaned data.", cta: "Go to raw scores" },
   { title: "Review item quality", body: "Assessments are validated and waiting for quality review before scoring.", cta: "Go to item review" },
-  { title: "Review diagnostics", body: "Check cohort-level diagnostics and reliability (Cronbach's alpha) before continuing — review only, never changes a grade.", cta: "Go to diagnostics" },
+  { title: "Check assessment health", body: "Check whole-assessment speededness, timing and reliability (Cronbach's alpha) before continuing — review only, never changes a grade.", cta: "Go to assessment health" },
   { title: "Enter essay marks", body: "Load or enter the offline-marked essay scores for English & Arabic.", cta: "Go to essay marks" },
   { title: "Apply technical adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to technical adjustments" },
   { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },

@@ -9,11 +9,15 @@ import type { SubnavItem } from "@/components/shell/Shell";
 // individual sitting. The `documents` area is retained in the type only for back-compat.
 export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "documents" | "diagnostics"): SubnavItem[] {
   return [
-    { label: "Pipeline", href: `/cycles/${cycleId}`, on: active === "pipeline" },
+    // "Critical Path" is the per-sitting pipeline (Upload → … → Grades). Renamed
+    // from "Pipeline" so the tab name matches how the team refers to it.
+    { label: "Critical Path", href: `/cycles/${cycleId}`, on: active === "pipeline" },
     { label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" },
-    // Sitting-level Diagnostics tab (distinct from the per-subject Diagnostics
-    // pipeline step at /diagnostics). Placeholder for now — content to follow.
-    { label: "Diagnostics", href: `/cycles/${cycleId}/diagnostics-hub`, on: active === "diagnostics" },
+    // Sitting-level "Analysis" reference tab — the single home for exploratory /
+    // demand-level breakdowns. Distinct from the whole-assessment "Assessment
+    // Health" step inside the critical path (/diagnostics), removing the old
+    // "Diagnostics vs Diagnostics" double-naming.
+    { label: "Analysis", href: `/cycles/${cycleId}/diagnostics-hub`, on: active === "diagnostics" },
   ];
 }
 

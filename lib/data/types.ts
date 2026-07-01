@@ -35,7 +35,7 @@ export const PIPELINE = [
   "Clean",
   "Raw scores",
   "Question review",
-  "Diagnostics",
+  "Assessment Health",
   "Essay marks",
   "Technical adjustments",
   "Score",

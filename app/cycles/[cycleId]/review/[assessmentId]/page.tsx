@@ -15,7 +15,7 @@
  *    columns, text and rows together — so zooming out genuinely fits more rows.
  *
  * The cohort-level summary (overall score distribution / by-element rollup) is
- * deliberately absent here — it lives on the Diagnostics tab.
+ * deliberately absent here — it lives on the Analysis tab.
  */
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -219,7 +219,7 @@ export default function ReviewPage({
       }
       primary={
         <Link href={`/cycles/${cycleId}/diagnostics`}>
-          <Button variant="pri" title="Continue to diagnostics">
+          <Button variant="pri" title="Continue to assessment health">
             Continue
             <Icon name="arrow" color="#fff" />
           </Button>
@@ -316,7 +316,7 @@ export default function ReviewPage({
               Showing {view.length} of {model.items.length} questions · click a row to expand its deep-dive
             </div>
             {/* Cronbach's α moved off the Question-review step — reliability now
-                lives on the Diagnostics step (the shared computation is untouched). */}
+                lives on the Assessment Health step (the shared computation is untouched). */}
           </div>
         </div>
       </div>

@@ -1,11 +1,12 @@
 /**
  * Pipeline reshape (G12++): the single-run step order was reshaped — Raw data is
- * folded into Clean, Diagnostics and Essay marks are now steps (Diagnostics is no
- * longer a top tab), Adjustments → Technical adjustments, Boundaries → Cut
- * scores. These tests pin the new order/labels, that Diagnostics renders as a
- * step (with Cronbach's alpha), that the Raw data view lives in Clean, that Essay
- * marks is reachable both as a step and via the Upload card, and that the
- * continue buttons follow the new order with nothing skipped.
+ * folded into Clean, Assessment Health (was "Diagnostics") and Essay marks are
+ * now steps, Adjustments → Technical adjustments, Boundaries → Cut scores. The
+ * top cycle tab bar is Critical Path (was "Pipeline") · Audit log · Analysis (was
+ * the "Diagnostics" tab). These tests pin the new order/labels, that Assessment
+ * Health renders as a step (with Cronbach's alpha), that the Raw data view lives
+ * in Clean, that Essay marks is reachable both as a step and via the Upload card,
+ * and that the continue buttons follow the new order with nothing skipped.
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement as e } from "react";
@@ -22,7 +23,7 @@ const EXPECTED_ORDER = [
   "Clean",
   "Raw scores",
   "Question review",
-  "Diagnostics",
+  "Assessment Health",
   "Essay marks",
   "Technical adjustments",
   "Score",
@@ -46,9 +47,12 @@ describe("stepper order + labels", () => {
   it("renames applied and the old labels are gone", () => {
     expect(PIPELINE_STAGES).toContain("Technical adjustments");
     expect(PIPELINE_STAGES).toContain("Cut scores");
+    expect(PIPELINE_STAGES).toContain("Assessment Health");
     expect(PIPELINE_STAGES).not.toContain("Adjustments");
     expect(PIPELINE_STAGES).not.toContain("Boundaries");
     expect(PIPELINE_STAGES).not.toContain("Raw data");
+    // The whole-assessment step was renamed off the ambiguous "Diagnostics".
+    expect(PIPELINE_STAGES).not.toContain("Diagnostics");
   });
 
   it("CGJ sits directly after Cut scores, before Grades", () => {
@@ -61,13 +65,17 @@ describe("stepper order + labels", () => {
 });
 
 describe("top cycle tab bar", () => {
-  it("carries Pipeline, Audit log and the Diagnostics tab (no per-sitting Certificates tab)", () => {
+  it("carries Critical Path, Audit log and the Analysis tab (no per-sitting Certificates tab)", () => {
     const tabs = cyclesSubnav("c", "pipeline");
     const labels = tabs.map((t) => t.label);
-    expect(labels).toEqual(["Pipeline", "Audit log", "Diagnostics"]);
-    // The sitting-level Diagnostics tab routes to its own placeholder hub, distinct
-    // from the per-subject Diagnostics pipeline step at /cycles/c/diagnostics.
-    expect(tabs.find((t) => t.label === "Diagnostics")?.href).toBe("/cycles/c/diagnostics-hub");
+    expect(labels).toEqual(["Critical Path", "Audit log", "Analysis"]);
+    // The sitting-level "Analysis" reference tab routes to its own hub, distinct
+    // from the whole-assessment "Assessment Health" step at /cycles/c/diagnostics.
+    expect(tabs.find((t) => t.label === "Analysis")?.href).toBe("/cycles/c/diagnostics-hub");
+    // The old ambiguous "Diagnostics" tab name is gone (double-naming removed).
+    expect(labels).not.toContain("Diagnostics");
+    // "Pipeline" was renamed to "Critical Path".
+    expect(labels).not.toContain("Pipeline");
     // Document generation moved to the cycle/overall level — no per-sitting tab.
     expect(labels).not.toContain("Certificates");
   });
@@ -123,12 +131,12 @@ describe("Clean step holds the raw-data view + cleaning controls", () => {
   });
 });
 
-describe("Diagnostics is a pipeline step with Cronbach's alpha", () => {
+describe("Assessment Health is a pipeline step with Cronbach's alpha", () => {
   it("renders as a step (continue onward) and shows reliability/alpha", async () => {
     active = new InMemoryDataProvider();
-    const { default: DiagnosticsPage } = await import("@/app/cycles/[cycleId]/diagnostics/page");
-    const out = html(e(DiagnosticsPage, { params: { cycleId: CYCLE } }));
-    expect(out).toContain("Diagnostics");
+    const { default: AssessmentHealthPage } = await import("@/app/cycles/[cycleId]/diagnostics/page");
+    const out = html(e(AssessmentHealthPage, { params: { cycleId: CYCLE } }));
+    expect(out).toContain("Assessment Health");
     expect(out).toContain("Cronbach"); // ReliabilityPanel = Cronbach's alpha
     // It is a step now: a continue button onto Essay marks (not a dead-end tab).
     expect(out).toContain(`/cycles/${CYCLE}/essays`);
@@ -161,11 +169,11 @@ describe("Essay marks upload card still works on Upload", () => {
 });
 
 describe("continue buttons follow the new order", () => {
-  it("Question review → Diagnostics", async () => {
+  it("Question review → Assessment Health", async () => {
     active = new InMemoryDataProvider();
     const { default: ReviewPage } = await import("@/app/cycles/[cycleId]/review/[assessmentId]/page");
     const out = html(e(ReviewPage, { params: { cycleId: CYCLE, assessmentId: FIRST_ASSESSMENT } }));
-    expect(out).toContain("Continue to diagnostics");
+    expect(out).toContain("Continue to assessment health");
     expect(out).toContain(`/cycles/${CYCLE}/diagnostics`);
   });
 

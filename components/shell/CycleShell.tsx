@@ -9,15 +9,16 @@
  *
  * Order, always identical:
  *   breadcrumb (G12++ › Sittings › <sitting> › <page>)
- *   cycle tab bar   — Pipeline · Audit log · Certificates
- *   pipeline stepper — pipeline-area pages only, with the top-right primary action
- *   subject chip row — pipeline per-subject pages only
+ *   cycle tab bar   — Critical Path · Audit log · Analysis
+ *   pipeline stepper — critical-path pages only, with the top-right primary action
+ *   subject chip row — critical-path per-subject pages only
  *   alerts area      — one predictable place per page for every notice
  *   page body
  *
- * Audit / Certificates are reached via the tab bar and show no stepper; their
- * primary action (if any) sits top-right in the header. (Diagnostics is now a
- * pipeline step, not a tab.)
+ * Audit / Analysis are reached via the tab bar and show no stepper; their
+ * primary action (if any) sits top-right in the header. The whole-assessment
+ * "Assessment Health" check is a critical-path step, distinct from the
+ * exploratory sitting-level "Analysis" tab.
  */
 import { useState, type ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";

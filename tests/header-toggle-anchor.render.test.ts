@@ -1,6 +1,6 @@
 /**
- * Shared pipeline-header — the persistent "Pipeline | Audit log" section toggle
- * must be right-anchored so it lands at the SAME x-position on every page,
+ * Shared pipeline-header — the persistent "Critical Path | Audit log" section
+ * toggle must be right-anchored so it lands at the SAME x-position on every page,
  * regardless of which page-specific export actions are present. Page actions
  * (CSV/Excel on Cut scores, Export log on Audit log, none on Upload) sit to the
  * LEFT of the toggle and must never displace it.
@@ -60,10 +60,10 @@ const TOGGLE_ANCHOR = 'aria-label="Section"';
 const tailFromToggle = (html: string) => html.slice(html.indexOf(TOGGLE_ANCHOR));
 
 describe("pipeline header — right-anchored section toggle", () => {
-  it("renders the persistent Pipeline | Audit log toggle on every page", () => {
+  it("renders the persistent Critical Path | Audit log toggle on every page", () => {
     const html = renderHeader(UPLOAD);
     expect(html).toContain(TOGGLE_ANCHOR);
-    expect(html).toContain("Pipeline");
+    expect(html).toContain("Critical Path");
     expect(html).toContain("Audit log");
   });
 
