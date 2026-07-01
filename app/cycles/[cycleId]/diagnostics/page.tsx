@@ -24,6 +24,7 @@ import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { ReliabilityPanel } from "@/components/ui/reliability";
 import { CorrMeter, DiagStatusBadge, Hc, HelpNote, SpeededRow } from "@/components/ui/diagnostics-parts";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { useState } from "react";
 import type { DiagnosticsModel, ReliabilityModel } from "@/lib/data/types";
 import type { DiagStatus } from "@/lib/diagnostics";
@@ -77,6 +78,12 @@ export default function AssessmentHealthPage({ params }: { params: { cycleId: st
         <Link href={`/cycles/${cycleId}/adjustments`}>
           <Button variant="pri" title="Continue to incident adjustments">Continue<Icon name="arrow" color="#fff" /></Button>
         </Link>
+      }
+      intro={
+        <StepIntro>
+          A whole-assessment check on whether the paper was timed right and internally consistent, before results are
+          confirmed. It never changes a mark — it tells you whether the scores can be trusted.
+        </StepIntro>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
