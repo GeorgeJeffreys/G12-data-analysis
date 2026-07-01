@@ -18,6 +18,7 @@ import { ExportButtons } from "@/components/ui/ExportButtons";
 import { downloadCsv, downloadScoreAnalysisXlsx, overallScoreCsv, scoreData } from "@/lib/ui/analysis-exports";
 import { fileStem } from "@/lib/ui/export";
 import { Icon } from "@/components/ui/icons";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 
 export default function RawScoresPage({ params }: { params: { cycleId: string } }) {
@@ -64,6 +65,13 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
         />
       }
       primary={<Link href={reviewHref}><Button variant="pri" title="Continue to item review">Continue<Icon name="arrow" color="#fff" /></Button></Link>}
+      intro={
+        <StepIntro>
+          These are the scores exactly as students submitted them, before any question is reviewed or dropped — the
+          untouched baseline every later adjustment is measured against. Remove a weak item in review and you will see
+          the scores here change.
+        </StepIntro>
+      }
       subjectTabs={
         <AssessmentTabs
           activeId={assessmentId}

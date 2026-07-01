@@ -11,6 +11,7 @@ export type IconName =
   | "chev"
   | "plus"
   | "arrow"
+  | "arrowLeft"
   | "doc"
   | "download"
   | "award"
@@ -80,6 +81,12 @@ export function Icon({
       return (
         <svg viewBox="0 0 16 16" style={st}>
           <path d="M3 8h10M9 4l4 4-4 4" {...p} />
+        </svg>
+      );
+    case "arrowLeft":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <path d="M13 8H3M7 4L3 8l4 4" {...p} />
         </svg>
       );
     case "doc":

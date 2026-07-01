@@ -21,6 +21,7 @@ import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
@@ -74,6 +75,12 @@ export default function CgjPage({ params }: { params: { cycleId: string } }) {
           Continue<Icon name="arrow" color="#fff" />
         </Button>
       </Link>
+    ),
+    intro: (
+      <StepIntro>
+        A cross-check against the partner centre&apos;s expected grades — do our cut-score results broadly agree with
+        what the school predicted? It never changes a grade; it is a sanity check on where the boundaries fell.
+      </StepIntro>
     ),
   };
 
