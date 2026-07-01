@@ -104,10 +104,12 @@ describe("routing follows the new order with nothing skipped", () => {
 
 // ── page renders against the real provider read-models ───────────────────────
 let active: DataProvider = new InMemoryDataProvider();
+// Mutable search params so a test can drive the Clean page's `?tab=` deep-link.
+const nav = vi.hoisted(() => ({ search: new URLSearchParams() }));
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, prefetch: () => {} }),
   usePathname: () => "/",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => nav.search,
 }));
 vi.mock("@/lib/data/context", () => ({
   useProvider: () => active,
@@ -121,21 +123,34 @@ function html(node: Parameters<typeof renderToStaticMarkup>[0]) {
   return renderToStaticMarkup(node);
 }
 
-describe("Clean step holds the raw-data view + cleaning controls", () => {
-  it("shows the folded-in raw-data overview AND the validation/cleaning surface", async () => {
+describe("Clean step: Overall tab (global) + per-subject cleaning surface", () => {
+  it("defaults to the Overall tab showing the global cross-subject summary", async () => {
     active = new InMemoryDataProvider();
+    nav.search = new URLSearchParams(); // no ?tab= → Overall is first/default
     const { default: CleanPage } = await import("@/app/cycles/[cycleId]/clean/page");
     const out = html(e(CleanPage, { params: { cycleId: CYCLE } }));
-    // raw-data view (folded in) — the always-on summary band keeps the headline
-    // figures visible; the per-element / per-demand breakdown is collapsed by
-    // default (toggled via "Show breakdown") so the selectable table below stays
-    // reachable within the viewport.
-    expect(out).toContain("Participants");
+    // The subject-tab row now leads with an "Overall" tab.
+    expect(out).toContain("Overall");
+    // Overall carries the global cleaning impact + the cross-subject summary stats.
+    expect(out).toContain("Cleaning impact");
+    expect(out).toContain("Score distribution by subject");
+    expect(out).toContain("Completion by result status");
+    // Continue is available from any tab.
+    expect(out).toContain("Clean &amp; continue");
+  });
+
+  it("a subject tab (?tab=) shows the folded-in raw-data overview AND the cleaning surface", async () => {
+    active = new InMemoryDataProvider();
+    nav.search = new URLSearchParams(`tab=${FIRST_ASSESSMENT}`);
+    const { default: CleanPage } = await import("@/app/cycles/[cycleId]/clean/page");
+    const out = html(e(CleanPage, { params: { cycleId: CYCLE } }));
+    // raw-data view (folded in) — summary band + collapsed "Show breakdown".
     expect(out).toContain("Major elements");
     expect(out).toContain("Show breakdown");
-    // cleaning controls
+    // cleaning controls scoped to this subject.
     expect(out).toContain("Validation report");
     expect(out).toContain("Clean &amp; continue");
+    nav.search = new URLSearchParams(); // reset for other tests
   });
 });
 
