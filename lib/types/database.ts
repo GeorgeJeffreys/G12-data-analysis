@@ -177,6 +177,10 @@ export interface CleanExclusionRow {
   assessment_id: string;
   kind: "row" | "col";
   target_id: string;
+  /** kind='row': participant stable natural key (qm_participant_id / email) so the
+   *  removal re-resolves to the current row UUID after a re-import (migration 0016).
+   *  Null for legacy rows and for kind='col'. */
+  target_key: string | null;
   decided_by: string;
   decided_at: string;
 }
@@ -489,7 +493,7 @@ export interface Database {
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };
       decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };
-      set_clean_removal: { Args: { p_cycle: string; p_assessment: string; p_kind: string; p_targets: string[]; p_remove: boolean }; Returns: undefined };
+      set_clean_removal: { Args: { p_cycle: string; p_assessment: string; p_kind: string; p_targets: string[]; p_keys: string[]; p_remove: boolean }; Returns: undefined };
       clear_clean_removals: { Args: { p_cycle: string; p_assessment: string }; Returns: undefined };
       write_item_stats: { Args: { p_cycle: string; p_engine_version: string; p_stats: unknown }; Returns: undefined };
       lock_grades: { Args: { p_cycle: string }; Returns: undefined };
