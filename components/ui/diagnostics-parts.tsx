@@ -3,7 +3,7 @@
 /**
  * Shared presentational pieces for the two diagnostics surfaces, so the
  * whole-assessment health check (critical-path "Assessment Health" step) and the
- * exploratory reference tab ("Analysis") render identical tables/badges/charts
+ * exploratory reference tab ("Diagnostics") render identical tables/badges/charts
  * from the same read-model without duplicating the markup.
  *
  * These are display-only atoms — they consume the diagnostics read-model and

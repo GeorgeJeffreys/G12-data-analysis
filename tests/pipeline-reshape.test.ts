@@ -2,8 +2,8 @@
  * Pipeline reshape (G12++): the single-run step order was reshaped — Raw data is
  * folded into Clean, Assessment Health (was "Diagnostics") and Essay marks are
  * now steps, Adjustments → Technical adjustments, Boundaries → Cut scores. The
- * top cycle tab bar is Critical Path (was "Pipeline") · Audit log · Analysis (was
- * the "Diagnostics" tab). These tests pin the new order/labels, that Assessment
+ * top cycle tab bar is Critical Path (was "Pipeline") · Audit log · Diagnostics.
+ * These tests pin the new order/labels, that Assessment
  * Health renders as a step (with Cronbach's alpha), that the Raw data view lives
  * in Clean, that Essay marks is reachable both as a step and via the Upload card,
  * and that the continue buttons follow the new order with nothing skipped.
@@ -65,15 +65,15 @@ describe("stepper order + labels", () => {
 });
 
 describe("top cycle tab bar", () => {
-  it("carries Critical Path, Audit log and the Analysis tab (no per-sitting Certificates tab)", () => {
+  it("carries Critical Path, Audit log and the Diagnostics tab (no per-sitting Certificates tab)", () => {
     const tabs = cyclesSubnav("c", "pipeline");
     const labels = tabs.map((t) => t.label);
-    expect(labels).toEqual(["Critical Path", "Audit log", "Analysis"]);
-    // The sitting-level "Analysis" reference tab routes to its own hub, distinct
+    expect(labels).toEqual(["Critical Path", "Audit log", "Diagnostics"]);
+    // The sitting-level "Diagnostics" reference tab routes to its own hub, distinct
     // from the whole-assessment "Assessment Health" step at /cycles/c/diagnostics.
-    expect(tabs.find((t) => t.label === "Analysis")?.href).toBe("/cycles/c/diagnostics-hub");
-    // The old ambiguous "Diagnostics" tab name is gone (double-naming removed).
-    expect(labels).not.toContain("Diagnostics");
+    // Only one user-facing "Diagnostics" (the tab) — the in-path step is
+    // "Assessment Health", so there is no double-naming.
+    expect(tabs.find((t) => t.label === "Diagnostics")?.href).toBe("/cycles/c/diagnostics-hub");
     // "Pipeline" was renamed to "Critical Path".
     expect(labels).not.toContain("Pipeline");
     // Document generation moved to the cycle/overall level — no per-sitting tab.

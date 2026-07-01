@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Sitting-level "Analysis" tab — the single home for exploratory / reference
+ * Sitting-level "Diagnostics" tab — the single home for exploratory / reference
  * analysis, reached from the top cycle tab bar (alongside Critical Path / Audit
  * log). It is distinct from the whole-assessment "Assessment Health" step inside
  * the critical path (`/cycles/[cycleId]/diagnostics`), which carries only the
@@ -36,7 +36,7 @@ import {
 import type { DiagnosticsModel } from "@/lib/data/types";
 import type { DiagStatus } from "@/lib/diagnostics";
 
-export default function AnalysisPage({ params }: { params: { cycleId: string } }) {
+export default function DiagnosticsHubPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
@@ -45,19 +45,19 @@ export default function AnalysisPage({ params }: { params: { cycleId: string } }
 
   if (!model || model.assessments.length === 0) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Analysis" area="diagnostics">
-        <div style={{ padding: 32 }} className="hf-sub">No analysis data for this sitting yet.</div>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" area="diagnostics">
+        <div style={{ padding: 32 }} className="hf-sub">No diagnostics data for this sitting yet.</div>
       </CycleShell>
     );
   }
   const a = model.assessments[Math.min(active, model.assessments.length - 1)]!;
 
   return (
-    <CycleShell cycleId={cycleId} cycleName={cycleName} page="Analysis" area="diagnostics">
+    <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" area="diagnostics">
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
           <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
-            <div className="hf-h1">Analysis</div>
+            <div className="hf-h1">Diagnostics</div>
             <Badge tone="neutral"><Mark kind="warn" size={11} />Exploratory · not a grading step</Badge>
           </div>
           <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>

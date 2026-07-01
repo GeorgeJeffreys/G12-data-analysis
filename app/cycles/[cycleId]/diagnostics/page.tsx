@@ -9,7 +9,7 @@
  *   - whole-assessment timing vs performance,
  *   - internal consistency (Cronbach's α).
  * The exploratory demand-level (D1/D2/D3) and item breakdowns live on the
- * separate "Analysis" reference tab (/cycles/[cycleId]/diagnostics-hub), not here.
+ * separate "Diagnostics" reference tab (/cycles/[cycleId]/diagnostics-hub), not here.
  * Plain-language interpretation sits next to each figure.
  */
 import Link from "next/link";
@@ -88,7 +88,7 @@ export default function AssessmentHealthPage({ params }: { params: { cycleId: st
           <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>
             A whole-assessment health check — was the paper timed right, and is it internally consistent — before results
             are confirmed. Informational only: nothing here changes a student’s mark or grade. Demand-level and item
-            breakdowns live on the <Link href={`/cycles/${cycleId}/diagnostics-hub`} style={{ color: H.pink, fontWeight: 600 }}>Analysis</Link> tab.
+            breakdowns live on the <Link href={`/cycles/${cycleId}/diagnostics-hub`} style={{ color: H.pink, fontWeight: 600 }}>Diagnostics</Link> tab.
           </div>
         </div>
 
@@ -136,7 +136,7 @@ export default function AssessmentHealthPage({ params }: { params: { cycleId: st
                   late accuracy drop. <b>≤0.05</b> is fine; <b>0.05–0.15</b> worth a look; <b>&gt;0.15</b> flags time pressure.
                   <b> Omission rate</b> is the share of presented questions left blank; <b>completion</b> is its mirror.
                   If the whole paper flags, the fix is on the paper — shorten it or rebalance where the demanding items sit.
-                  For the difficulty-tier and item-level view, see the <b>Analysis</b> tab.
+                  For the difficulty-tier and item-level view, see the <b>Diagnostics</b> tab.
                 </>
               }
             />

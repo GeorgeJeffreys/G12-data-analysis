@@ -1,12 +1,12 @@
 /**
- * Assessment Health step + Analysis tab — the split diagnostics surfaces.
+ * Assessment Health step + Diagnostics tab — the split diagnostics surfaces.
  *
  * Smoke-renders the real pages with the live provider via renderToStaticMarkup to
  * lock the structural split:
  *   - the critical-path "Assessment Health" step (/cycles/[id]/diagnostics) carries
  *     ONLY whole-assessment measures — speededness/omission/completion, timing, and
  *     Cronbach's α — and no longer the demand-level / item-set / position breakdowns,
- *   - the sitting-level "Analysis" reference tab (/cycles/[id]/diagnostics-hub) hosts
+ *   - the sitting-level "Diagnostics" reference tab (/cycles/[id]/diagnostics-hub) hosts
  *     the relocated demand-level (D1/D2/D3) + item-set breakdowns and omission-by-
  *     position chart.
  * Consumes the read-model only; engine parity is unaffected.
@@ -36,9 +36,9 @@ async function renderHealth(cycleId: string): Promise<string> {
   return renderToStaticMarkup(e(AssessmentHealthPage, { params: { cycleId } }));
 }
 
-async function renderAnalysis(cycleId: string): Promise<string> {
-  const { default: AnalysisPage } = await import("@/app/cycles/[cycleId]/diagnostics-hub/page");
-  return renderToStaticMarkup(e(AnalysisPage, { params: { cycleId } }));
+async function renderDiagnosticsHub(cycleId: string): Promise<string> {
+  const { default: DiagnosticsHubPage } = await import("@/app/cycles/[cycleId]/diagnostics-hub/page");
+  return renderToStaticMarkup(e(DiagnosticsHubPage, { params: { cycleId } }));
 }
 
 describe("Assessment Health step — whole-assessment only", () => {
@@ -49,7 +49,7 @@ describe("Assessment Health step — whole-assessment only", () => {
     expect(html).toContain("Speededness, omission");
     expect(html).toContain("Whole assessment");
     // the SPEEDEDNESS demand-level, item-set and item-position breakdowns moved to
-    // the Analysis tab (their distinctive section headers must be gone here). NB the
+    // the Diagnostics tab (their distinctive section headers must be gone here). NB the
     // Cronbach's-α reliability panel keeps its own "By demand level" α section — that
     // is the internal-consistency gate, not the relocated speededness breakdown.
     expect(html).not.toContain("By demand level (item difficulty)");
@@ -77,11 +77,11 @@ describe("Assessment Health step — whole-assessment only", () => {
   });
 });
 
-describe("Analysis tab — relocated demand-level / item breakdowns", () => {
+describe("Diagnostics tab — relocated demand-level / item breakdowns", () => {
   it("hosts the demand-level (D1/D2/D3) and item-set breakdowns", async () => {
     activeProvider = live;
-    const html = await renderAnalysis(liveId);
-    expect(html).toContain("Analysis");
+    const html = await renderDiagnosticsHub(liveId);
+    expect(html).toContain("Diagnostics");
     expect(html).toContain("By demand level");
     expect(html).toMatch(/top-difficulty/);
     expect(html).toContain("By item set");
@@ -89,7 +89,7 @@ describe("Analysis tab — relocated demand-level / item breakdowns", () => {
 
   it("plots omission rate by item position", async () => {
     activeProvider = live;
-    const html = await renderAnalysis(liveId);
+    const html = await renderDiagnosticsHub(liveId);
     expect(html).toContain("Omission rate by item position");
     expect(html).toContain("item 1 (start)");
   });

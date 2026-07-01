@@ -13,11 +13,11 @@ export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "do
     // from "Pipeline" so the tab name matches how the team refers to it.
     { label: "Critical Path", href: `/cycles/${cycleId}`, on: active === "pipeline" },
     { label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" },
-    // Sitting-level "Analysis" reference tab — the single home for exploratory /
-    // demand-level breakdowns. Distinct from the whole-assessment "Assessment
-    // Health" step inside the critical path (/diagnostics), removing the old
-    // "Diagnostics vs Diagnostics" double-naming.
-    { label: "Analysis", href: `/cycles/${cycleId}/diagnostics-hub`, on: active === "diagnostics" },
+    // Sitting-level "Diagnostics" reference tab — the single home for exploratory /
+    // demand-level breakdowns. No longer ambiguous: the in-critical-path check is
+    // the whole-assessment "Assessment Health" step (/diagnostics), so this is the
+    // only user-facing "Diagnostics".
+    { label: "Diagnostics", href: `/cycles/${cycleId}/diagnostics-hub`, on: active === "diagnostics" },
   ];
 }
 

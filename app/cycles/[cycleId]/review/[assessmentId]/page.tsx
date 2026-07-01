@@ -15,7 +15,7 @@
  *    columns, text and rows together — so zooming out genuinely fits more rows.
  *
  * The cohort-level summary (overall score distribution / by-element rollup) is
- * deliberately absent here — it lives on the Analysis tab.
+ * deliberately absent here — it lives on the Diagnostics tab.
  */
 import { Fragment, useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
