@@ -10,7 +10,8 @@
  *    (D1/D2/D3) breakdown the Diagnostics screen shows.
  *  - "Omission by position" sheet: omission rate per item position, with demand
  *    level, mirroring the on-screen chart.
- *  - "Timing" sheet: whole-assessment timing vs performance.
+ *  - "Timing" sheet: timing vs performance — whole assessment plus the
+ *    per-demand-level breakdown.
  *  (All informational only — never grading.)
  *
  * Export/formatting only — no engine or scoring change.
@@ -127,9 +128,11 @@ function omissionPositionSheet(input: DiagnosticsExportInput): XLSX.WorkSheet {
 function timingSheet(input: DiagnosticsExportInput): XLSX.WorkSheet {
   const aoa: unknown[][] = [["Timing vs performance — informational only"], [], [...TIMING_HEADERS]];
   const headerRow = 2;
+  const pushTiming = (name: string, group: string, t: { nStudents: number; pearson: number | null; pearsonStrength: string; spearman: number | null; spearmanStrength: string }) =>
+    aoa.push([name, group, t.nStudents, t.pearson ?? "n/a", t.pearsonStrength, t.spearman ?? "n/a", t.spearmanStrength]);
   for (const a of input.diagnostics?.assessments ?? []) {
-    const t = a.whole.timing;
-    aoa.push([a.assessmentName, "Whole assessment", t.nStudents, t.pearson ?? "n/a", t.pearsonStrength, t.spearman ?? "n/a", t.spearmanStrength]);
+    pushTiming(a.assessmentName, "Whole assessment", a.whole.timing);
+    for (const d of a.timingByDemand ?? []) pushTiming(a.assessmentName, d.demand, d.timing);
   }
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   styleRow(ws, 0, 1, TITLE_STYLE);

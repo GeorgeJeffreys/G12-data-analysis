@@ -54,7 +54,8 @@ import type {
 } from "./seed-types";
 import { isTechnicalIncidentStatus } from "./result-status";
 import { ENGINE_VERSION, type QualityRating } from "@/lib/engine";
-import { buildAssessmentDiagnostics, type DiagResponse } from "@/lib/diagnostics";
+import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "@/lib/diagnostics";
+import { isStaffTestEmail } from "./staff-exclusions";
 import type { EssayUploadRow, IncidentInput, IncidentDecisionInput } from "./provider";
 import type { ValidationReport } from "@/lib/ingest/types";
 
@@ -311,6 +312,13 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     (respByAssessment.get(aId) ?? respByAssessment.set(aId, []).get(aId)!).push(r);
   }
 
+  // Cohort-excluded (staff / test) participant row ids — the same accounts the
+  // scores path drops, keyed on the stable email so diagnostics run on the corrected
+  // cohort, not staff-inflated rows.
+  const cohortExcludedIds = new Set(
+    participants.filter((p) => isStaffTestEmail(p.qm_participant_id) || isStaffTestEmail(p.email)).map((p) => p.id),
+  );
+
   const seedAssessments: (SeedAssessment & { _order: number })[] = [];
   const diagnostics: (SeedAssessmentDiagnostics & { _order: number })[] = [];
   const rate = (v: QualityRating | null): QualityRating => v ?? "Review";
@@ -391,7 +399,10 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       correct: Number(r.answer_score) === 1,
       responseTime: r.response_time,
     }));
-    diagnostics.push({ assessmentId: a.id, assessmentName: a.name, ...buildAssessmentDiagnostics(diagRecs), _order: info.order });
+    // Match P-B's matrix: drop staff/test accounts and dedupe (participant, item)
+    // keeping the last row before computing (see cleanDiagResponses).
+    const cleanDiag = cleanDiagResponses(diagRecs, { excludedParticipantIds: cohortExcludedIds });
+    diagnostics.push({ assessmentId: a.id, assessmentName: a.name, ...buildAssessmentDiagnostics(cleanDiag), _order: info.order });
 
     seedAssessments.push({
       id: a.id,

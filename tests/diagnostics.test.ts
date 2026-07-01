@@ -12,8 +12,10 @@ import {
   correlationStrength,
   speededByDemand,
   speededByItemSet,
+  timingByDemand,
   omissionByPosition,
   buildAssessmentDiagnostics,
+  cleanDiagResponses,
   type DiagResponse,
 } from "@/lib/diagnostics";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
@@ -121,6 +123,41 @@ describe("speededness by demand level", () => {
   });
 });
 
+describe("timing by demand level", () => {
+  it("splits the timing correlation by D1/D2/D3 in fixed order, only present levels", () => {
+    // Within each tier slower students score higher → positive correlation.
+    const recs: DiagResponse[] = [];
+    let order = 0;
+    for (const [p, mult] of [["s1", 1], ["s2", 2], ["s3", 3]] as const) {
+      recs.push(r(p, "Q1", order++, true, mult >= 2, 10 * mult, "D1"));
+      recs.push(r(p, "Q2", order++, true, mult >= 3, 10 * mult, "D3"));
+    }
+    const byT = timingByDemand(recs);
+    expect(byT.map((d) => d.demand)).toEqual(["D1", "D3"]); // D2 absent, fixed order
+    for (const d of byT) {
+      expect(d.timing.nStudents).toBe(3);
+      expect(d.timing.pearson).not.toBeNull();
+    }
+  });
+  it("ignores untagged (null demand) items entirely", () => {
+    const recs = [r("s1", "Q1", 0, true, true, 10), r("s2", "Q1", 1, true, false, 20)];
+    expect(timingByDemand(recs)).toEqual([]);
+  });
+});
+
+describe("cleanDiagResponses (P-B matrix construction)", () => {
+  it("dedupes (participant, item) keeping the last row and drops excluded participants", () => {
+    const recs: DiagResponse[] = [
+      r("s1", "Q1", 0, true, false, 5),
+      r("s1", "Q1", 1, true, true, 9), // supersedes the earlier s1/Q1 row
+      r("staff", "Q1", 2, true, true, 7),
+    ];
+    const clean = cleanDiagResponses(recs, { excludedParticipantIds: new Set(["staff"]) });
+    expect(clean).toHaveLength(1);
+    expect(clean[0]).toMatchObject({ participantId: "s1", itemId: "Q1", correct: true, responseTime: 9 });
+  });
+});
+
 describe("speededness by item set", () => {
   it("splits speededness by shared-stimulus name, alphabetical, ignoring ungrouped items", () => {
     const recs: DiagResponse[] = [];
@@ -160,6 +197,7 @@ describe("buildAssessmentDiagnostics", () => {
     expect(diag.whole.speeded.nItems).toBe(2);
     expect(diag.whole.timing.nStudents).toBeGreaterThanOrEqual(0);
     expect(diag.byDemand.map((d) => d.demand)).toEqual(["D1", "D3"]);
+    expect(diag.timingByDemand.map((d) => d.demand)).toEqual(["D1", "D3"]);
     expect(diag.byItemSet.map((s) => s.itemSet)).toEqual(["Passage A"]);
     expect(diag.omissionByPosition).toHaveLength(2);
   });

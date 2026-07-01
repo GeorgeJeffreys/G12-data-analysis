@@ -15,7 +15,8 @@
  */
 
 import { getEngine, type ItemMeta, type QualityRating, type ResponseRecord } from "@/lib/engine";
-import { buildAssessmentDiagnostics, type DiagResponse } from "@/lib/diagnostics";
+import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "@/lib/diagnostics";
+import { isStaffTestEmail } from "./staff-exclusions";
 import type {
   SeedAssessment,
   SeedAssessmentDiagnostics,
@@ -105,6 +106,12 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
         `${realIdByPseudonym.size} output participant(s) — participant identity collapse.`,
     );
   }
+  // Cohort-excluded (staff / test) accounts, keyed on the same stable email the
+  // scores path excludes on — so speededness/timing run on the identical corrected
+  // cohort as item stats, never on staff-inflated rows.
+  const cohortExcludedPseudonyms = new Set(
+    [...realIdByPseudonym.entries()].filter(([, realId]) => isStaffTestEmail(realId)).map(([pseudo]) => pseudo),
+  );
   const partOrder = [...realIdByPseudonym.keys()].sort();
   const participants: SeedParticipant[] = partOrder.map((id, i) => ({
     id,
@@ -225,7 +232,10 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       correct: r.answerScore === 1,
       responseTime: r.responseTime,
     }));
-    diagnostics.push({ assessmentId, assessmentName: name, ...buildAssessmentDiagnostics(diagRecs) });
+    // Match P-B's matrix: drop staff/test accounts and dedupe (student, item)
+    // keeping the last row, keyed on P-A's stable pseudonym, before computing.
+    const cleanDiag = cleanDiagResponses(diagRecs, { excludedParticipantIds: cohortExcludedPseudonyms });
+    diagnostics.push({ assessmentId, assessmentName: name, ...buildAssessmentDiagnostics(cleanDiag) });
 
     assessments.push({
       id: assessmentId,

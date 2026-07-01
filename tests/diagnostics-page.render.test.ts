@@ -93,4 +93,14 @@ describe("Diagnostics tab — relocated demand-level / item breakdowns", () => {
     expect(html).toContain("Omission rate by item position");
     expect(html).toContain("item 1 (start)");
   });
+
+  it("hosts the notebook-ported timing/performance and early-vs-late breakdowns", async () => {
+    activeProvider = live;
+    const html = await renderDiagnosticsHub(liveId);
+    // per-demand timing↔performance (the timing notebook) lives here, not on Assessment Health
+    expect(html).toContain("Timing &amp; performance by demand level");
+    // the speededness index broken into its early-vs-late omission & accuracy parts
+    expect(html).toContain("Early vs late");
+    expect(html).toContain("Late accuracy");
+  });
 });
