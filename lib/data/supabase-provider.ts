@@ -87,11 +87,13 @@ import type {
   EssayMarksModel,
   AdjustmentsModel,
   IncidentConfigModel,
+  IncidentReviewModel,
   CompositionModel,
   DiagnosticsModel,
   ReliabilityModel,
   IncidentDecision,
 } from "./types";
+import type { ResolvedIncidentRow } from "@/lib/incidents/import";
 
 type DB = SupabaseBrowserClient;
 
@@ -821,6 +823,41 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.setIncidentMapping(mapping);
     this.bump();
     this.rpc("set_incident_mapping", { p_mapping: mapping });
+  }
+
+  // Incident Adjustments — apply engine + per-student review surface (02b). Reads
+  // are served from the inner provider (hydrated from incident_rows /
+  // incident_applications); writes persist through the SECURITY DEFINER RPCs
+  // (0016 import_incident_rows; 0017 apply/unapply, admin-only re-checked server-side).
+  getIncidentReview(cycleId: string): IncidentReviewModel | null { return this.inner.getIncidentReview(cycleId); }
+  importIncidentRows(cycleId: string, rows: readonly ResolvedIncidentRow[]): void {
+    this.inner.importIncidentRows(cycleId, rows);
+    this.bump();
+    this.rpc("import_incident_rows", {
+      p_cycle: cycleId,
+      p_rows: rows.map((r) => ({
+        participant_key: r.participantInternalId ?? r.rawStudentId,
+        raw_student_id: r.rawStudentId,
+        student_name: r.studentName,
+        incident_type: r.incidentType,
+        question_number: r.questionNumber,
+        duration_minutes: r.durationMinutes,
+        code_id: r.codeId,
+        status: r.status,
+        errors: r.errors,
+      })),
+    });
+  }
+  loadSampleIncidentRows(cycleId: string): void { this.inner.loadSampleIncidentRows(cycleId); this.bump(); }
+  applyIncidentAdjustments(cycleId: string): void {
+    this.inner.applyIncidentAdjustments(cycleId);
+    this.bump();
+    this.rpc("apply_incident_adjustments", { p_cycle: cycleId });
+  }
+  unapplyIncidentAdjustments(cycleId: string): void {
+    this.inner.unapplyIncidentAdjustments(cycleId);
+    this.bump();
+    this.rpc("unapply_incident_adjustments", { p_cycle: cycleId });
   }
 
   // audit-writing actions

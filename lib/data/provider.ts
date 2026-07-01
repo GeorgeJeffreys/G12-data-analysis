@@ -67,8 +67,10 @@ import type {
   ReliabilityModel,
   IncidentDecision,
   IncidentConfigModel,
+  IncidentReviewModel,
 } from "./types";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
+import type { ResolvedIncidentRow } from "@/lib/incidents/import";
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
@@ -475,6 +477,19 @@ export interface DataProvider {
   setIncidentPerStudentCap(cap: number | null): void;
   /** Reconfigurable import column mapping. Admin only. */
   setIncidentMapping(mapping: IncidentColumnMapping): void;
+
+  // Incident Adjustments — apply engine + per-student review surface (02b).
+  /** Replace a cycle's parsed+resolved incident rows (cycle-role import action). */
+  importIncidentRows(cycleId: string, rows: readonly ResolvedIncidentRow[]): void;
+  /** Load a labelled sample incident set for the review surface (demo / no upload). */
+  loadSampleIncidentRows(cycleId: string): void;
+  /** The per-student review surface: base + capped adjustment + breakdown. All
+   *  roles may VIEW; `canApply` is admin-only. Null when the cycle is unknown. */
+  getIncidentReview(cycleId: string): IncidentReviewModel | null;
+  /** Commit the (capped) incident adjustments to scores. Admin only; explicit. */
+  applyIncidentAdjustments(cycleId: string): void;
+  /** Un-apply (revert) a prior commit, so base scores stand alone. Admin only. */
+  unapplyIncidentAdjustments(cycleId: string): void;
 
   // audit-writing actions (UI-driven export / document generation)
   recordExport(cycleId: string, detail: string): void;

@@ -8,8 +8,22 @@ Prereqs: migrations `0001`–`0008` applied in the Supabase SQL editor (run any 
 haven't, in order — `0003_adjustments_essays_config.sql`,
 `0004_create_cycle_with_assessments.sql`, `0005_year_sitting_structure.sql`,
 `0006_qm_3csv_model.sql`, `0007_ingest_idempotent_topic_id.sql`,
-`0008_clean_exclusions.sql`), and Node ≥ 20. Then apply `0009`–`0016` in order
+`0008_clean_exclusions.sql`), and Node ≥ 20. Then apply `0009`–`0017` in order
 (each is additive + reversible; see the per-migration notes below where present).
+NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_hierarchy.sql`
+and `0016_incident_adjustments.sql`); apply both, then `0017`.
+
+> **`0016_incident_adjustments.sql` + `0017_incident_apply.sql` — Incident
+> Adjustments.** Prompts 02a/02b. `0016` adds the config registry (`incident_codes`
+> / `incident_settings` / `incident_import_mappings`) and parsed `incident_rows`
+> (add-only at rest; config writes admin-only; rows key on the P-A internal id).
+> `0017` adds `incident_applications` — the per-cycle admin commit flag for the
+> apply/review surface. The applied adjustment is a bounded layer ON TOP of base
+> scores: neither migration writes incident marks into `participant_scores` /
+> `alterations`, so the base path keeps reconciling 1:1 with the raw oracle
+> (engine parity 183/183 unchanged). Commit is `app.is_workspace_admin`-only.
+> Roll back with `0017_incident_apply.rollback.sql` then
+> `0016_incident_adjustments.rollback.sql`.
 
 > **`0016` gates audit overrides on the role hierarchy.** Prompt 06. Depends on
 > `0012_audit_overrides.sql` (the override RPCs) and `0015_canonical_roles.sql`

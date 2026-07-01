@@ -1,0 +1,65 @@
+/**
+ * Incident Adjustments review page — render + admin gating.
+ * All roles VIEW the per-student surface (base / adjustment / adjusted). Only an
+ * admin sees the "Apply adjustments" commit control; a lower role sees "Admin only".
+ */
+import { describe, it, expect, vi } from "vitest";
+import { createElement as e } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
+import type { DataProvider } from "@/lib/data/provider";
+import type { CurrentUser } from "@/lib/data/types";
+
+let activeProvider: DataProvider = new InMemoryDataProvider();
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: () => {}, replace: () => {}, refresh: () => {}, prefetch: () => {} }),
+  usePathname: () => "/cycles/live/adjustments/review",
+  useSearchParams: () => new URLSearchParams(),
+}));
+vi.mock("@/lib/data/context", () => ({
+  useProvider: () => activeProvider,
+  useProviderData: <T,>(selector: (p: DataProvider) => T) => selector(activeProvider),
+}));
+
+async function render(cycleId: string): Promise<string> {
+  const { default: Page } = await import("@/app/cycles/[cycleId]/adjustments/review/page");
+  return renderToStaticMarkup(e(Page, { params: { cycleId } }));
+}
+
+const VIEWER: CurrentUser = { id: "v", name: "Vic", initials: "V", role: "viewer" };
+
+describe("Incident Adjustments review page", () => {
+  it("empty state offers to load a labelled sample", async () => {
+    const p = new InMemoryDataProvider();
+    activeProvider = p;
+    const html = await render(p.listCycles()[0]!.id);
+    expect(html).toContain("Incident adjustments");
+    expect(html).toContain("No incidents imported");
+    expect(html).toContain("Load sample");
+  });
+
+  it("admin sees the per-student surface with the Apply control", async () => {
+    const p = new InMemoryDataProvider();
+    const id = p.listCycles()[0]!.id;
+    p.loadSampleIncidentRows(id);
+    activeProvider = p;
+    const html = await render(id);
+    expect(html).toContain("Base");
+    expect(html).toContain("Adjustment");
+    expect(html).toContain("Adjusted");
+    expect(html).toContain("Apply adjustments");
+    expect(html).not.toContain("Admin only");
+  });
+
+  it("a lower role views the surface but cannot commit (Admin only)", async () => {
+    const p = new InMemoryDataProvider();
+    const id = p.listCycles()[0]!.id;
+    p.loadSampleIncidentRows(id);
+    p.setCurrentUser(VIEWER);
+    activeProvider = p;
+    const html = await render(id);
+    expect(html).toContain("Adjusted");
+    expect(html).toContain("Admin only");
+    expect(html).not.toContain("Apply adjustments");
+  });
+});
