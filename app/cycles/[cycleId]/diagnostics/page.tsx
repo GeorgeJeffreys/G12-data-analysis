@@ -1,20 +1,17 @@
 "use client";
 
 /**
- * Cycle diagnostics — actionable read-side measures, computed from the raw QM
- * export (response-time + answer columns). INFORMATIONAL ONLY: they never affect
- * grading. Three lenses are shown, all chosen because something can be done about
- * them for the next sitting:
+ * Critical-path "Assessment Health" step — the whole-assessment go/no-go check
+ * before results are defended. INFORMATIONAL ONLY: nothing here changes a grade.
+ * It carries only WHOLE-ASSESSMENT measures, computed from the raw QM export
+ * (response-time + answer columns):
  *   - whole-assessment speededness / omission / completion (was it timed right?),
- *   - the same split by demand level D1/D2/D3 (are the hard items the ones being
- *     left blank?) — the demand-level lens replaces the old, non-actionable
- *     construct/element breakdown,
- *   - omission rate by item position (are students running out of time at the
- *     end?),
- *   - whole-assessment timing vs performance, and Cronbach's α.
+ *   - whole-assessment timing vs performance,
+ *   - internal consistency (Cronbach's α).
+ * The exploratory demand-level (D1/D2/D3) and item breakdowns live on the
+ * separate "Diagnostics" reference tab (/cycles/[cycleId]/diagnostics-hub), not here.
  * Plain-language interpretation sits next to each figure.
  */
-import { useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
@@ -26,18 +23,12 @@ import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import { Icon, Mark } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { ReliabilityPanel } from "@/components/ui/reliability";
+import { CorrMeter, DiagStatusBadge, Hc, HelpNote, SpeededRow } from "@/components/ui/diagnostics-parts";
+import { useState } from "react";
 import type { DiagnosticsModel, ReliabilityModel } from "@/lib/data/types";
-import type { DiagStatus, PositionOmission, SpeededResult } from "@/lib/diagnostics";
+import type { DiagStatus } from "@/lib/diagnostics";
 
-const statusColor = (s: DiagStatus) => (s === "Good" ? H.good : s === "Review" ? H.warn : H.bad);
-const statusBg = (s: DiagStatus) => (s === "Good" ? H.goodSoft : s === "Review" ? H.warnSoft : H.badSoft);
-
-/** Demand-level palette (difficulty axis, not a quality status). */
-const DEMAND_COLOR: Record<string, string> = { D1: "#5B8DEF", D2: "#E8A13A", D3: "#D9534F" };
-const demandColor = (d: string | null) => (d && DEMAND_COLOR[d]) || H.ink3;
-const demandLabel: Record<string, string> = { D1: "D1 · foundational", D2: "D2 · intermediate", D3: "D3 · top-difficulty" };
-
-export default function DiagnosticsPage({ params }: { params: { cycleId: string } }) {
+export default function AssessmentHealthPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
   const model = useProviderData((p) => p.getDiagnostics(cycleId), [cycleId]) as DiagnosticsModel | null;
@@ -48,8 +39,8 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
 
   if (!model || model.assessments.length === 0) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Diagnostics" stageIndex={4}>
-        <div style={{ padding: 32 }} className="hf-sub">No diagnostics for this sitting.</div>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Assessment Health" stageIndex={4}>
+        <div style={{ padding: 32 }} className="hf-sub">No assessment-health data for this sitting.</div>
       </CycleShell>
     );
   }
@@ -68,8 +59,8 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
   const exportXlsx = async () => {
     const exp = await import("@/lib/export");
     const wb = exp.buildDiagnosticsWorkbook({ cycleName, reliability, diagnostics: model });
-    await downloadWorkbook(`${fileStem("diagnostics", cycleName)}.xlsx`, wb);
-    provider.recordExport(cycleId, "Diagnostics & reliability (Excel)");
+    await downloadWorkbook(`${fileStem("assessment-health", cycleName)}.xlsx`, wb);
+    provider.recordExport(cycleId, "Assessment health & reliability (Excel)");
   };
 
   const whole = a.whole.speeded;
@@ -79,7 +70,7 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
     <CycleShell
       cycleId={cycleId}
       cycleName={cycleName}
-      page="Diagnostics"
+      page="Assessment Health"
       stageIndex={4}
       actions={<ExportButtons onCsv={exportCsv} onXlsx={exportXlsx} disabled={!reliability} title={reliability ? undefined : "No reliability data"} />}
       primary={
@@ -91,12 +82,13 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
           <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
-            <div className="hf-h1">Diagnostics</div>
+            <div className="hf-h1">Assessment Health</div>
             <Badge tone="neutral"><Mark kind="warn" size={11} />Review only · not a grading step</Badge>
           </div>
           <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>
-            Exam-quality measures the app computes from raw response-time data. Each one points to something you can
-            act on for the next sitting — they never change a student’s mark or grade.
+            A whole-assessment health check — was the paper timed right, and is it internally consistent — before results
+            are confirmed. Informational only: nothing here changes a student’s mark or grade. Demand-level and item
+            breakdowns live on the <Link href={`/cycles/${cycleId}/diagnostics-hub`} style={{ color: H.pink, fontWeight: 600 }}>Diagnostics</Link> tab.
           </div>
         </div>
 
@@ -111,12 +103,12 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
         <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "20px 28px 40px" }}>
           <div style={zoomWrapStyle}>
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-          {/* A — speededness / omission / completion: whole assessment + demand level */}
+          {/* A — whole-assessment speededness / omission / completion */}
           <div className="hf-card" style={{ overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
               <div style={{ flex: 1 }}>
                 <span className="hf-h2">Speededness, omission &amp; completion</span>
-                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>Whether students had enough time to attempt the questions — for the whole paper, then by item difficulty.</div>
+                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>Whether students had enough time to attempt the questions across the whole paper.</div>
               </div>
               <span style={{ display: "flex", gap: 10 }}>{(["Good", "Review", "Flag"] as DiagStatus[]).map((s) => <DiagStatusBadge key={s} s={s} />)}</span>
             </div>
@@ -133,14 +125,6 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                 </thead>
                 <tbody>
                   <SpeededRow label="Whole assessment" s={whole} whole />
-                  {a.byDemand.length > 0 && <SectionHead cols={5}>By demand level (item difficulty)</SectionHead>}
-                  {a.byDemand.map((d) => (
-                    <SpeededRow key={d.demand} label={demandLabel[d.demand] ?? d.demand} s={d.speeded} demand={d.demand} />
-                  ))}
-                  {a.byItemSet.length > 0 && <SectionHead cols={5}>By item set (shared stimulus / passage)</SectionHead>}
-                  {a.byItemSet.map((it) => (
-                    <SpeededRow key={it.itemSet} label={it.itemSet} s={it.speeded} />
-                  ))}
                 </tbody>
               </table>
             </div>
@@ -151,39 +135,14 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
                   <b>Speededness index</b> (0–1) combines two end-of-paper warning signs: more blanks late than early, and a
                   late accuracy drop. <b>≤0.05</b> is fine; <b>0.05–0.15</b> worth a look; <b>&gt;0.15</b> flags time pressure.
                   <b> Omission rate</b> is the share of presented questions left blank; <b>completion</b> is its mirror.
-                  If the <b>D3 (top-difficulty)</b> row omits far more than D1/D2, the hardest items are eating the clock —
-                  consider trimming their count, simplifying their wording, or moving them earlier so students reach them.
-                  A single <b>item set</b> (shared stimulus/passage) with a much higher rate points at that passage being
-                  too long or dense to work through in time — shorten or simplify it.
+                  If the whole paper flags, the fix is on the paper — shorten it or rebalance where the demanding items sit.
+                  For the difficulty-tier and item-level view, see the <b>Diagnostics</b> tab.
                 </>
               }
             />
           </div>
 
-          {/* B — omission rate by item position (coloured by demand level) */}
-          <div className="hf-card" style={{ overflow: "hidden" }}>
-            <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12, flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 220 }}>
-                <span className="hf-h2">Omission rate by item position</span>
-                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>Each bar is one item in presented order. A rising tail means students ran out of time before the end.</div>
-              </div>
-              <DemandLegend demands={[...new Set(a.omissionByPosition.map((p) => p.demandLevel).filter(Boolean) as string[])]} />
-            </div>
-            <OmissionByPosition points={a.omissionByPosition} />
-            <HelpNote
-              title="How to read this"
-              body={
-                <>
-                  Bar height is the percentage of students who left that item blank; the colour is its demand level.
-                  Scattered low bars are normal. A <b>climb toward the right-hand (late) items</b> is the classic
-                  speededness signature — students are running out of time. The fix is on the paper, not the student:
-                  shorten it, rebalance where the demanding items sit, or check for a late item that’s unexpectedly hard.
-                </>
-              }
-            />
-          </div>
-
-          {/* C — timing / performance (whole assessment only) */}
+          {/* B — timing / performance (whole assessment only) */}
           <div className="hf-card" style={{ overflow: "hidden" }}>
             <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
               <div style={{ flex: 1 }}>
@@ -223,147 +182,12 @@ export default function DiagnosticsPage({ params }: { params: { cycleId: string 
             </div>
           </div>
 
-          {/* D — internal consistency (Cronbach's α) for this subject */}
+          {/* C — internal consistency (Cronbach's α) for this subject */}
           {reliability && <ReliabilityPanel model={reliability} assessmentId={a.assessmentId} />}
           </div>
           </div>
         </div>
       </div>
     </CycleShell>
-  );
-}
-
-type Tone = "good" | "warn" | "bad";
-
-/** One speededness row — whole assessment (highlighted) or a demand level. */
-function SpeededRow({ label, s, whole = false, demand }: { label: string; s: SpeededResult; whole?: boolean; demand?: string }) {
-  const omTone: Tone = s.omissionStatus === "Flag" ? "bad" : s.omissionStatus === "Review" ? "warn" : "good";
-  const compTone: Tone = s.completionStatus === "Flag" ? "bad" : s.completionStatus === "Review" ? "warn" : "good";
-  return (
-    <tr style={{ background: whole ? H.canvas : "transparent" }} className={whole ? "" : "hf-hover"}>
-      <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26, maxWidth: 260, whiteSpace: "normal", lineHeight: 1.25 }}>
-        {demand && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: demandColor(demand), marginRight: 7, verticalAlign: "middle" }} />}
-        {label}
-      </td>
-      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{s.speedednessIndex.toFixed(2)}</td>
-      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13, color: omTone === "bad" ? H.bad : omTone === "warn" ? H.warn : H.ink }}>{(s.omissionRate * 100).toFixed(1)}%</td>
-      <td className="hf-td" style={{ textAlign: "right" }}><RateBar v={s.completion * 100} tone={compTone} /></td>
-      <td className="hf-td" style={{ textAlign: "right" }}><DiagStatusBadge s={s.speededStatus} /></td>
-    </tr>
-  );
-}
-
-function Hc({ t, sub }: { t: string; sub?: string }) {
-  return (
-    <th className="hf-th" style={{ textAlign: "right" }}>
-      {t}
-      {sub && <div style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: H.ink3, fontSize: 9 }}>{sub}</div>}
-    </th>
-  );
-}
-
-function SectionHead({ cols, children }: { cols: number; children: React.ReactNode }) {
-  return (
-    <tr>
-      <td colSpan={cols} style={{ padding: "8px 12px", background: H.tint, borderTop: `1px solid ${H.line2}`, borderBottom: `1px solid ${H.line2}` }}>
-        <span className="hf-lbl">{children}</span>
-      </td>
-    </tr>
-  );
-}
-
-/** Plain-language interpretation block, embedded under a figure. */
-function HelpNote({ title, body }: { title: string; body: React.ReactNode }) {
-  return (
-    <div style={{ display: "flex", padding: "12px 18px", gap: 10, alignItems: "flex-start", background: H.canvas, borderTop: `1px solid ${H.line}` }}>
-      <Mark kind="warn" size={13} />
-      <span className="hf-sub" style={{ fontSize: 11.5, lineHeight: 1.5 }}>
-        <span style={{ fontWeight: 700, color: H.ink2 }}>{title}. </span>
-        {body}
-      </span>
-    </div>
-  );
-}
-
-/** Legend for the demand-level colours used in the position chart. */
-function DemandLegend({ demands }: { demands: string[] }) {
-  const order = ["D1", "D2", "D3"].filter((d) => demands.includes(d));
-  if (order.length === 0) return null;
-  return (
-    <span style={{ display: "inline-flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-      {order.map((d) => (
-        <span key={d} style={{ display: "inline-flex", gap: 5, alignItems: "center" }}>
-          <span style={{ width: 9, height: 9, borderRadius: 2, background: demandColor(d) }} />
-          <span className="hf-sub" style={{ fontSize: 10.5 }}>{demandLabel[d] ?? d}</span>
-        </span>
-      ))}
-    </span>
-  );
-}
-
-/** Omission rate by item position — a div bar chart, coloured by demand level. */
-function OmissionByPosition({ points }: { points: PositionOmission[] }) {
-  if (points.length === 0) {
-    return <div style={{ padding: "20px 18px" }} className="hf-sub">No item-position data for this assessment.</div>;
-  }
-  const maxRate = Math.max(0.1, ...points.map((p) => p.omissionRate)); // floor the axis at 10% so tiny bars stay visible
-  const axisPct = Math.ceil(maxRate * 100);
-  return (
-    <div style={{ padding: "16px 18px 6px" }}>
-      <div style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 140, borderBottom: `1px solid ${H.line2}`, position: "relative" }}>
-        <span style={{ position: "absolute", top: -2, left: 0, fontSize: 9.5, color: H.ink3 }} className="hf-mono">{axisPct}%</span>
-        <span style={{ position: "absolute", bottom: -1, left: 0, fontSize: 9.5, color: H.ink3 }} className="hf-mono">0%</span>
-        {points.map((p) => (
-          <div
-            key={p.itemId}
-            title={`Position ${p.position}${p.demandLevel ? ` · ${p.demandLevel}` : ""} — ${(p.omissionRate * 100).toFixed(1)}% omitted (${p.omitted}/${p.nPresentations})`}
-            style={{ flex: 1, minWidth: 3, height: `${(p.omissionRate / maxRate) * 100}%`, background: demandColor(p.demandLevel), borderRadius: "2px 2px 0 0", alignSelf: "flex-end" }}
-          />
-        ))}
-      </div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 5 }}>
-        <span className="hf-sub" style={{ fontSize: 10 }}>item 1 (start)</span>
-        <span className="hf-sub" style={{ fontSize: 10 }}>item {points.length} (end)</span>
-      </div>
-    </div>
-  );
-}
-
-function DiagStatusBadge({ s }: { s: DiagStatus }) {
-  const kind = s === "Good" ? "pass" : s === "Review" ? "warn" : "fail";
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: statusColor(s), background: statusBg(s), padding: "2px 8px", borderRadius: 999 }}>
-      <Mark kind={kind} size={11} />
-      {s}
-    </span>
-  );
-}
-
-/** Horizontal completion meter (0–100). */
-function RateBar({ v, tone }: { v: number; tone: Tone }) {
-  const c = tone === "bad" ? H.bad : tone === "warn" ? H.warn : H.good;
-  return (
-    <span style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "flex-end" }}>
-      <span style={{ width: 64, height: 6, background: H.tint2, borderRadius: 5, flex: "0 0 auto" }}>
-        <span style={{ display: "block", width: `${Math.max(0, Math.min(100, v))}%`, height: "100%", background: c, borderRadius: 5 }} />
-      </span>
-      <span className="hf-mono" style={{ fontSize: 12.5, width: 46, textAlign: "right" }}>{v.toFixed(1)}%</span>
-    </span>
-  );
-}
-
-/** Diverging correlation meter: a centre tick, the bar extends left (−) or right (+). */
-function CorrMeter({ r }: { r: number }) {
-  const a = Math.abs(r);
-  const tone: Tone | "neutral" = a >= 0.4 ? "bad" : a >= 0.2 ? "warn" : "neutral";
-  const c = tone === "bad" ? H.bad : tone === "warn" ? H.warn : H.bar;
-  return (
-    <span style={{ display: "inline-flex", gap: 8, alignItems: "center", justifyContent: "flex-end" }}>
-      <span style={{ width: 50, height: 6, background: H.tint2, borderRadius: 5, position: "relative", flex: "0 0 auto" }}>
-        <span style={{ position: "absolute", left: "50%", top: -2, width: 1, height: 10, background: H.line2 }} />
-        <span style={{ position: "absolute", [r < 0 ? "right" : "left"]: "50%", width: `${Math.min(50, a * 100)}%`, height: "100%", background: c, borderRadius: 5 } as CSSProperties} />
-      </span>
-      <span className="hf-mono" style={{ fontSize: 12.5, width: 40, textAlign: "right", color: tone === "bad" ? H.bad : tone === "warn" ? H.warn : H.ink }}>{r.toFixed(2)}</span>
-    </span>
   );
 }

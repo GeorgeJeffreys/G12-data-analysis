@@ -2,13 +2,15 @@
 
 /**
  * Screen — Data import (Ingest + Validate merged into one step). The full-width
- * main window from the new Claude Design: three equal, expandable input cards —
- * 01 Raw exam export (Required), 02 Essay marks (Optional), 03 Incident log
- * (Optional). Open a card to upload its file and read its validation/match report
- * inline; collapse it so all three sit together. Per-card status lives on each
- * header. No right-hand sidebar (the mark-composition explainer lives in Grades).
- * Only the raw export is required — and its blocking issues (duplicates) must be
- * resolved — to continue.
+ * main window from the new Claude Design: expandable input cards —
+ * 01 Raw exam export (Required) and 02 Essay marks (Optional). Open a card to
+ * upload its file and read its validation/match report inline; collapse it so
+ * they sit together. Per-card status lives on each header. No right-hand sidebar
+ * (the mark-composition explainer lives in Grades). Only the raw export is
+ * required — and its blocking issues (duplicates) must be resolved — to continue.
+ *
+ * The incident-log import is NOT here: incidents are imported and triaged on the
+ * later Technical adjustments step, its single home.
  */
 import Link from "next/link";
 import { useRef, useState, type ReactNode } from "react";
@@ -22,9 +24,8 @@ import { UploadStatusLine, ConfirmStep, type UploadStage } from "@/components/im
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { EssayMarksCard } from "@/components/cycle/EssayMarksCard";
 import { SittingDangerZone } from "@/components/cycle/SittingDangerZone";
-import { parseIncidentLog } from "@/lib/data/parse-incidents";
 import { ingestThreeExports, DetectionError } from "@/lib/ingest";
-import type { AdjustmentsModel, CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
+import type { CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
 
 type Tone = "pass" | "warn" | "fail" | "neutral";
 
@@ -33,12 +34,11 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
   const provider = useProvider();
   const model = useProviderData((p) => p.getIngest(cycleId), [cycleId]);
   const essay = useProviderData((p) => p.getEssayMarks(cycleId), [cycleId]) as EssayMarksModel | null;
-  const adj = useProviderData((p) => p.getAdjustments(cycleId), [cycleId]) as AdjustmentsModel | null;
   const split = useProviderData((p) => p.getCombinedSplit(cycleId), [cycleId]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const testCentreName = useProviderData((p) => p.getCycle(cycleId)?.testCentreName, [cycleId]) ?? null;
 
-  const [open, setOpen] = useState<Record<number, boolean>>({ 1: true, 2: false, 3: false });
+  const [open, setOpen] = useState<Record<number, boolean>>({ 1: true, 2: false });
   const [resolved, setResolved] = useState<DuplicateStrategy | null>(null);
 
   if (!model) {
@@ -70,9 +70,6 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
 
   const essayUp = !!essay?.uploaded;
   const essayStatus = essayUp ? `${essay!.matchedCount} matched · ${essay!.unmatchedIds.length} unmatched` : "Not added";
-
-  const adjUp = !!adj?.uploaded;
-  const incidentStatus = adjUp ? `${adj!.counts.incidents} incidents · ${adj!.counts.decided} triaged` : "Not added";
 
   // Why the second-step Confirm is unavailable (shown on the disabled ConfirmStep).
   const confirmHint = !model.uploaded
@@ -114,8 +111,8 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
           <div className="hf-sub" style={{ marginTop: 7 }}>
             Drop in the <strong>three Questionmark CSV exports</strong> — Items, Assessments and Topics. We detect each by
             its columns (not its filename), join them on <span className="hf-mono">ResultId</span>, and split the subjects
-            for you. Only the raw export is required (resolve its blocking issues to continue); essay marks and the
-            incident log are optional and never block progress.
+            for you. Only the raw export is required (resolve its blocking issues to continue); essay marks are optional
+            and never block progress. The incident log is imported later, on the Technical adjustments step.
           </div>
         </div>
 
@@ -127,10 +124,6 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
 
         <ImportCard n="02" title="Essay marks" tone={essayUp ? "pass" : "neutral"} status={essayStatus} open={!!open[2]} onToggle={() => toggle(2)}>
           <EssayMarksCard cycleId={cycleId} model={essay} />
-        </ImportCard>
-
-        <ImportCard n="03" title="Incident log" tone={adjUp ? "pass" : "neutral"} status={incidentStatus} open={!!open[3]} onToggle={() => toggle(3)}>
-          <IncidentBody cycleId={cycleId} model={adj} />
         </ImportCard>
 
         <ConfirmStep
@@ -510,61 +503,4 @@ function RawExportUploader({ cycleId, label, variant }: { cycleId: string; label
 
 function labelFor(s: DuplicateStrategy): string {
   return s === "keep_latest" ? "Keep latest" : s === "keep_first" ? "Keep first" : "Exclude students";
-}
-
-// ── 03 · incident log body ──────────────────────────────────────────────────
-function IncidentBody({ cycleId, model }: { cycleId: string; model: AdjustmentsModel | null }) {
-  const provider = useProvider();
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const onFile = async (file: File | null) => {
-    if (!file) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const rows = await parseIncidentLog(file);
-      if (rows.length === 0) setError("No incidents found. Expected an Incident_Log sheet (header on row 3) and/or a Students Complaints sheet.");
-      else provider.uploadIncidentLog(cycleId, file.name, rows);
-    } catch {
-      setError("Couldn’t read that file. Use a .xlsx with Incident_Log / Students Complaints sheets.");
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
-    }
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
-      <div className="hf-sub" style={{ fontSize: 12, maxWidth: 640 }}>
-        The operational record (<span className="hf-mono" style={{ fontSize: 11 }}>Incident_Log</span>) plus student complaints. Each row is{" "}
-        <b style={{ color: H.ink }}>queued for human triage</b> on the Adjustments step — nothing is auto-applied.
-      </div>
-
-      {model?.uploaded ? (
-        <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: model.sample ? H.pinkSoft2 : H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
-            <Mark kind="pass" size={16} />
-            <span style={{ fontSize: 12.5, fontWeight: 600 }}>{model.fileName}</span>
-            {model.sample && <Badge tone="accent">SAMPLE</Badge>}
-            <span style={{ flex: 1 }} />
-            <span className="hf-sub" style={{ fontSize: 11.5 }}>{model.counts.incidents} incidents · {model.counts.awaiting} awaiting triage</span>
-            <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.clearIncidentLog(cycleId)}><Icon name="trash" size={13} />Remove</Button>
-          </div>
-          <div className="hf-sub" style={{ fontSize: 11.5, padding: "10px 14px" }}>
-            Triage each incident into an alteration (per student or whole subject) on the{" "}
-            <Link href={`/cycles/${cycleId}/adjustments`} style={{ color: H.pink, fontWeight: 600 }}>Adjustments</Link> step.
-          </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
-          <Button onClick={() => fileRef.current?.click()} disabled={busy}><Icon name="upload" size={13} />{busy ? "Reading…" : "Add incident log"}</Button>
-          <Button variant="ghost" onClick={() => provider.loadSampleIncidentLog(cycleId)} disabled={busy}>Load sample (labelled)</Button>
-          {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
-        </div>
-      )}
-    </div>
-  );
 }

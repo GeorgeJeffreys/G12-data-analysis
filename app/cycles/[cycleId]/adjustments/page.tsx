@@ -3,20 +3,22 @@
 /**
  * Screen — Incident adjustments (formerly "Technical adjustments"; the same step
  * in the pipeline, now systematised into a rules-based subsystem — see the admin
- * Incident Adjustments configuration under Settings). Triage each
- * incident-log / complaint row into an alteration — applied to a specific student,
- * a whole subject (bulk), or no action. Nothing is auto-applied; every alteration
- * is a recorded human decision (audit-logged). The step is optional/skippable when
- * no incident log was added. (The per-student mark composition now lives on the
- * Grades screen — click a student there.)
+ * Incident Adjustments configuration under Settings). This is also the single home
+ * for the incident log: import it here (Incident_Log + Students Complaints), then
+ * triage each incident-log / complaint row into an alteration — applied to a
+ * specific student, a whole subject (bulk), or no action. Nothing is auto-applied;
+ * every alteration is a recorded human decision (audit-logged). The step is
+ * optional/skippable when no incident log was added. (The per-student mark
+ * composition now lives on the Grades screen — click a student there.)
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
+import { parseIncidentLog } from "@/lib/data/parse-incidents";
 import type { AdjustmentIncident, AdjustmentsModel } from "@/lib/data/types";
 
 export default function AdjustmentsPage({ params }: { params: { cycleId: string } }) {
@@ -85,7 +87,6 @@ function Stat({ n, label, accent }: { n: string; label: string; accent?: boolean
 
 // ── triage ──────────────────────────────────────────────────────────────────
 function Triage({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
-  const provider = useProvider();
   if (!adj.uploaded || adj.incidents.length === 0) {
     return (
       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "60px 30px", textAlign: "center" }}>
@@ -94,21 +95,75 @@ function Triage({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
         </div>
         <div className="hf-h2">No incident log added</div>
         <div className="hf-sub" style={{ maxWidth: 520, lineHeight: 1.5 }}>
-          This step is optional. Add an incident log at Ingest to triage faults and complaints into raw-mark
-          alterations, or load a labelled sample to see how it works.
+          This step is optional. Import the incident log (<span className="hf-mono" style={{ fontSize: 11 }}>Incident_Log</span> +
+          Students Complaints) to triage faults and complaints into raw-mark alterations, or load a labelled sample to
+          see how it works.
         </div>
-        <div style={{ display: "flex", gap: 9 }}>
-          <Button onClick={() => provider.loadSampleIncidentLog(cycleId)}>Load sample (labelled)</Button>
-          <Link href={`/cycles/${cycleId}/import`}><Button variant="ghost">Go to upload</Button></Link>
-        </div>
+        <IncidentUploader cycleId={cycleId} />
       </div>
     );
   }
   return (
     <div style={{ padding: "18px 28px", display: "flex", flexDirection: "column", gap: 12 }}>
+      <IncidentSource cycleId={cycleId} adj={adj} />
       {adj.incidents.map((inc) => (
         <IncidentRow key={inc.id} cycleId={cycleId} inc={inc} adj={adj} />
       ))}
+    </div>
+  );
+}
+
+/**
+ * Import the incident log (its single home, moved off the Upload step). Reads a
+ * .xlsx with Incident_Log (header on row 3) and/or Students Complaints sheets,
+ * or loads a labelled sample. Rows are queued for human triage below — nothing
+ * is auto-applied.
+ */
+function IncidentUploader({ cycleId }: { cycleId: string }) {
+  const provider = useProvider();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const onFile = async (file: File | null) => {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const rows = await parseIncidentLog(file);
+      if (rows.length === 0) setError("No incidents found. Expected an Incident_Log sheet (header on row 3) and/or a Students Complaints sheet.");
+      else provider.uploadIncidentLog(cycleId, file.name, rows);
+    } catch {
+      setError("Couldn’t read that file. Use a .xlsx with Incident_Log / Students Complaints sheets.");
+    } finally {
+      setBusy(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+      <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      <Button onClick={() => fileRef.current?.click()} disabled={busy}><Icon name="upload" size={13} />{busy ? "Reading…" : "Add incident log"}</Button>
+      <Button variant="ghost" onClick={() => provider.loadSampleIncidentLog(cycleId)} disabled={busy}>Load sample (labelled)</Button>
+      {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
+    </div>
+  );
+}
+
+/** The imported incident-log source (file name + sample tag) with a Remove
+ *  control, shown above the triage list so the file can be replaced/cleared
+ *  here — this step being the incident log's single home. */
+function IncidentSource({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
+  const provider = useProvider();
+  return (
+    <div className="hf-card" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: adj.sample ? H.pinkSoft2 : H.tint, flexWrap: "wrap" }}>
+      <Mark kind="pass" size={16} />
+      <span style={{ fontSize: 12.5, fontWeight: 600 }}>{adj.fileName}</span>
+      {adj.sample && <Badge tone="accent">SAMPLE</Badge>}
+      <span style={{ flex: 1 }} />
+      <span className="hf-sub" style={{ fontSize: 11.5 }}>{adj.counts.incidents} incidents · {adj.counts.awaiting} awaiting triage</span>
+      <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.clearIncidentLog(cycleId)}><Icon name="trash" size={13} />Remove</Button>
     </div>
   );
 }

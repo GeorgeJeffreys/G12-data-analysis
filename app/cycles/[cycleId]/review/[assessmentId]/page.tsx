@@ -219,7 +219,7 @@ export default function ReviewPage({
       }
       primary={
         <Link href={`/cycles/${cycleId}/diagnostics`}>
-          <Button variant="pri" title="Continue to diagnostics">
+          <Button variant="pri" title="Continue to assessment health">
             Continue
             <Icon name="arrow" color="#fff" />
           </Button>
@@ -316,7 +316,7 @@ export default function ReviewPage({
               Showing {view.length} of {model.items.length} questions · click a row to expand its deep-dive
             </div>
             {/* Cronbach's α moved off the Question-review step — reliability now
-                lives on the Diagnostics step (the shared computation is untouched). */}
+                lives on the Assessment Health step (the shared computation is untouched). */}
           </div>
         </div>
       </div>
