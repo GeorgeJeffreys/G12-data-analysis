@@ -163,12 +163,15 @@ import {
   type TechnicalErrorsUpload,
   type TechnicalIncident,
   type IncidentConfigModel,
+  type IncidentReviewModel,
+  type IncidentReviewStudent,
 } from "./types";
 import {
   defaultIncidentConfig,
   validateIncidentCode,
   validatePerStudentCap,
   normalizeIncidentCode,
+  classifyIncidentType,
 } from "@/lib/incidents/config";
 import { describeFormula } from "@/lib/incidents/formula";
 import type {
@@ -176,6 +179,8 @@ import type {
   IncidentCodeInput,
   IncidentColumnMapping,
 } from "@/lib/incidents/types";
+import type { ResolvedIncidentRow } from "@/lib/incidents/import";
+import { computeStudentAdjustments } from "@/lib/incidents/apply";
 import {
   CLEANED_DATA_COLUMNS,
   CLEANED_DATA_UNAVAILABLE,
@@ -400,6 +405,14 @@ export class InMemoryDataProvider implements DataProvider {
   // Incident Adjustments configuration registry (codes/formulae/caps + import
   // column mapping). Admin-owned; lower roles read-only. Mirrors migration 0016.
   private incidentConfig: IncidentAdjustmentConfig = defaultIncidentConfig();
+
+  // Incident Adjustments — apply/review state (02b). Parsed+resolved incident
+  // rows per cycle (mirrors `incident_rows`), and the admin commit flag per cycle
+  // (mirrors `incident_applications`, migration 0017). The capped per-student
+  // ledger is DERIVED from these + the config by the apply engine — never stored
+  // as a merged number — so base scores are never touched (they reconcile 1:1).
+  private incidentRows = new Map<string, ResolvedIncidentRow[]>();
+  private incidentApplied = new Map<string, { by: string; at: string }>();
 
   // Per-subject A–E element labels (configurable in Settings). Seeded from the
   // confirmed G12++ defaults; the Supabase provider replays the persisted set.
@@ -4457,6 +4470,175 @@ export class InMemoryDataProvider implements DataProvider {
     if (!hasRole(this.user.role, "admin")) return;
     this.incidentConfig.mapping = { ...mapping };
     this.audit("config", "Updated incident import mapping", "Column mapping", null);
+    this.bump();
+  }
+
+  // ── Incident Adjustments — apply engine + per-student review surface (02b) ──
+  importIncidentRows(cycleId: string, rows: readonly ResolvedIncidentRow[]): void {
+    if (this.locked.has(cycleId)) return;
+    this.incidentRows.set(cycleId, rows.map((r) => ({ ...r, errors: [...r.errors] })));
+    // A fresh import supersedes any prior commit — the team re-reviews before re-applying.
+    this.incidentApplied.delete(cycleId);
+    this.audit("upload", "Imported incident rows", `${rows.length} row${rows.length === 1 ? "" : "s"}`, cycleId);
+    this.bump();
+  }
+
+  /**
+   * Build a small labelled sample of resolved incident rows tied to real cohort
+   * students, so the review surface is explorable with no upload. Deliberately
+   * exercises every path: a per-duration incident that hits its per-code cap, a
+   * whole-room fixed incident, an unclassified row (zero marks, surfaced), a
+   * student pushed over the per-student global cap, and an unmatched row.
+   */
+  loadSampleIncidentRows(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    const comp = this.getComposition(cycleId);
+    if (!comp) return;
+    const students = comp.students.slice(0, 3);
+    const rows: ResolvedIncidentRow[] = [];
+    let n = 0;
+    const push = (
+      pid: string | null,
+      name: string,
+      incidentType: string,
+      questionNumber: string,
+      durationMinutes: number | null,
+    ) => {
+      n += 1;
+      const matched = classifyIncidentType(incidentType, this.incidentConfig.codes);
+      const needsDuration = matched?.formula.kind === "per_duration";
+      const errors: string[] = [];
+      if (!pid) errors.push("No cohort participant matched this Student ID.");
+      const status: ResolvedIncidentRow["status"] =
+        needsDuration && durationMinutes === null ? "error" : matched ? "ok" : "unclassified";
+      rows.push({
+        rowNumber: n,
+        rawStudentId: pid ?? "UNKNOWN-042",
+        studentName: name,
+        incidentType,
+        questionNumber,
+        durationMinutes,
+        codeId: matched ? matched.id : null,
+        status,
+        errors,
+        participantInternalId: pid,
+        matched: pid !== null,
+      });
+    };
+    if (students[0]) {
+      // 22 min at "+0.5 / 5 min, block" = 4 units = 2.0 marks → clamped to the 3-mark
+      // per-code cap? No — 2.0 < 3. Use 40 min → 4.0 raw → capped to 3 (per-code hit).
+      push(students[0].participantId, students[0].name, "Calculator broke", "Q7", 40);
+      push(students[0].participantId, students[0].name, "Fire alarm", "—", null); // fixed +1
+    }
+    if (students[1]) {
+      // Several disruptions → sums over the per-student global cap (default 5).
+      push(students[1].participantId, students[1].name, "Fire alarm", "—", null);
+      push(students[1].participantId, students[1].name, "Power cut", "—", null);
+      push(students[1].participantId, students[1].name, "Calculator failure", "Q3", 60); // 6→cap 3
+      push(students[1].participantId, students[1].name, "Noise disruption", "—", null);
+    }
+    if (students[2]) {
+      push(students[2].participantId, students[2].name, "Spilled water on desk", "Q1", null); // unclassified
+    }
+    // An unmatched row (no cohort participant) — surfaced for manual attention.
+    push(null, "A. Nonymous", "Fire alarm", "—", null);
+    this.importIncidentRows(cycleId, rows);
+  }
+
+  getIncidentReview(cycleId: string): IncidentReviewModel | null {
+    const comp = this.getComposition(cycleId);
+    if (!comp) return null;
+    const baseById = new Map(comp.students.map((s) => [s.participantId, { name: s.name, base: s.overall.total }]));
+    const rows = this.incidentRows.get(cycleId) ?? [];
+    const adjustments = computeStudentAdjustments(rows, this.incidentConfig.codes, this.incidentConfig.perStudentCap);
+
+    const matched: IncidentReviewStudent[] = [];
+    const unmatched: IncidentReviewStudent[] = [];
+    let ok = 0;
+    let unclassified = 0;
+    let error = 0;
+    let perStudentCapHits = 0;
+    let perCodeCapHits = 0;
+
+    for (const a of adjustments) {
+      ok += a.okCount;
+      unclassified += a.unclassifiedCount;
+      error += a.errorCount;
+      const baseRow = a.participantId ? baseById.get(a.participantId) : undefined;
+      const isUnmatched = !baseRow;
+      const base = baseRow?.base ?? 0;
+      const student: IncidentReviewStudent = {
+        participantKey: a.participantKey,
+        participantId: a.participantId,
+        name: baseRow?.name ?? a.studentName ?? a.participantKey,
+        base: round(base, 2),
+        adjustment: a.adjustment,
+        uncappedAdjustment: a.uncappedTotal,
+        adjusted: round(base + a.adjustment, 2),
+        perStudentCapHit: a.perStudentCapHit,
+        perCodeCapHit: a.perCodeCapHit,
+        unmatched: isUnmatched,
+        contributions: a.contributions.map((c) => ({
+          rowNumber: c.rowNumber,
+          incidentType: c.incidentType,
+          questionNumber: c.questionNumber,
+          durationMinutes: c.durationMinutes,
+          status: c.status,
+          code: c.code,
+          codeLabel: c.codeLabel,
+          rawMarks: c.rawMarks,
+          marks: c.marks,
+          perCodeCap: c.perCodeCap,
+          perCodeCapHit: c.perCodeCapHit,
+          errors: [...c.errors],
+        })),
+      };
+      if (a.perStudentCapHit) perStudentCapHits += 1;
+      perCodeCapHits += a.contributions.filter((c) => c.perCodeCapHit).length;
+      (isUnmatched ? unmatched : matched).push(student);
+    }
+    matched.sort((x, y) => y.adjustment - x.adjustment || x.name.localeCompare(y.name));
+
+    const applied = this.incidentApplied.get(cycleId) ?? null;
+    return {
+      cycleId,
+      applied: applied !== null,
+      appliedBy: applied?.by ?? null,
+      appliedAt: applied?.at ?? null,
+      canApply: hasRole(this.user.role, "admin"),
+      perStudentCap: this.incidentConfig.perStudentCap,
+      students: matched,
+      unmatched,
+      counts: {
+        incidents: rows.length,
+        students: matched.length,
+        ok,
+        unclassified,
+        error,
+        unmatched: unmatched.length,
+        perStudentCapHits,
+        perCodeCapHits,
+      },
+    };
+  }
+
+  applyIncidentAdjustments(cycleId: string): void {
+    if (!hasRole(this.user.role, "admin")) return; // only admin may commit to scores
+    if (this.locked.has(cycleId)) return;
+    if ((this.incidentRows.get(cycleId) ?? []).length === 0) return;
+    this.incidentApplied.set(cycleId, { by: this.user.name, at: new Date().toISOString() });
+    const review = this.getIncidentReview(cycleId);
+    const applied = review ? review.students.filter((s) => s.adjustment > 0).length : 0;
+    this.audit("student", "Applied incident adjustments", `${applied} student${applied === 1 ? "" : "s"} adjusted (capped)`, cycleId);
+    this.bump();
+  }
+
+  unapplyIncidentAdjustments(cycleId: string): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    if (!this.incidentApplied.has(cycleId)) return;
+    this.incidentApplied.delete(cycleId);
+    this.audit("student", "Reverted incident adjustments", "Base scores stand alone", cycleId);
     this.bump();
   }
 

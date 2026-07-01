@@ -93,3 +93,74 @@ page). Assumptions made:
   if the real file has a banner/among multiple sheets.
 - The canonical calculator rule ships as a default: **+0.5 marks per 5 minutes**,
   capped at 3 marks/incident (`per_duration`, whole-block units). Tune on the page.
+
+---
+
+# Incident Adjustments — 02b (apply engine + per-student review surface)
+
+The **grade-bearing** half: applies the 02a config to parsed incidents, and
+presents the result for team sign-off before results finalise.
+
+## Phase 0 — the application seam (re-confirmed)
+
+Base scores come from the parity-locked engine (`lib/engine/scores.ts` →
+`computeScores`), persisted to `participant_scores` (assembled server-side in
+`lib/server/engine-write.ts`). 02a noted the engine sums the `alterations` table
+into `raw` for **human-triage** adjustments.
+
+For the **rules-based incident layer**, the reconcile discipline is decisive:
+`reconcile.py` derives ground truth from the raw QM CSVs (no incidents), so the
+**base score path must keep reconciling 1:1** and the adjustment layer must not
+alter base scores. Accordingly the incident adjustment is applied as a
+**separate, stored, admin-committed layer ON TOP of the engine's base scores**,
+composed at read time as `adjusted = base + adjustment`. It is **never folded**
+into `participant_scores.raw` or written to `alterations`, and the engine is
+untouched — parity stays **183/183**. The delta is validated via the review
+surface (team sign-off), not via reconcile.
+
+## Auto-apply engine — `lib/incidents/apply.ts` (pure, tested)
+
+`computeStudentAdjustments(rows, codes, perStudentCap, ctx)`:
+
+1. Per incident → `evaluateFormula` (fixed / per-duration / %-of-section), then
+   **clamp to the code's per-incident cap** (`evaluateCapped`); flag `perCodeCapHit`.
+2. Sum a student's per-code-capped marks, then **clamp the total to the
+   per-student global cap** (`capStudentTotal`); flag `perStudentCapHit`.
+3. **Add-only**: unmatched / unclassified / errored rows (and rows whose matched
+   code was removed / deactivated) grant **zero** and are surfaced — never applied,
+   never reduce a score. No path returns `< 0`.
+4. The result is **decomposable**: each `StudentIncidentAdjustment` carries its
+   per-incident `contributions` + both cap flags, so `base + adjustment` is
+   auditable at all times — never a silently merged number.
+
+`%-of-section` uses the **engine scored denominator** via an optional
+`sectionMaxFor` resolver; with no resolver it grants nothing (degrade, not guess)
+— pending the real file's subject column.
+
+## Per-student review surface
+
+`app/cycles/[cycleId]/adjustments/review/page.tsx` (linked from the Incident
+adjustments step). Per student: **base**, **cumulative incident mark change**,
+**adjusted total**, the per-incident breakdown (code, matched incident, computed
+marks, cap hit), and clear flags where a **per-code** or the **per-student global**
+cap was binding. Unmatched incidents are surfaced separately for manual attention.
+
+- **Viewable by all roles** (`getIncidentReview`).
+- **Only admin may commit/apply** (`review.canApply` → `hasRole(user,'admin')`);
+  application is an **explicit admin action** (`applyIncidentAdjustments`), never
+  automatic on import. `unapplyIncidentAdjustments` reverts to base-only.
+
+## Migration (run order)
+
+`supabase/migrations/0017_incident_apply.sql` — **after** the two `0016_*` files.
+Adds `incident_applications` (per-cycle admin commit flag + provenance). Commit /
+revert are `app.is_workspace_admin`-only SECURITY DEFINER functions that audit the
+decision. **No** grade-bearing table is written (base reconciles 1:1). Rollback:
+`0017_incident_apply.rollback.sql`.
+
+## Reconcile discipline
+
+With adjustments **un-applied** (the default; or reverted), `participant_scores`
+and any Raw / Candidate Scores export are the pure engine base — they match the
+raw oracle **cell-for-cell**. The incident delta is a separate layer validated on
+the review surface, not through reconcile.

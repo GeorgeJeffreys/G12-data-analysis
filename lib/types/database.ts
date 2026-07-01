@@ -575,6 +575,9 @@ export interface Database {
       set_incident_mapping: { Args: { p_mapping: unknown }; Returns: undefined };
       import_incident_rows: { Args: { p_cycle: string; p_rows: unknown }; Returns: undefined };
       clear_incident_rows: { Args: { p_cycle: string }; Returns: undefined };
+      // 0017 — Incident Adjustments apply/commit (admin-only, explicit action).
+      apply_incident_adjustments: { Args: { p_cycle: string }; Returns: undefined };
+      unapply_incident_adjustments: { Args: { p_cycle: string }; Returns: undefined };
       // 0007 — atomic, idempotent 3-CSV persist + destructive sitting controls.
       ingest_persist: { Args: { p_cycle: string; p_payload: unknown; p_actor: string }; Returns: unknown };
       clear_sitting_data: { Args: { p_cycle: string }; Returns: undefined };

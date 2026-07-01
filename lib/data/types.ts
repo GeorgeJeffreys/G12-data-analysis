@@ -1463,6 +1463,79 @@ export interface IncidentConfigModel extends IncidentAdjustmentConfig {
   canEdit: boolean;
 }
 
+/**
+ * Incident Adjustments — per-student REVIEW surface (02b). The team's sanity-check
+ * of the auto-apply engine before results are finalised: for each student, the
+ * base engine score, the cumulative (capped) incident mark change, the adjusted
+ * total, and the per-incident breakdown that produced it — with cap-binding flags.
+ *
+ * The adjustment is a bounded layer ON TOP of base scores: `adjusted = base +
+ * adjustment` is decomposable at all times, and the base column is the untouched
+ * engine figure (it reconciles 1:1 with the raw oracle). Viewable by ALL roles;
+ * only an admin may commit/apply (`canApply`).
+ */
+export interface IncidentReviewContribution {
+  rowNumber: number;
+  incidentType: string;
+  questionNumber: string;
+  durationMinutes: number | null;
+  status: "ok" | "unclassified" | "error";
+  /** Matched code (null when unclassified / errored). */
+  code: string | null;
+  codeLabel: string | null;
+  /** Un-capped formula marks, and marks after the per-incident cap. */
+  rawMarks: number;
+  marks: number;
+  perCodeCap: number | null;
+  perCodeCapHit: boolean;
+  errors: string[];
+}
+export interface IncidentReviewStudent {
+  participantKey: string;
+  /** Resolved cohort UUID, or null when the incident row matched no participant. */
+  participantId: string | null;
+  name: string;
+  /** Base engine total (sum of the student's subject raw scores) — untouched. */
+  base: number;
+  /** The cumulative incident mark change actually applied (capped, add-only ≥ 0). */
+  adjustment: number;
+  /** Sum before the per-student global cap — shown when the global cap bound. */
+  uncappedAdjustment: number;
+  /** base + adjustment. */
+  adjusted: number;
+  perStudentCapHit: boolean;
+  perCodeCapHit: boolean;
+  /** True when the row could not be matched to a cohort participant. */
+  unmatched: boolean;
+  contributions: IncidentReviewContribution[];
+}
+export interface IncidentReviewModel {
+  cycleId: string;
+  /** True once an admin has committed the adjustments to scores (explicit action). */
+  applied: boolean;
+  appliedBy: string | null;
+  appliedAt: string | null;
+  /** Whether the current user may commit/apply (admin only). */
+  canApply: boolean;
+  /** The per-student global cap in force (null = no cap), for display. */
+  perStudentCap: number | null;
+  students: IncidentReviewStudent[];
+  /** Incident rows that matched no cohort participant — surfaced for manual attention. */
+  unmatched: IncidentReviewStudent[];
+  counts: {
+    incidents: number;
+    students: number;
+    ok: number;
+    unclassified: number;
+    error: number;
+    unmatched: number;
+    /** Students whose adjusted total was bound by the per-student global cap. */
+    perStudentCapHits: number;
+    /** Incidents whose marks were bound by their per-code cap. */
+    perCodeCapHits: number;
+  };
+}
+
 export interface ConfigModel {
   /** The engine's active rating thresholds (read-only — they drive item ratings). */
   thresholds: QualityThresholdRow[];

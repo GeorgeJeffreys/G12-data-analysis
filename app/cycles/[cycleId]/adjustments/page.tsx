@@ -32,6 +32,13 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
     cycleName,
     page: "Incident adjustments",
     stageIndex: 5,
+    actions: (
+      // The rules-based review surface (02b): base + capped incident delta +
+      // adjusted total per student, for team sign-off before results finalise.
+      <Link href={`/cycles/${cycleId}/adjustments/review`}>
+        <Button variant="ghost" title="Per-student incident review">Review adjustments</Button>
+      </Link>
+    ),
     primary: (
       // Incident adjustments → Score (step 7) → Cut scores (step 8): the next
       // step is the computed-scores screen, not cut scores (no step is skipped).
