@@ -8,7 +8,21 @@ Prereqs: migrations `0001`–`0008` applied in the Supabase SQL editor (run any 
 haven't, in order — `0003_adjustments_essays_config.sql`,
 `0004_create_cycle_with_assessments.sql`, `0005_year_sitting_structure.sql`,
 `0006_qm_3csv_model.sql`, `0007_ingest_idempotent_topic_id.sql`,
-`0008_clean_exclusions.sql`), and Node ≥ 20.
+`0008_clean_exclusions.sql`), and Node ≥ 20. Then apply `0009`–`0016` in order
+(each is additive + reversible; see the per-migration notes below where present).
+
+> **`0016` gates audit overrides on the role hierarchy.** Prompt 06. Depends on
+> `0012_audit_overrides.sql` (the override RPCs) and `0015_canonical_roles.sql`
+> (the `app.can_override` primitive). It adds `app.role_of(cycle, user)` (the
+> user's effective, highest-rank role) and redefines `override_item_exclusion` /
+> `override_mark_adjustment` to authorise via `app.can_override(actor, subject)` —
+> the STRICTLY-higher rule (admin > data analyst > team member) — instead of the
+> flat `lead_admin` gate `0012` shipped. The override subject is the role that took
+> the original decision (the item's reviewer / the cell's last adjuster), resolved
+> server-side; RPC signatures and grants are unchanged. Behaviour-compatible for
+> lead_admin over a lower role, additively lets an analyst override a team member,
+> and stops an admin overriding a peer admin. Roll back with
+> `0016_override_role_hierarchy.rollback.sql` (restores the `0012` flat gate).
 
 > **`0008` persists Clean-stage removals.** The Clean step removes rows
 > (participants) and columns (items) from the working set non-destructively — the

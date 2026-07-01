@@ -32,7 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
-import { hasRole } from "@/lib/auth/roles";
+import { hasRole, canOverride, roleTierLabel } from "@/lib/auth/roles";
 import { rollupOverall, overallAwardsReconcile } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
@@ -88,6 +88,7 @@ import {
   type CompareColumn,
   type CreateCycleInput,
   type CurrentUser,
+  type Role,
   type CycleDetail,
   type CycleSummary,
   type TestCentreSummary,
@@ -428,9 +429,10 @@ export class InMemoryDataProvider implements DataProvider {
   };
 
   // Who set the current effective state of each grade-bearing decision, so an
-  // override can name the prior actor. Keyed like the audit detail.
-  //   exclusionBy: `${cycleId}:${assessmentId}:${itemId}` → actor
-  private exclusionBy = new Map<string, { id: string; name: string; at: string }>();
+  // override can name the prior actor AND gate on the strictly-higher `canOverride`
+  // rule against the role that took it. Keyed like the audit detail.
+  //   exclusionBy: `${cycleId}:${assessmentId}:${itemId}` → actor (incl. their role)
+  private exclusionBy = new Map<string, { id: string; name: string; role: Role; at: string }>();
   //   overrideMeta (item exclusions): same key → override provenance
   private exclusionOverride = new Map<string, { by: string; priorActor: string | null; reason: string; ts: string }>();
   //   overrideMeta (mark adjustments): `${cycleId}:${participantId}:${assessmentId}`
@@ -3540,6 +3542,7 @@ export class InMemoryDataProvider implements DataProvider {
         delta,
         reason: clean,
         by: this.user.name,
+        byRole: this.user.role,
         ts: new Date().toISOString(),
       });
     }
@@ -3733,7 +3736,12 @@ export class InMemoryDataProvider implements DataProvider {
       this.reasons.delete(`${key}:${itemId}`);
     }
     this.exclusions.set(key, set);
-    this.exclusionBy.set(`${key}:${itemId}`, { id: this.user.id, name: this.user.name, at: new Date().toISOString() });
+    this.exclusionBy.set(`${key}:${itemId}`, {
+      id: this.user.id,
+      name: this.user.name,
+      role: this.user.role,
+      at: new Date().toISOString(),
+    });
   }
 
   setItemExcluded(
@@ -3763,10 +3771,13 @@ export class InMemoryDataProvider implements DataProvider {
   // ── overrides (authorised user reverses another user's action) ─────────────
   /**
    * Override another user's item exclusion/inclusion (e.g. re-include an item a
-   * reviewer excluded). lead_admin only; a reason is required. Re-applies the
-   * SAME effective state the direct action uses, so scoring recomputes through
-   * the full engine (incl. the D3 safeguard), then writes an override audit
-   * entry naming the prior decider. No-op (rejected) for non-admins.
+   * reviewer excluded). Gated on the canonical strictly-higher rule: the actor's
+   * role must OUTRANK the role that took the original decision (admin overrides
+   * analyst & team member; analyst overrides team member; nobody overrides an
+   * equal or higher role). A reason is required. Re-applies the SAME effective
+   * state the direct action uses, so scoring recomputes through the full engine
+   * (incl. the D3 safeguard), then writes an override audit entry naming the prior
+   * decider. No-op (rejected) when the actor can't override, or the sitting locked.
    */
   overrideItemExclusion(
     cycleId: string,
@@ -3775,11 +3786,16 @@ export class InMemoryDataProvider implements DataProvider {
     exclude: boolean,
     reason: string,
   ): void {
-    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
-    const clean = (reason ?? "").trim();
-    if (!clean) return; // an override requires a reason
+    if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${assessmentId}:${itemId}`;
     const prior = this.exclusionBy.get(key);
+    // The role that took the original decision is the override SUBJECT. An
+    // un-attributed decision (seed/demo, or no prior review) defaults to the
+    // lowest tier so any higher role can still act on it.
+    const subjectRole: Role = prior?.role ?? "reviewer";
+    if (!canOverride(this.user.role, subjectRole)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return; // an override requires a reason
     const priorActor = prior && prior.id !== this.user.id ? prior.name : prior?.name ?? null;
 
     this.applyItemExclusionState(cycleId, assessmentId, itemId, exclude, clean);
@@ -3800,10 +3816,13 @@ export class InMemoryDataProvider implements DataProvider {
 
   /**
    * Override another user's manual mark adjustment: set the cell's mark to
-   * `newMark`, or revert it (`newMark === null`). lead_admin only; reason
-   * required. Rides the existing alterations engine input exactly as the direct
-   * adjustment does (full recompute incl. D3), then writes an override audit
-   * entry naming the prior adjuster. No-op (rejected) for non-admins.
+   * `newMark`, or revert it (`newMark === null`). Gated on the canonical
+   * strictly-higher rule: the actor must OUTRANK the role that made the
+   * adjustment (admin > analyst > team member; nobody overrides an equal or higher
+   * role). Reason required. Rides the existing alterations engine input exactly as
+   * the direct adjustment does (full recompute incl. D3), then writes an override
+   * audit entry naming the prior adjuster. No-op (rejected) when the actor can't
+   * override, or the sitting is locked.
    */
   overrideMarkAdjustment(
     cycleId: string,
@@ -3812,11 +3831,15 @@ export class InMemoryDataProvider implements DataProvider {
     newMark: number | null,
     reason: string,
   ): void {
-    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
-    const clean = (reason ?? "").trim();
-    if (!clean) return;
+    if (this.locked.has(cycleId)) return;
     const list = this.manualAdjustmentsByCycle.get(cycleId) ?? [];
     const existing = list.find((m) => m.participantId === participantId && m.assessmentId === assessmentId);
+    // The role that made the adjustment is the override SUBJECT; an un-attributed
+    // adjustment defaults to the lowest tier so a higher role can still act.
+    const subjectRole: Role = existing?.byRole ?? "reviewer";
+    if (!canOverride(this.user.role, subjectRole)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return;
     const priorActor = existing && existing.by !== this.user.name ? existing.by : existing?.by ?? null;
     const a = this.assessment(assessmentId);
     const who = this.seed.liveCycle.participants.find((p) => p.id === participantId)?.label ?? participantId;
@@ -3864,6 +3887,7 @@ export class InMemoryDataProvider implements DataProvider {
         delta,
         reason: clean,
         by: this.user.name,
+        byRole: this.user.role,
         ts,
       });
     }
@@ -4400,6 +4424,11 @@ export class InMemoryDataProvider implements DataProvider {
    */
   getOverrideView(cycleId: string): OverrideViewModel {
     const decisions: EffectiveDecision[] = [];
+    const locked = this.locked.has(cycleId);
+    // Whether the signed-in user may override a decision taken by `subjectRole`:
+    // strictly-higher rule, and the sitting must be unlocked.
+    const mayOverride = (subjectRole: Role): boolean =>
+      !locked && canOverride(this.user.role, subjectRole);
 
     // Excluded items (the grade-bearing item-review state).
     for (const [key, set] of this.exclusions) {
@@ -4410,6 +4439,7 @@ export class InMemoryDataProvider implements DataProvider {
         const loc = this.itemLocate(itemId);
         const label = loc?.label ?? itemId;
         const who = this.exclusionBy.get(`${key}:${itemId}`);
+        const subjectRole: Role = who?.role ?? "reviewer";
         const ov = this.exclusionOverride.get(`${cycleId}:${aid}:${itemId}`);
         decisions.push({
           key: `excl:${aid}:${itemId}`,
@@ -4421,6 +4451,8 @@ export class InMemoryDataProvider implements DataProvider {
           excluded: true,
           decidedBy: who?.name ?? "—",
           decidedAt: who?.at ?? "",
+          decidedByRole: roleTierLabel(subjectRole),
+          canOverride: mayOverride(subjectRole),
           reason: this.reasons.get(`${key}:${itemId}`) ?? null,
           override: ov ? { by: ov.by, priorActor: ov.priorActor, reason: ov.reason, ts: ov.ts } : null,
         });
@@ -4431,6 +4463,7 @@ export class InMemoryDataProvider implements DataProvider {
     for (const adj of this.manualAdjustmentsByCycle.get(cycleId) ?? []) {
       const a = this.assessment(adj.assessmentId);
       const who = this.seed.liveCycle.participants.find((p) => p.id === adj.participantId)?.label ?? adj.participantId;
+      const subjectRole: Role = adj.byRole ?? "reviewer";
       const ov = this.adjustmentOverride.get(`${cycleId}:${adj.participantId}:${adj.assessmentId}`);
       decisions.push({
         key: `adj:${adj.participantId}:${adj.assessmentId}`,
@@ -4441,6 +4474,8 @@ export class InMemoryDataProvider implements DataProvider {
         state: `${adj.oldMark} → ${adj.newMark} (${adj.delta >= 0 ? "+" : ""}${adj.delta})`,
         decidedBy: adj.by,
         decidedAt: adj.ts,
+        decidedByRole: roleTierLabel(subjectRole),
+        canOverride: mayOverride(subjectRole),
         reason: adj.reason,
         override: ov ? { by: ov.by, priorActor: ov.priorActor, reason: ov.reason, ts: ov.ts } : null,
       });
@@ -4449,7 +4484,10 @@ export class InMemoryDataProvider implements DataProvider {
     decisions.sort((x, y) => (y.decidedAt ?? "").localeCompare(x.decidedAt ?? ""));
     return {
       cycleId,
-      canOverride: hasRole(this.user.role, "admin") && !this.locked.has(cycleId),
+      // Override rights AT ALL: a role that can outrank at least the lowest tier
+      // (analyst or admin), on an unlocked sitting. Whether a SPECIFIC decision is
+      // overridable is the per-row `canOverride` (strictly higher than its setter).
+      canOverride: hasRole(this.user.role, "analyst") && !locked,
       decisions,
       counts: { decisions: decisions.length, overridden: decisions.filter((d) => d.override).length },
     };
