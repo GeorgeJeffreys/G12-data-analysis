@@ -21,6 +21,12 @@ export interface CleanResponse {
   qmParticipantId: string;
   participantPseudonym: string;
   wording: string | null;
+  /** The item's `QuestionDescription` (an internal code/label), or null. */
+  description: string | null;
+  /** The `QuestionParentQuestionWording` — the stimulus/parent passage shown
+   *  above a question (e.g. an English reading/listening passage), or null when
+   *  the item has no parent (`<Not defined>` in the export). */
+  parentWording: string | null;
   majorElement: string | null;
   subElement: string | null;
   demandLevel: DemandLevel | null;

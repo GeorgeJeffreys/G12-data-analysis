@@ -18,6 +18,8 @@ function resp(over: Partial<CleanResponse>): CleanResponse {
     qmParticipantId: "a@x.edu",
     participantPseudonym: "P0001",
     wording: null,
+    description: null,
+    parentWording: null,
     majorElement: null,
     subElement: null,
     demandLevel: null,

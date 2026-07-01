@@ -622,9 +622,16 @@ export interface ItemDetailModel {
   id: string;
   qLabel: string;
   wording: string | null;
+  /** `QuestionDescription` — an internal code/label for the item (may be null). */
+  description: string | null;
+  /** `QuestionParentQuestionWording` — the stimulus/parent passage shown above
+   *  the question (e.g. an English reading/listening passage), or null. */
+  parentWording: string | null;
   major: string | null;
   sub: string | null;
   demand: string | null;
+  /** The item's maximum score (`QuestionMaximumScore`). */
+  maxScore: number;
   excluded: boolean;
   reason: string | null;
   /** Multiple-choice answer options (null when not available for this item). */

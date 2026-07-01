@@ -162,6 +162,10 @@ function main() {
 
     // Distinct items (first occurrence) with metadata.
     const itemMetaMap = new Map<string, ItemMeta>();
+    // Display-only content per item (QuestionDescription + parent/stimulus
+    // wording), captured from the first cleaned row for the item. Never feeds the
+    // engine — item metadata only, so parity is untouched.
+    const contentByQid = new Map<string, { description: string | null; parentWording: string | null }>();
     for (const r of recs) {
       if (!itemMetaMap.has(r.qmQuestionId)) {
         itemMetaMap.set(r.qmQuestionId, {
@@ -173,6 +177,7 @@ function main() {
           demandLevel: r.demandLevel ?? null,
           maxScore: r.maxScore,
         });
+        contentByQid.set(r.qmQuestionId, { description: r.description, parentWording: r.parentWording });
       }
     }
     const itemMetas = [...itemMetaMap.values()];
@@ -207,6 +212,8 @@ function main() {
       return {
         id: m.itemId,
         wording: m.wording ?? null,
+        description: contentByQid.get(m.itemId)?.description ?? null,
+        parentWording: contentByQid.get(m.itemId)?.parentWording ?? null,
         major: m.majorElement ?? null,
         sub: m.subElement ?? null,
         demand: m.demandLevel ?? null,

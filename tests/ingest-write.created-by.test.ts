@@ -27,6 +27,8 @@ function sampleRecs(): CleanResponse[] {
     qmParticipantId: p,
     participantPseudonym: `pseudo-${p}`,
     wording: null,
+    description: null,
+    parentWording: null,
     majorElement: null,
     subElement: null,
     demandLevel: null,

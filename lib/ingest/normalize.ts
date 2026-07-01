@@ -107,6 +107,12 @@ export function stripHtml(value: unknown): string | null {
   return text.length > 0 ? text : null;
 }
 
+/** Null out the "no parent" sentinel the QM export uses for stimulus wording. */
+function parentOrNull(value: string | null): string | null {
+  if (!value) return null;
+  return value.toLowerCase() === "not defined" ? null : value;
+}
+
 function toNumber(value: unknown, fallback: number | null): number | null {
   if (value === null || value === undefined || value === "") return fallback;
   const n = Number(value);
@@ -184,6 +190,11 @@ export function normalizeResponses(rows: readonly RawExportRow[]): NormalizeResu
       qmParticipantId,
       participantPseudonym: pseudonym(qmParticipantId),
       wording: stripHtml(row["QuestionWording"]),
+      description: stripHtml(row["QuestionDescription"]),
+      // Parent/stimulus passage shown above a question. The export writes
+      // `<Not defined>` when there is no parent — stripHtml reduces that to null
+      // (angle-bracketed → treated as a tag); guard the un-bracketed literal too.
+      parentWording: parentOrNull(stripHtml(row["QuestionParentQuestionWording"])),
       majorElement: major,
       subElement: sub,
       demandLevel: parseDemandLevel(row["MetaTags"]),

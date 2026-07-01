@@ -6,18 +6,23 @@
  * engine) on every exclusion.
  *
  * Layout:
- *  - the question table is the full-width dominant element under a single slim
- *    control band (compact stats + filters + search + zoom);
- *  - each question row is expandable — clicking a row reveals its per-question
- *    deep-dive (compact statistics, discrimination groups, response outcome)
- *    inline beneath the row; clicking again collapses it. One row at a time.
+ *  - a scannable question list is the dominant element under a single slim control
+ *    band (compact stats + filters + search + zoom). One row per question — no
+ *    expandable stat rows; light at-a-glance columns only.
+ *  - selecting a question opens a RIGHT-HAND SIDEBAR: its full content (stem,
+ *    stimulus/parent passage, options with the correct answer marked, max score,
+ *    demand level) and its item statistics (P-Value, Point-Biserial, Discrimination
+ *    with Good/Review/Flag ratings), plus a "What these mean" panel. Selecting the
+ *    same row again closes the sidebar.
  *  - true whole-table zoom: − / + (and trackpad pinch) scale the entire table —
  *    columns, text and rows together — so zooming out genuinely fits more rows.
  *
- * The cohort-level summary (overall score distribution / by-element rollup) is
- * deliberately absent here — it lives on the Diagnostics tab.
+ * Statistics are read from the analyst's validated computation (P-B), never
+ * recomputed here. Item-Total correlation (IT-R) is still computed by P-B but is
+ * NOT shown in this user view — the displayed item-total correlation is the
+ * Point-Biserial (PT-BIS). The cohort-level summary lives on the Diagnostics tab.
  */
-import { Fragment, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, AnswerOption } from "@/lib/data/types";
@@ -43,12 +48,14 @@ const REASONS = [
 
 /**
  * Inline plain-language definition of the item-quality score. Kept accurate to
- * the real implementation: the engine rates four psychometric statistics
+ * the real implementation: the engine rates the item's psychometric statistics
  * Good/Review/Flag (thresholds from ScoringConfig.quality — see
- * lib/engine/config.ts), those four ratings are averaged into the 0–100 index
+ * lib/engine/config.ts), those ratings are averaged into the 0–100 index
  * (Good=1, Review=0.55, Flag=0.12; see qualityIndexOf in the provider /
  * scripts/build-seed.mts), and the bar colours come from qualityTier
- * (lib/ui/tokens.ts). "Overall review" is the worst of the four.
+ * (lib/ui/tokens.ts). "Overall review" is the worst rating. The item-total
+ * (IT-R) check is part of P-B's internal composite but is not surfaced to users
+ * here — the displayed item-total correlation is the Point-Biserial.
  */
 function QualityInfo() {
   const Stat = ({ name, good }: { name: string; good: string }) => (
@@ -64,17 +71,15 @@ function QualityInfo() {
           A composite indicator of how well this question performed across the whole cohort — a higher score means a
           more reliable question.
         </p>
-        <div style={{ fontWeight: 600, color: H.ink, marginBottom: 3 }}>Built from four checks</div>
+        <div style={{ fontWeight: 600, color: H.ink, marginBottom: 3 }}>Built from the item checks</div>
         <ul style={{ margin: "0 0 7px", paddingLeft: 16 }}>
           <Stat name="Difficulty (p-value)" good="average score; good 0.30–0.85, flagged below 0.20 or above 0.90" />
-          <Stat name="Item-total correlation" good="agreement with the rest of the test; good ≥ 0.30, flagged below 0.10" />
-          <Stat name="Point-biserial" good="good ≥ 0.30, flagged below 0.10" />
+          <Stat name="Point-biserial" good="tracks overall performance; good ≥ 0.30, flagged below 0.10" />
           <Stat name="Discrimination" good="top third vs bottom third; good ≥ 0.30, flagged below 0.10" />
         </ul>
         <p style={{ margin: "0 0 7px" }}>
-          Each check is rated <b style={{ color: H.good }}>Good</b> (1.0), <b style={{ color: H.warn }}>Review</b> (0.55)
-          or <b style={{ color: H.bad }}>Flag</b> (0.12); the four are averaged into the 0–100 score. The “Overall
-          review” is the worst of the four.
+          Each check is rated <b style={{ color: H.good }}>Good</b>, <b style={{ color: H.warn }}>Review</b> or{" "}
+          <b style={{ color: H.bad }}>Flag</b>, and the item’s <b>Overall review</b> is the worst of them.
         </p>
         <div style={{ fontWeight: 600, color: H.ink, marginBottom: 3 }}>Reading the bar</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
@@ -92,12 +97,17 @@ function Dot({ c }: { c: string }) {
 }
 
 type QualityFilter = "all" | "review" | "poor";
-type SortKey = "q" | "pValue" | "itemTotal" | "pointBiserial" | "discrimination" | "quality";
+// IT-R is not a user-facing column, so it is not a sort key here.
+type SortKey = "q" | "pValue" | "pointBiserial" | "discrimination" | "quality";
 
-function fmtStat(v: number | null): string {
-  if (v === null || Number.isNaN(v)) return "—";
-  const s = v.toFixed(2);
-  return s.replace(/^(-?)0\./, "$1.");
+/**
+ * Format an item statistic to 3 decimal places, matching P-B's stored precision.
+ * Undefined (null / NaN — e.g. zero-variance correlations) renders as blank,
+ * never 0.
+ */
+function fmt3(v: number | null): string {
+  if (v === null || Number.isNaN(v)) return "";
+  return v.toFixed(3);
 }
 
 function firstLine(text: string | null): string {
@@ -122,12 +132,10 @@ export default function ReviewPage({
   const [demand, setDemand] = useState<string>("");
   // Default: ascending by question number (Q1…Qn), not driven by any statistic.
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "q", dir: 1 });
-  const [reasonFor, setReasonFor] = useState<string | null>(null);
 
-  // Selection drives the inline per-question deep-dive (one row at a time);
+  // Selection drives the right-hand deep-dive sidebar (one question at a time);
   // zoom scales the whole table.
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const { zoom, setZoom, scrollRef: tableScrollRef, zoomWrapStyle } = useTableZoom();
 
   const detail = useProviderData(
@@ -176,24 +184,16 @@ export default function ReviewPage({
 
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: (s.dir * -1) as 1 | -1 } : { key, dir: 1 }));
-  const toggleExpand = (id: string) =>
-    setExpanded((prev) => {
-      const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
-      return next;
-    });
 
-  const exclude = (itemId: string, reason: string) => {
+  const exclude = (itemId: string, reason: string) =>
     provider.setItemExcluded(cycleId, assessmentId, itemId, true, reason);
-    setReasonFor(null);
-  };
   const restore = (itemId: string) => provider.setItemExcluded(cycleId, assessmentId, itemId, false);
-  // Clicking a row toggles its inline deep-dive; one row expanded at a time.
+  // Clicking a row opens its sidebar; clicking the selected row again closes it.
   const select = (itemId: string) => setSelectedId((cur) => (cur === itemId ? null : itemId));
 
   const Num = ({ v }: { v: number | null }) => (
     <span className="hf-mono" style={{ fontSize: 12.5, color: v !== null && v < 0.2 ? H.bad : H.ink }}>
-      {fmtStat(v)}
+      {fmt3(v)}
     </span>
   );
 
@@ -242,7 +242,7 @@ export default function ReviewPage({
         <span style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <MiniStat n={String(model.kpis.items)} label="items" />
           <MiniStat n={String(model.kpis.excluded)} label="excluded" />
-          <MiniStat n={fmtStat(model.kpis.medianDifficulty)} label="median" />
+          <MiniStat n={fmt3(model.kpis.medianDifficulty)} label="median" />
           <MiniStat n={`${model.kpis.cohortMean}%`} label="cohort" />
         </span>
         <span style={{ width: 1, height: 18, background: H.line2 }} />
@@ -259,7 +259,7 @@ export default function ReviewPage({
         <ZoomControl zoom={zoom} onZoom={setZoom} />
       </div>
 
-      {/* full-width question table; rows expand inline to their deep-dive */}
+      {/* question list (left) + deep-dive sidebar (right, opens on selection) */}
       <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
         <div ref={tableScrollRef} style={{ flex: 1, overflow: "auto", background: H.paper, minWidth: 0 }}>
           {/* whole-table zoom: scale the table (columns + text + rows) together */}
@@ -272,7 +272,6 @@ export default function ReviewPage({
                   <th className="hf-th">Demand</th>
                   <SortableTh label="Quality" k="quality" align="left" info={<QualityInfo />} />
                   <SortableTh label="p-val" k="pValue" />
-                  <SortableTh label="it-r" k="itemTotal" />
                   <SortableTh label="pt-bis" k="pointBiserial" />
                   <SortableTh label="disc" k="discrimination" />
                   <th className="hf-th" />
@@ -280,56 +279,42 @@ export default function ReviewPage({
               </thead>
               <tbody>
                 {view.map((it) => (
-                  <Fragment key={it.id}>
-                    <ItemRowView
-                      it={it}
-                      qLabel={qIndex.get(it.id) ?? ""}
-                      selected={selectedId === it.id}
-                      expanded={expanded.has(it.id)}
-                      onSelect={() => select(it.id)}
-                      onToggleExpand={() => toggleExpand(it.id)}
-                      reasonOpen={reasonFor === it.id}
-                      onAskReason={() => setReasonFor(it.id)}
-                      onCancelReason={() => setReasonFor(null)}
-                      onExclude={(reason) => exclude(it.id, reason)}
-                      onRestore={() => restore(it.id)}
-                      Num={Num}
-                    />
-                    {selectedId === it.id && (
-                      <tr>
-                        <td colSpan={9} style={{ padding: 0, background: H.pinkSoft2, borderBottom: `1px solid ${H.line}`, boxShadow: `inset 3px 0 0 ${H.pink}` }}>
-                          <div style={{ padding: "18px 24px 22px", maxWidth: 760 }}>
-                            {detail ? (
-                              <DetailBody detail={detail} onExclude={exclude} onRestore={restore} />
-                            ) : (
-                              <div className="hf-sub" style={{ padding: 8 }}>Loading…</div>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </Fragment>
+                  <ItemRowView
+                    key={it.id}
+                    it={it}
+                    qLabel={qIndex.get(it.id) ?? ""}
+                    selected={selectedId === it.id}
+                    onSelect={() => select(it.id)}
+                    Num={Num}
+                  />
                 ))}
               </tbody>
             </table>
             <div className="hf-sub" style={{ padding: "13px 26px" }}>
-              Showing {view.length} of {model.items.length} questions · click a row to expand its deep-dive
+              Showing {view.length} of {model.items.length} questions · click a row to open its deep-dive
             </div>
             {/* Cronbach's α moved off the Question-review step — reliability now
                 lives on the Diagnostics step (the shared computation is untouched). */}
           </div>
         </div>
+
+        {/* right-hand deep-dive sidebar */}
+        {selectedId && (
+          <aside style={{ width: 400, flex: "0 0 auto", borderLeft: `1px solid ${H.line2}`, background: H.paper, overflow: "auto", boxShadow: `inset 3px 0 0 ${H.pink}` }}>
+            {detail ? (
+              <QuestionSidebar
+                detail={detail}
+                onExclude={exclude}
+                onRestore={restore}
+                onClose={() => setSelectedId(null)}
+              />
+            ) : (
+              <div className="hf-sub" style={{ padding: 20 }}>Loading…</div>
+            )}
+          </aside>
+        )}
       </div>
     </CycleShell>
-  );
-}
-
-/** Subtle, conventional expand chevron (rotates when open). */
-function Chevron({ open }: { open: boolean }) {
-  return (
-    <svg width="11" height="11" viewBox="0 0 12 12" style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .12s", flex: "0 0 auto" }} aria-hidden="true">
-      <path d="M4 2.5L8 6l-4 3.5" fill="none" stroke={H.ink3} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
   );
 }
 
@@ -356,31 +341,21 @@ function Dropdown({ label, value, onChange, options }: { label: string; value: s
   );
 }
 
+/**
+ * One question row — scannable, non-expandable. Clicking it opens the right-hand
+ * deep-dive sidebar. Light at-a-glance columns only (IT-R is not shown here).
+ */
 function ItemRowView({
   it,
   qLabel,
   selected,
-  expanded,
   onSelect,
-  onToggleExpand,
-  reasonOpen,
-  onAskReason,
-  onCancelReason,
-  onExclude,
-  onRestore,
   Num,
 }: {
   it: ItemRow;
   qLabel: string;
   selected: boolean;
-  expanded: boolean;
   onSelect: () => void;
-  onToggleExpand: () => void;
-  reasonOpen: boolean;
-  onAskReason: () => void;
-  onCancelReason: () => void;
-  onExclude: (reason: string) => void;
-  onRestore: () => void;
   Num: (p: { v: number | null }) => JSX.Element;
 }) {
   // Fixed normal density — whole-table zoom (scale transform) handles sizing.
@@ -391,38 +366,17 @@ function ItemRowView({
     <tr
       onClick={onSelect}
       className={it.excluded ? "" : "hf-hover"}
+      aria-selected={selected}
       style={{ background: selected ? H.pinkSoft2 : it.excluded ? H.tint : "transparent", opacity: it.excluded ? 0.62 : 1, cursor: "pointer", boxShadow: selected ? `inset 3px 0 0 ${H.pink}` : "none" }}
     >
-      <td style={{ ...td, verticalAlign: "top", maxWidth: 360 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: expanded ? "flex-start" : "center" }}>
-          <span style={{ display: "flex", flexDirection: "column", flex: "0 0 auto", marginTop: expanded ? 1 : 0 }}>
-            {/* Clean question number (exam order). The internal Questionmark item
-                ID is kept only as a hover tooltip, not shown as a raw long number. */}
-            <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, lineHeight: 1.1 }} title={`Question ID (Questionmark): ${it.id}`}>{qLabel}</span>
+      <td style={{ ...td, maxWidth: 420 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* Clean question number (exam order). The internal Questionmark item
+              ID is kept only as a hover tooltip, not shown as a raw long number. */}
+          <span className="hf-mono" style={{ fontWeight: 700, fontSize: FONT, lineHeight: 1.1, flex: "0 0 auto" }} title={`Question ID (Questionmark): ${it.id}`}>{qLabel}</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: FONT, textDecoration: it.excluded ? "line-through" : "none", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }}>
+            {firstLine(it.wording)}
           </span>
-          <div style={{ flex: 1, minWidth: 0, fontSize: FONT, textDecoration: it.excluded ? "line-through" : "none", ...(expanded ? { whiteSpace: "normal" } : { whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "block" }) }}>
-            {expanded ? (
-              <>
-                {it.wording ?? "—"}
-                {it.options && it.options.length > 0 && <AnswerOptions options={it.options} />}
-              </>
-            ) : (
-              firstLine(it.wording)
-            )}
-          </div>
-          {(it.wording ?? "").length > 40 ? (
-            <button
-              onClick={(e) => { stop(e); onToggleExpand(); }}
-              aria-label={expanded ? "Collapse question text" : "Expand full question text"}
-              aria-expanded={expanded}
-              title={expanded ? "Collapse" : "Show full text"}
-              style={{ border: "none", background: "transparent", cursor: "pointer", flex: "0 0 auto", display: "inline-flex", alignItems: "center", padding: 2, marginTop: expanded ? 1 : 0, borderRadius: 4 }}
-            >
-              <Chevron open={expanded} />
-            </button>
-          ) : (
-            <span style={{ width: 15, flex: "0 0 auto" }} />
-          )}
         </div>
       </td>
       <td style={{ ...td, maxWidth: 150, width: 150 }}>
@@ -432,26 +386,13 @@ function ItemRowView({
       <td style={td}>{it.demand ? <Pill>{it.demand}</Pill> : null}</td>
       <td style={td}><QualityBar v={it.qualityIndex} width={70} /></td>
       <td style={{ ...td, textAlign: "right" }}><Num v={it.pValue} /></td>
-      <td style={{ ...td, textAlign: "right" }}><Num v={it.itemTotal} /></td>
       <td style={{ ...td, textAlign: "right" }}><Num v={it.pointBiserial} /></td>
       <td style={{ ...td, textAlign: "right" }}><Num v={it.discrimination} /></td>
-      <td style={{ ...td, textAlign: "right", position: "relative", minWidth: 96 }} onClick={stop}>
+      <td style={{ ...td, textAlign: "right", minWidth: 88 }} onClick={stop}>
         {it.excluded ? (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
-            <span className="hf-mono" style={{ fontSize: 10, color: ratingColor("Flag"), fontWeight: 700 }}>EXCLUDED</span>
-            <span className="hf-sub" style={{ fontSize: 10 }}>{it.reason ?? "—"}</span>
-            <button className="hf-btn ghost" style={{ fontSize: 10.5, padding: "2px 4px" }} onClick={onRestore}>Restore</button>
-          </div>
-        ) : reasonOpen ? (
-          <div style={{ position: "absolute", right: 8, top: 6, zIndex: 5, background: H.paper, border: `1px solid ${H.line2}`, borderRadius: 8, boxShadow: "0 8px 28px rgba(31,42,49,.18)", padding: 4, width: 190, textAlign: "left" }}>
-            <div className="hf-lbl" style={{ padding: "4px 8px" }}>Reason to exclude</div>
-            {REASONS.map((r) => (
-              <button key={r} className="hf-btn ghost" style={{ display: "block", width: "100%", textAlign: "left", fontSize: 12, padding: "6px 8px" }} onClick={() => onExclude(r)}>{r}</button>
-            ))}
-            <button className="hf-btn ghost" style={{ fontSize: 11, padding: "6px 8px", color: H.ink3 }} onClick={onCancelReason}>Cancel</button>
-          </div>
+          <span className="hf-mono" style={{ fontSize: 10, color: ratingColor("Flag"), fontWeight: 700 }}>EXCLUDED</span>
         ) : (
-          <Button variant="ghost" style={{ fontSize: 11.5, color: H.bad }} onClick={onAskReason}>Exclude…</Button>
+          <Button variant="ghost" style={{ fontSize: 11.5, color: H.ink3 }} onClick={onSelect}>Open ›</Button>
         )}
       </td>
     </tr>
@@ -501,16 +442,52 @@ function RatingChip({ rating }: { rating: "Good" | "Review" | "Flag" }) {
 /** Compact statistic row: name · value · rating chip (reason on hover). */
 function StatRow({ label, value, rating, reason }: { label: string; value: string; rating: "Good" | "Review" | "Flag"; reason: string }) {
   return (
-    <div title={reason} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 0", borderBottom: `1px solid ${H.line}` }}>
+    <div title={reason} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0", borderBottom: `1px solid ${H.line}` }}>
       <span style={{ flex: 1, fontSize: 12, color: H.ink2 }}>{label}</span>
-      <span className="hf-mono" style={{ fontSize: 13.5, fontWeight: 600, minWidth: 38, textAlign: "right" }}>{value}</span>
+      {/* undefined statistics (zero-variance correlations) render blank, never 0 */}
+      <span className="hf-mono" style={{ fontSize: 13.5, fontWeight: 600, minWidth: 52, textAlign: "right", color: H.ink }}>{value}</span>
       <RatingChip rating={rating} />
     </div>
   );
 }
 
-function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel; onExclude: (id: string, r: string) => void; onRestore: (id: string) => void }) {
+/** A labelled content attribute (max score, demand, description). */
+function Attr({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
+      <span style={{ fontSize: 12, color: H.ink, fontWeight: 600 }}>{children}</span>
+    </div>
+  );
+}
+
+/**
+ * Right-hand deep-dive for the selected question.
+ *   Content  — stem, stimulus/parent passage, options (correct marked),
+ *              max score, demand level, description.
+ *   Statistics — P-Value, Point-Biserial (PT-BIS), Discrimination + ratings and
+ *              the overall rating. IT-R is deliberately absent from this view.
+ *   What these mean — plain-language definitions of each displayed statistic.
+ *   Exclude / restore controls.
+ *
+ * Every statistic is read straight from P-B's computed output (ItemDetailModel);
+ * nothing is recomputed here. Correlations/discrimination show to 3 dp; undefined
+ * values render blank.
+ */
+function QuestionSidebar({
+  detail,
+  onExclude,
+  onRestore,
+  onClose,
+}: {
+  detail: ItemDetailModel;
+  onExclude: (id: string, r: string) => void;
+  onRestore: (id: string) => void;
+  onClose: () => void;
+}) {
   const [reasonOpen, setReasonOpen] = useState(false);
+  const [showDefs, setShowDefs] = useState(false);
+
   const total = Math.max(1, detail.outcome.correct + detail.outcome.incorrect + detail.outcome.notAnswered);
   const pct = (n: number) => Math.round((n / total) * 100);
   const seg = [
@@ -521,81 +498,172 @@ function DetailBody({ detail, onExclude, onRestore }: { detail: ItemDetailModel;
   const gmax = Math.max(detail.groups.upperMean, detail.groups.lowerMean, 0.001);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {/* header — statistics only, no question wording */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      {/* sticky header — question id, demand, overall rating, close */}
+      <div style={{ position: "sticky", top: 0, zIndex: 2, background: H.paper, borderBottom: `1px solid ${H.line2}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
         <span className="hf-mono" style={{ fontWeight: 700, fontSize: 15 }} title={`Question ID (Questionmark): ${detail.id}`}>{detail.qLabel}</span>
         {detail.demand && <Pill>{detail.demand}</Pill>}
-        {detail.major && <span className="hf-sub" style={{ fontSize: 11 }}>{detail.major}</span>}
-        <div style={{ flex: 1 }} />
         <RatingChip rating={detail.overallReview} />
         {detail.excluded && <span className="hf-mono" style={{ fontSize: 10, color: H.bad, fontWeight: 700 }}>EXCLUDED</span>}
+        <div style={{ flex: 1 }} />
+        <button onClick={onClose} aria-label="Close" title="Close" style={{ border: "none", background: "transparent", cursor: "pointer", padding: 4, display: "inline-flex", borderRadius: 6, color: H.ink3 }}>
+          <Icon name="x" size={14} color={H.ink3} />
+        </button>
       </div>
 
-      {/* the four statistics — compact rows (reason on hover) */}
-      <div>
-        <StatRow label="p-value (difficulty)" value={fmtStat(detail.pValue)} rating={detail.pRating} reason={detail.reasons.p} />
-        <StatRow label="Item-total correlation" value={fmtStat(detail.itemTotal)} rating={detail.itRating} reason={detail.reasons.it} />
-        <StatRow label="Point-biserial" value={fmtStat(detail.pointBiserial)} rating={detail.pbRating} reason={detail.reasons.pb} />
-        <StatRow label="Discrimination" value={fmtStat(detail.discrimination)} rating={detail.discRating} reason={detail.reasons.disc} />
-      </div>
+      <div style={{ padding: "16px 18px 22px", display: "flex", flexDirection: "column", gap: 18 }}>
+        {/* ── Content ─────────────────────────────────────────────────────── */}
+        <section style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <span className="hf-lbl">Content</span>
 
-      {/* discrimination groups — compact */}
-      <div>
-        <div className="hf-lbl" style={{ marginBottom: 6 }}>Discrimination groups · top/bottom {detail.groups.size}</div>
-        {[
-          { k: "Upper", v: detail.groups.upperMean, c: H.good },
-          { k: "Lower", v: detail.groups.lowerMean, c: H.bad },
-        ].map((g) => (
-          <div key={g.k} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}>
-            <span style={{ width: 44, fontSize: 11.5, color: H.ink2 }}>{g.k}</span>
-            <div style={{ flex: 1, height: 8, background: H.tint2, borderRadius: 4 }}>
-              <div style={{ width: `${(g.v / gmax) * 100}%`, height: "100%", background: g.c, borderRadius: 4 }} />
+          {/* stimulus / parent passage (English reading/listening context), when present */}
+          {detail.parentWording && (
+            <div style={{ padding: "9px 11px", borderRadius: 8, background: H.canvas, border: `1px solid ${H.line}` }}>
+              <div className="hf-lbl" style={{ fontSize: 9.5, marginBottom: 4 }}>Stimulus / passage</div>
+              <div style={{ fontSize: 12, color: H.ink2, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{detail.parentWording}</div>
             </div>
-            <span className="hf-mono" style={{ width: 34, textAlign: "right", fontSize: 11.5 }}>{(g.v * 100).toFixed(0)}%</span>
-          </div>
-        ))}
-      </div>
+          )}
 
-      {/* response outcome — compact bar + inline legend */}
-      <div>
-        <div className="hf-lbl" style={{ marginBottom: 6 }}>Response outcome · {detail.answered}/{detail.presented} answered</div>
-        <div style={{ display: "flex", height: 12, borderRadius: 5, overflow: "hidden", border: `1px solid ${H.line2}` }}>
-          {seg.map((s) => (s.n > 0 ? <div key={s.k} title={`${s.k}: ${s.n}`} style={{ width: `${pct(s.n)}%`, background: s.c }} /> : null))}
-        </div>
-        <div style={{ display: "flex", gap: 12, marginTop: 6, flexWrap: "wrap" }}>
-          {seg.map((s) => (
-            <span key={s.k} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
-              <span style={{ width: 8, height: 8, borderRadius: 2, background: s.c }} />
-              <span style={{ color: H.ink2 }}>{s.k}</span>
-              <span className="hf-mono" style={{ color: H.ink }}>{s.n}</span>
-            </span>
+          {/* question stem */}
+          <div style={{ fontSize: 13, color: H.ink, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{detail.wording ?? "—"}</div>
+
+          {/* options with the correct answer marked */}
+          {detail.options && detail.options.length > 0 && <AnswerOptions options={detail.options} />}
+
+          {/* attributes: max score, demand, description */}
+          <div style={{ display: "flex", gap: 22, flexWrap: "wrap", paddingTop: 4 }}>
+            <Attr label="Max score">{detail.maxScore}</Attr>
+            <Attr label="Demand level">{detail.demand ?? "—"}</Attr>
+            {detail.major && <Attr label="Curriculum">{detail.major}{detail.sub ? ` · ${detail.sub}` : ""}</Attr>}
+          </div>
+          {detail.description && (
+            <div className="hf-sub" style={{ fontSize: 10.5 }} title="QuestionDescription (internal item code)">{detail.description}</div>
+          )}
+        </section>
+
+        {/* ── Statistics ──────────────────────────────────────────────────── */}
+        <section>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span className="hf-lbl">Statistics</span>
+            <div style={{ flex: 1 }} />
+            <span className="hf-sub" style={{ fontSize: 10.5 }}>{detail.answered}/{detail.presented} answered</span>
+          </div>
+          {/* P-Value, Point-Biserial, Discrimination — IT-R is not shown here */}
+          <StatRow label="P-Value (difficulty)" value={fmt3(detail.pValue)} rating={detail.pRating} reason={detail.reasons.p} />
+          <StatRow label="Point-Biserial (PT-BIS)" value={fmt3(detail.pointBiserial)} rating={detail.pbRating} reason={detail.reasons.pb} />
+          <StatRow label="Item Discrimination" value={fmt3(detail.discrimination)} rating={detail.discRating} reason={detail.reasons.disc} />
+          <div title={detail.reasons.overall} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 0" }}>
+            <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: H.ink }}>Overall rating</span>
+            <RatingChip rating={detail.overallReview} />
+          </div>
+        </section>
+
+        {/* discrimination groups — top/bottom split */}
+        <section>
+          <div className="hf-lbl" style={{ marginBottom: 6 }}>Discrimination groups · top/bottom {detail.groups.size}</div>
+          {[
+            { k: "Upper", v: detail.groups.upperMean, c: H.good },
+            { k: "Lower", v: detail.groups.lowerMean, c: H.bad },
+          ].map((g) => (
+            <div key={g.k} style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 5 }}>
+              <span style={{ width: 44, fontSize: 11.5, color: H.ink2 }}>{g.k}</span>
+              <div style={{ flex: 1, height: 8, background: H.tint2, borderRadius: 4 }}>
+                <div style={{ width: `${(g.v / gmax) * 100}%`, height: "100%", background: g.c, borderRadius: 4 }} />
+              </div>
+              <span className="hf-mono" style={{ width: 34, textAlign: "right", fontSize: 11.5 }}>{(g.v * 100).toFixed(0)}%</span>
+            </div>
           ))}
-        </div>
-      </div>
+        </section>
 
-      {/* answer options — the question's multiple-choice choices */}
-      {detail.options && detail.options.length > 0 && <AnswerOptions options={detail.options} />}
-
-      {/* exclude / restore */}
-      <div style={{ borderTop: `1px solid ${H.line}`, paddingTop: 12 }}>
-        {detail.excluded ? (
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="hf-sub" style={{ flex: 1, fontSize: 11.5 }}>Excluded — {detail.reason ?? "flagged in review"}</span>
-            <Button variant="ghost" onClick={() => onRestore(detail.id)}>Restore item</Button>
+        {/* response outcome — compact bar + inline legend */}
+        <section>
+          <div className="hf-lbl" style={{ marginBottom: 6 }}>Response outcome</div>
+          <div style={{ display: "flex", height: 12, borderRadius: 5, overflow: "hidden", border: `1px solid ${H.line2}` }}>
+            {seg.map((s) => (s.n > 0 ? <div key={s.k} title={`${s.k}: ${s.n}`} style={{ width: `${pct(s.n)}%`, background: s.c }} /> : null))}
           </div>
-        ) : reasonOpen ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span className="hf-lbl">Reason to exclude</span>
-            {REASONS.map((r) => (
-              <button key={r} className="hf-btn ghost" style={{ textAlign: "left", fontSize: 12, padding: "7px 9px" }} onClick={() => { onExclude(detail.id, r); setReasonOpen(false); }}>{r}</button>
+          <div style={{ display: "flex", gap: 12, marginTop: 6, flexWrap: "wrap" }}>
+            {seg.map((s) => (
+              <span key={s.k} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11 }}>
+                <span style={{ width: 8, height: 8, borderRadius: 2, background: s.c }} />
+                <span style={{ color: H.ink2 }}>{s.k}</span>
+                <span className="hf-mono" style={{ color: H.ink }}>{s.n}</span>
+              </span>
             ))}
-            <Button variant="ghost" style={{ color: H.ink3 }} onClick={() => setReasonOpen(false)}>Cancel</Button>
           </div>
-        ) : (
-          <Button variant="danger" style={{ width: "100%", justifyContent: "center" }} onClick={() => setReasonOpen(true)}>Exclude this item…</Button>
-        )}
+        </section>
+
+        {/* ── What these mean (plain-language definitions) ─────────────────── */}
+        <section style={{ borderTop: `1px solid ${H.line}`, paddingTop: 12 }}>
+          <button
+            onClick={() => setShowDefs((v) => !v)}
+            aria-expanded={showDefs}
+            className="hf-btn ghost"
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11.5, padding: "2px 0" }}
+          >
+            <span style={{ display: "inline-flex", transform: showDefs ? "rotate(90deg)" : "none", transition: "transform .12s" }}>
+              <svg width="10" height="10" viewBox="0 0 12 12" aria-hidden="true"><path d="M4 2.5L8 6l-4 3.5" fill="none" stroke={H.ink3} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></svg>
+            </span>
+            What these mean
+          </button>
+          {showDefs && <StatDefinitions />}
+        </section>
+
+        {/* exclude / restore */}
+        <section style={{ borderTop: `1px solid ${H.line}`, paddingTop: 12 }}>
+          {detail.excluded ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="hf-sub" style={{ flex: 1, fontSize: 11.5 }}>Excluded — {detail.reason ?? "flagged in review"}</span>
+              <Button variant="ghost" onClick={() => onRestore(detail.id)}>Restore item</Button>
+            </div>
+          ) : reasonOpen ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+              <span className="hf-lbl">Reason to exclude</span>
+              {REASONS.map((r) => (
+                <button key={r} className="hf-btn ghost" style={{ textAlign: "left", fontSize: 12, padding: "7px 9px" }} onClick={() => { onExclude(detail.id, r); setReasonOpen(false); }}>{r}</button>
+              ))}
+              <Button variant="ghost" style={{ color: H.ink3 }} onClick={() => setReasonOpen(false)}>Cancel</Button>
+            </div>
+          ) : (
+            <Button variant="danger" style={{ width: "100%", justifyContent: "center" }} onClick={() => setReasonOpen(true)}>Exclude this item…</Button>
+          )}
+        </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Plain-language definitions for each statistic shown in this view (KK's
+ * request). IT-R is not displayed here, so it is deliberately not defined. These
+ * describe the analyst's validated method (P-B).
+ */
+function StatDefinitions() {
+  const Def = ({ term, children }: { term: string; children: ReactNode }) => (
+    <div style={{ marginBottom: 9 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: H.ink, marginBottom: 2 }}>{term}</div>
+      <div style={{ fontSize: 11.5, color: H.ink2, lineHeight: 1.5 }}>{children}</div>
+    </div>
+  );
+  return (
+    <div style={{ marginTop: 10, padding: "12px 13px", borderRadius: 8, background: H.canvas, border: `1px solid ${H.line}` }}>
+      <Def term="P-Value (facility / difficulty)">
+        The average score on this item across students — how easy it was. Guide: 0.30–0.85 is healthy; 0.20–0.30 or
+        0.85–0.90 is worth a review; outside that is flagged. Very high or very low values tell you little about
+        differences between students.
+      </Def>
+      <Def term="Point-Biserial (PT-BIS)">
+        How well the item tracks overall performance — the correlation between this item’s scores and each student’s
+        total. Higher is better: ≥ 0.30 good, ≥ 0.10 review, below that flagged. Near-zero or negative suggests the
+        item isn’t distinguishing or may be mis-keyed.
+      </Def>
+      <Def term="Item Discrimination">
+        The top group’s average on this item minus the bottom group’s (students split into high/low groups by overall
+        performance). Positive and larger is better: ≥ 0.30 good, ≥ 0.10 review, below that flagged.
+      </Def>
+      <Def term="Rating (Good / Review / Flag)">
+        Each statistic gets a rating on the guides above; the item’s <b>overall</b> rating is Flag if any statistic
+        flags, else Review if any needs review, else Good.
+      </Def>
     </div>
   );
 }
