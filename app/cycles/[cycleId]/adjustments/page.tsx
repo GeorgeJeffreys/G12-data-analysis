@@ -20,6 +20,7 @@
 import Link from "next/link";
 import { useProviderData } from "@/lib/data/context";
 import { CycleShell } from "@/components/shell/CycleShell";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { IncidentReviewSurface } from "@/components/incidents/IncidentReviewSurface";
@@ -46,6 +47,12 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
       <Link href={`/cycles/${cycleId}/score`}>
         <Button variant="pri" title="Continue to scoring">Continue<Icon name="arrow" color="#fff" /></Button>
       </Link>
+    ),
+    intro: (
+      <StepIntro>
+        Turns exam-day incidents — a frozen calculator, audio that wouldn&apos;t play — into deliberate, recorded
+        mark alterations, so no student is disadvantaged by something outside their control.
+      </StepIntro>
     ),
   };
 

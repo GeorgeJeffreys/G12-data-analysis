@@ -25,6 +25,7 @@ import { useState, type ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "./Shell";
 import { LockStatus } from "./LockBanner";
+import { StepBackButton } from "./StepBackButton";
 import { cyclesSubnav } from "@/lib/ui/subnav";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 
@@ -78,8 +79,18 @@ export function CycleShell({
       subnav={cyclesSubnav(cycleId, area)}
       stageIndex={isPipeline ? (stageIndex ?? 0) : undefined}
       cycleId={cycleId}
-      // pipeline pages pin the primary in the stepper row; other areas in the header
-      stageAction={isPipeline ? primary : undefined}
+      // pipeline pages pin the primary in the stepper row; other areas in the header.
+      // A grey secondary "← Back" sits immediately left of the primary on every
+      // Critical Path step (hidden on Upload, which has no previous step), so the
+      // two step-nav actions always travel together.
+      stageAction={
+        isPipeline ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <StepBackButton cycleId={cycleId} stageIndex={stageIndex ?? 0} />
+            {primary}
+          </div>
+        ) : undefined
+      }
       actions={
         isPipeline ? actions : (
           (actions || primary) ? <>{actions}{primary}</> : undefined
