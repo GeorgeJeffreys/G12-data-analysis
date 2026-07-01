@@ -26,6 +26,14 @@ export interface SeedAnswerOption {
 export interface SeedItem {
   id: string;
   wording: string | null;
+  /**
+   * The item's `QuestionDescription` (an internal code/label) and its
+   * `QuestionParentQuestionWording` (the stimulus/parent passage shown above the
+   * question). Optional — only the generated demo seed carries these; live/DB-
+   * hydrated items leave them absent (same precedent as `options`).
+   */
+  description?: string | null;
+  parentWording?: string | null;
   major: string | null;
   sub: string | null;
   demand: string | null;
