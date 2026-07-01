@@ -71,6 +71,16 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
     setSelCols(new Set());
     setSelRows(new Set());
   };
+  // Minimal cohort-exclusion trigger (prompt 09, part 4): flag the selected
+  // participant(s) as staff/test excluded from the WHOLE cohort — one authoritative
+  // action, keyed on the participant's stable id, that drops them from every subject
+  // and from Candidate Scores (not just this subject's cleaned view). Prompt 03b
+  // layers the polished strike-through/restore UX over this same mechanism.
+  const excludeFromCohort = () => {
+    if (selRows.size === 0) return;
+    for (const id of selRows) provider.excludeParticipantFromCohort(cycleId, id, true, "Excluded from cohort (Clean)");
+    setSelRows(new Set());
+  };
 
   if (!model) {
     return (
@@ -162,6 +172,14 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
                 </span>
                 <div style={{ flex: 1 }} />
                 <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={() => { setSelCols(new Set()); setSelRows(new Set()); }}>Clear</Button>
+                <Button
+                  disabled={selRows.size === 0}
+                  onClick={excludeFromCohort}
+                  title="Exclude the selected participant(s) from the whole cohort (staff / test accounts) — drops them from every subject and from Candidate Scores"
+                  style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }}
+                >
+                  <Icon name="x" size={12} color={H.cream} />Exclude from cohort
+                </Button>
                 <Button variant="danger" disabled={selCount === 0} onClick={deleteSelected} style={{ fontSize: 11.5, background: H.paper }}>
                   <Icon name="trash" size={12} color={H.bad} />Delete selected
                 </Button>

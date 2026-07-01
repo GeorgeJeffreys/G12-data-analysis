@@ -23,7 +23,9 @@ import type {
   ParticipantRow,
   EssayMarkRow,
   AlterationRow,
+  CleanExclusionRow,
 } from "@/lib/types/database";
+import { isStaffTestEmail } from "@/lib/data/staff-exclusions";
 import {
   getEngine,
   ENGINE_VERSION,
@@ -63,18 +65,43 @@ export interface RecomputeResult {
  * Returns row counts written. Throws on any write error.
  */
 export async function recomputeAndWrite(admin: Admin, cycleId: string): Promise<RecomputeResult> {
-  const [assessments, items, participants, responses, essayRows, alterationRows] = await Promise.all([
+  const [assessments, items, participants, responses, essayRows, alterationRows, cleanExclusions] = await Promise.all([
     sel<AssessmentRow>(admin.from("assessments").select("*").eq("cycle_id", cycleId)),
     sel<ItemRow>(admin.from("items").select("*").eq("cycle_id", cycleId)),
     sel<ParticipantRow>(admin.from("participants").select("*").eq("cycle_id", cycleId)),
     sel<ResponseRow>(admin.from("responses").select("*").eq("cycle_id", cycleId)),
     sel<EssayMarkRow>(admin.from("essay_marks").select("*").eq("cycle_id", cycleId)),
     sel<AlterationRow>(admin.from("alterations").select("*").eq("cycle_id", cycleId)),
+    sel<CleanExclusionRow>(admin.from("clean_exclusions").select("*").eq("cycle_id", cycleId)),
   ]);
 
   const engine = getEngine();
   const itemAssessment = new Map(items.map((it) => [it.id, it.assessment_id]));
   const excludedItemIds = items.filter((it) => it.status === "excluded").map((it) => it.id);
+
+  // ── participant / cohort exclusions (prompt-09) ──────────────────────────
+  // The materialized participant_scores MUST reflect the CLEANED cohort, so the
+  // Candidate Scores page never shows excluded accounts. Two sources, matching the
+  // client provider's cohort boundary:
+  //   1. the configured staff/test EMAIL list — keyed on the stable email
+  //      (qm_participant_id / email), applied to EVERY subject; and
+  //   2. Clean-stage row removals (clean_exclusions kind='row') — per subject,
+  //      re-resolved through the participant's stable key so a removal recorded
+  //      before a re-import still matches the freshly-minted row (migration 0016).
+  const qmToUuid = new Map(participants.map((p) => [p.qm_participant_id, p.id]));
+  const liveIds = new Set(participants.map((p) => p.id));
+  const staffExcluded = new Set(
+    participants.filter((p) => isStaffTestEmail(p.email) || isStaffTestEmail(p.qm_participant_id)).map((p) => p.id),
+  );
+  const rowExcludedByAssessment = new Map<string, Set<string>>();
+  for (const ce of cleanExclusions) {
+    if (ce.kind !== "row") continue;
+    const pid = (ce.target_key && qmToUuid.get(ce.target_key)) || (liveIds.has(ce.target_id) ? ce.target_id : undefined);
+    if (!pid) continue;
+    (rowExcludedByAssessment.get(ce.assessment_id) ?? rowExcludedByAssessment.set(ce.assessment_id, new Set()).get(ce.assessment_id)!).add(pid);
+  }
+  const isExcludedResponse = (participantId: string, assessmentId: string): boolean =>
+    staffExcluded.has(participantId) || (rowExcludedByAssessment.get(assessmentId)?.has(participantId) ?? false);
 
   // Engine inputs keyed by the item/participant/assessment UUIDs.
   const itemMetas: ItemMeta[] = items.map((it) => ({
@@ -86,12 +113,16 @@ export async function recomputeAndWrite(admin: Admin, cycleId: string): Promise<
     demandLevel: it.demand_level,
     maxScore: it.max_score ?? 1,
   }));
-  const allResponses: ResponseRecord[] = responses.map((r) => ({
-    participantId: r.participant_id,
-    itemId: r.item_id,
-    assessmentId: itemAssessment.get(r.item_id) ?? "",
-    score: Number(r.answer_score),
-  }));
+  const allResponses: ResponseRecord[] = responses
+    .map((r) => ({
+      participantId: r.participant_id,
+      itemId: r.item_id,
+      assessmentId: itemAssessment.get(r.item_id) ?? "",
+      score: Number(r.answer_score),
+    }))
+    // Drop excluded participants' responses BEFORE the engine sees them, so both
+    // item_stats and participant_scores are computed on the cleaned cohort.
+    .filter((r) => !isExcludedResponse(r.participantId, r.assessmentId));
 
   // ── item stats (per assessment, like the seed builder/parity path) ──────
   const statRows: Record<string, unknown>[] = [];

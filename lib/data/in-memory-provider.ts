@@ -40,6 +40,7 @@ import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 import { SUBJECT_CATALOG } from "./subject-catalog";
+import { isStaffTestEmail } from "./staff-exclusions";
 import { isEssaySubject, reservedEssayMax } from "./essays";
 import type {
   AssembleScoreAnalysisArgs,
@@ -539,9 +540,21 @@ export class InMemoryDataProvider implements DataProvider {
   private cleanRowSet(assessmentId: string): Set<string> | undefined {
     return this.cleanRows.get(`${this.seed.liveCycle.id}:${assessmentId}`);
   }
-  /** Participant ids excluded cohort-wide (staff / test accounts) for the live cycle. */
+  /**
+   * Participant ids excluded cohort-wide (staff / test accounts) for the live
+   * cycle. Two sources, unioned:
+   *   1. the configured staff/test EMAIL list (primary, robust — keyed on the
+   *      participant's stable email `studentId`/qm_participant_id, so it survives
+   *      re-import and needs no stored decision); and
+   *   2. explicit ad-hoc cohort exclusions recorded via
+   *      `excludeParticipantFromCohort` (persisted per-subject, replayed on hydrate).
+   */
   private cohortExcludedSet(): Set<string> {
-    return new Set(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
+    const out = new Set<string>(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
+    for (const p of this.seed.liveCycle.participants) {
+      if (isStaffTestEmail(p.studentId ?? p.id)) out.add(p.id);
+    }
+    return out;
   }
   /**
    * Participants removed from the COHORT entirely — those cleaned out (Clean-stage

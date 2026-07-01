@@ -514,10 +514,22 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   });
 
   // Clean-stage removals, grouped per subject (rows = participants, cols = items).
+  // Row removals re-resolve through the participant's STABLE key (qm_participant_id,
+  // migration 0016) to the CURRENT row UUID, so an exclusion recorded before a
+  // re-import still applies to the freshly-minted participant row. Rows whose stable
+  // key no longer maps to any participant (or legacy rows with no stable key whose
+  // stored UUID is now dangling) are dropped — they cannot match a live participant.
+  const qmToUuid = new Map(participants.map((p) => [p.qm_participant_id, p.id]));
+  const liveIds = new Set(participants.map((p) => p.id));
   const cleanByAssessment = new Map<string, { rows: string[]; cols: string[] }>();
   for (const r of cleanExclusionRows) {
     const g = cleanByAssessment.get(r.assessment_id) ?? { rows: [], cols: [] };
-    (r.kind === "row" ? g.rows : g.cols).push(r.target_id);
+    if (r.kind === "row") {
+      const resolved = (r.target_key && qmToUuid.get(r.target_key)) || (liveIds.has(r.target_id) ? r.target_id : undefined);
+      if (resolved) g.rows.push(resolved);
+    } else {
+      g.cols.push(r.target_id);
+    }
     cleanByAssessment.set(r.assessment_id, g);
   }
   const cleanRemovals = [...cleanByAssessment.entries()].map(([assessmentId, g]) => ({ assessmentId, ...g }));
@@ -543,7 +555,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     if (code) subjectCodeToAssessmentId.set(code, a.id);
   }
   const lookups = {
-    qmToUuid: new Map(participants.map((p) => [p.qm_participant_id, p.id])),
+    qmToUuid,
     subjectCodeToAssessmentId,
     incidentDbIds: incidentRows.map((r) => r.id),
   };
