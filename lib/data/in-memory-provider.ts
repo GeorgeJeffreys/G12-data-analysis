@@ -161,7 +161,20 @@ import {
   type StudentReviewModel,
   type TechnicalErrorsUpload,
   type TechnicalIncident,
+  type IncidentConfigModel,
 } from "./types";
+import {
+  defaultIncidentConfig,
+  validateIncidentCode,
+  validatePerStudentCap,
+  normalizeIncidentCode,
+} from "@/lib/incidents/config";
+import { describeFormula } from "@/lib/incidents/formula";
+import type {
+  IncidentAdjustmentConfig,
+  IncidentCodeInput,
+  IncidentColumnMapping,
+} from "@/lib/incidents/types";
 import {
   CLEANED_DATA_COLUMNS,
   CLEANED_DATA_UNAVAILABLE,
@@ -382,6 +395,10 @@ export class InMemoryDataProvider implements DataProvider {
   // input the grade recompute reads (see marginalInfo); editable via Settings.
   // Default is the ±2% placeholder pending G12's policy value.
   private borderline: BorderlineConfig = { bandPct: DEFAULT_BORDERLINE_BAND_PCT };
+
+  // Incident Adjustments configuration registry (codes/formulae/caps + import
+  // column mapping). Admin-owned; lower roles read-only. Mirrors migration 0016.
+  private incidentConfig: IncidentAdjustmentConfig = defaultIncidentConfig();
 
   // Per-subject A–E element labels (configurable in Settings). Seeded from the
   // confirmed G12++ defaults; the Supabase provider replays the persisted set.
@@ -4359,6 +4376,63 @@ export class InMemoryDataProvider implements DataProvider {
     if (validateElementLabels(config)) return;
     this.elementLabels = JSON.parse(JSON.stringify(config));
     this.audit("config", "Updated element labels", "Per-subject A–E element display labels", null);
+    this.bump();
+  }
+
+  // ── Incident Adjustments configuration ──────────────────────────────────────
+  getIncidentConfig(): IncidentConfigModel {
+    const c = this.incidentConfig;
+    return {
+      canEdit: hasRole(this.user.role, "admin"),
+      perStudentCap: c.perStudentCap,
+      mapping: { ...c.mapping },
+      codes: c.codes.map((code) => ({
+        ...code,
+        matchTypes: [...code.matchTypes],
+        formula: { ...code.formula },
+      })),
+    };
+  }
+
+  upsertIncidentCode(input: IncidentCodeInput): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    // Defence in depth (the UI validates too): reject anything not add-only / invalid.
+    if (validateIncidentCode(input, this.incidentConfig.codes).length > 0) return;
+    if (input.id) {
+      const i = this.incidentConfig.codes.findIndex((c) => c.id === input.id);
+      if (i < 0) return;
+      this.incidentConfig.codes[i] = normalizeIncidentCode(input, input.id);
+      this.audit("config", "Updated incident code", `${input.code} · ${describeFormula(input.formula)}`, null);
+    } else {
+      const id = `code-${++this.seq}-${Date.now().toString(36)}`;
+      this.incidentConfig.codes.push(normalizeIncidentCode(input, id));
+      this.audit("config", "Added incident code", `${input.code} · ${describeFormula(input.formula)}`, null);
+    }
+    this.bump();
+  }
+
+  deleteIncidentCode(id: string): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    const before = this.incidentConfig.codes.length;
+    this.incidentConfig.codes = this.incidentConfig.codes.filter((c) => c.id !== id);
+    if (this.incidentConfig.codes.length !== before) {
+      this.audit("config", "Removed incident code", id, null);
+      this.bump();
+    }
+  }
+
+  setIncidentPerStudentCap(cap: number | null): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    if (validatePerStudentCap(cap).length > 0) return;
+    this.incidentConfig.perStudentCap = cap;
+    this.audit("config", "Updated per-student incident cap", cap === null ? "No cap" : `${cap} marks`, null);
+    this.bump();
+  }
+
+  setIncidentMapping(mapping: IncidentColumnMapping): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    this.incidentConfig.mapping = { ...mapping };
+    this.audit("config", "Updated incident import mapping", "Column mapping", null);
     this.bump();
   }
 

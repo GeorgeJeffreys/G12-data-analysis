@@ -565,7 +565,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
 
 function stageIndexFromStatus(status: string): number {
   // 10-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
-  // Diagnostics(4) Technical adjustments(5) Score(6) Cut scores(7) CGJ(8)
+  // Diagnostics(4) Incident adjustments(5) Score(6) Cut scores(7) CGJ(8)
   // Grades(9). Essay marks are uploaded on Upload (step 1) and fold into the
   // scored totals automatically — not a standalone stage. CGJ (centre grade
   // judgement) is an optional comparison step with no status of its own; a graded

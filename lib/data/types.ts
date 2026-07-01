@@ -9,6 +9,7 @@ import type { PerCutSuggestion } from "@/lib/engine/cut-scores";
 import type { AssessmentDiagnostics } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { SeedAnswerOption, SeedPreview } from "./seed-types";
+import type { IncidentAdjustmentConfig } from "@/lib/incidents/types";
 
 /** A question's multiple-choice answer option, surfaced to the review UI. */
 export type AnswerOption = SeedAnswerOption;
@@ -40,7 +41,7 @@ export const PIPELINE = [
   "Raw scores",
   "Question review",
   "Diagnostics",
-  "Technical adjustments",
+  "Incident adjustments",
   "Score",
   "Cut scores",
   // CGJ (Centre Grade Judgement) sits directly after Cut scores, before Grades:
@@ -1431,6 +1432,15 @@ export interface BrandingConfig {
 export interface BorderlineConfig {
   /** Borderline band, in percentage points. Bounds enforced server-side. */
   bandPct: number;
+}
+
+/**
+ * Incident Adjustments configuration read-model. The registry of incident codes,
+ * the per-student global cap and the reconfigurable column mapping, plus whether
+ * the current user may EDIT it (admin only — lower roles view read-only).
+ */
+export interface IncidentConfigModel extends IncidentAdjustmentConfig {
+  canEdit: boolean;
 }
 
 export interface ConfigModel {

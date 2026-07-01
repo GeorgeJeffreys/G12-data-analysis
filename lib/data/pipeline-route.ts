@@ -4,7 +4,7 @@
  * each stage to its screen) so the two never disagree about where a stage lives.
  *
  * The 10-stage order (see PIPELINE): Upload → Clean → Raw scores →
- * Question review → Diagnostics → Technical adjustments → Score →
+ * Question review → Diagnostics → Incident adjustments → Score →
  * Cut scores → CGJ → Grades. Essay marks are uploaded on Upload (step 1) and fold
  * into the scored totals automatically — they are not a standalone stage.
  * `stageIndex` is the first INCOMPLETE stage for a
@@ -30,7 +30,7 @@ export function stageRoute(cycleId: string, index: number): string {
       return `${base}/review`;
     case 4: // Diagnostics
       return `${base}/diagnostics`;
-    case 5: // Technical adjustments
+    case 5: // Incident adjustments
       return `${base}/adjustments`;
     case 6: // Score
       return `${base}/score`;
@@ -56,7 +56,7 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Check raw scores", body: "Review the naïve (pre-adjustment) scores produced from the cleaned data.", cta: "Go to raw scores" },
   { title: "Review item quality", body: "Assessments are validated and waiting for quality review before scoring.", cta: "Go to item review" },
   { title: "Review diagnostics", body: "Check cohort-level diagnostics and reliability (Cronbach's alpha) before continuing — review only, never changes a grade.", cta: "Go to diagnostics" },
-  { title: "Apply technical adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to technical adjustments" },
+  { title: "Apply incident adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to incident adjustments" },
   { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },
   { title: "Set cut scores", body: "Scores are confirmed — set cut scores for each subject to derive grades.", cta: "Go to cut scores" },
   { title: "Check centre judgement", body: "Compare the partner centre's expected grades against the actuals as a check on the cut scores.", cta: "Go to CGJ" },
