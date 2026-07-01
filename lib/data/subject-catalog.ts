@@ -31,3 +31,23 @@ export function catalogNamesFor(assessmentIds: string[]): string[] {
     .map((id) => SUBJECT_CATALOG.find((s) => s.id === id)?.name)
     .filter((n): n is string => Boolean(n));
 }
+
+/**
+ * True when an assessment is a non-exam SURVEY instrument rather than one of the
+ * five scored exams. The cleaned data carries survey instruments (the "User
+ * Experience Survey …" and per-subject "Survey-<subject>" sheets) that have no
+ * correct answers and no scored denominator — including them would pollute cohort
+ * averages / completion stats. Matched by name (case-insensitive) so it holds for
+ * live data whose assessment names vary; the five real exams never match. Keep the
+ * test broad ("survey" / "user experience") so a newly-named survey is still
+ * caught without a code change.
+ */
+export function isSurveyAssessment(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return /\bsurvey\b|user\s*experience/i.test(name);
+}
+
+/** Inverse of `isSurveyAssessment`: a scored exam that belongs in cohort stats. */
+export function isScoredExamAssessment(name: string | null | undefined): boolean {
+  return !isSurveyAssessment(name);
+}

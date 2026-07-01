@@ -47,6 +47,9 @@ import type {
   RawDataModel,
   DataCleaningModel,
   CleanedDataModel,
+  CleaningImpactModel,
+  CleaningSummaryModel,
+  CleanedMasterDataset,
   NaiveScoresModel,
   MembersModel,
   NewCycleModel,
@@ -195,6 +198,25 @@ export interface DataProvider {
   getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null;
   /** Cleaned-set view in the QM cleaned-export column layout (mirrors the Excel). */
   getCleanedData(cycleId: string, assessmentId: string): CleanedDataModel | null;
+  /**
+   * Live before/after "cleaning impact" figures for the Clean tab's top panel:
+   * participants, per-subject records, and per-`QuestionMajorElement` records,
+   * each as full-ingested (before) vs post-clean (after). Recomputes on every
+   * soft-delete / restore / undo.
+   */
+  getCleaningImpact(cycleId: string): CleaningImpactModel | null;
+  /**
+   * Fuller Clean "Summary" statistics (no per-row data): per-subject score
+   * distribution + completion counts by ResultStatus, before vs after cleaning.
+   * Scored exams only; uses the engine's scored denominator.
+   */
+  getCleaningSummary(cycleId: string): CleaningSummaryModel | null;
+  /**
+   * The cleaned master dataset as one flat sheet (canonical columns, all scored
+   * exams), reflecting the current post-clean state — the source for the Clean
+   * "Export to Excel" workbook.
+   */
+  getCleanedMasterDataset(cycleId: string): CleanedMasterDataset | null;
   /** Naive (pre-exclusion) overall scores for one subject. */
   getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null;
   getReview(cycleId: string, assessmentId: string): ReviewModel | null;

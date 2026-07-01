@@ -308,6 +308,114 @@ export interface DataCleaningModel {
   canProceed: boolean;
   columns: RawColumnMeta[];
   rows: RawDataRow[];
+  /**
+   * Participant ids (of rows still shown) that are currently EXCLUDED cohort-wide
+   * — the soft-deleted rows. The Clean table keeps them visible but strikes them
+   * through in red; the exclusion propagates to Scores/Grades via the prompt-09
+   * `excludeParticipantFromCohort` mechanism (staff/test email list + ad-hoc
+   * exclusions). Non-destructive and reversible ("Restore").
+   */
+  excludedRows: string[];
+}
+
+/**
+ * The prominent, live "cleaning impact" figures pinned at the top of the Clean
+ * tab — key counts BEFORE cleaning vs AFTER cleaning, recomputed on every
+ * soft-delete / restore / undo. Because cleaning is soft-delete, "before" is the
+ * full ingested set and "after" is the full set minus the currently-excluded
+ * rows; both are always computable. Non-exam surveys are excluded from the
+ * per-subject / per-element breakdowns (they carry no scored data).
+ */
+export interface CleaningImpactStat {
+  /** Full ingested figure (ignores exclusions). */
+  before: number;
+  /** Figure after removing the currently-excluded rows. */
+  after: number;
+}
+export interface CleaningImpactSubject {
+  assessmentId: string;
+  shortName: string;
+  name: string;
+  /** Response records for this subject (one per answered item), before → after. */
+  records: CleaningImpactStat;
+  /** Distinct participants sitting this subject, before → after. */
+  participants: CleaningImpactStat;
+}
+export interface CleaningImpactElement {
+  major: string;
+  label: string;
+  /** Answered-item records carrying this `QuestionMajorElement`, before → after. */
+  records: CleaningImpactStat;
+}
+export interface CleaningImpactModel {
+  cycleId: string;
+  /** Distinct cohort participants, before → after. */
+  participants: CleaningImpactStat;
+  /** Total response records across the scored exams, before → after. */
+  records: CleaningImpactStat;
+  /** Per-subject records + participants (scored exams only). */
+  bySubject: CleaningImpactSubject[];
+  /** Records by `QuestionMajorElement` across the scored exams. */
+  byElement: CleaningImpactElement[];
+  /** Records currently excluded (the delta = records.before − records.after). */
+  excludedRecords: number;
+  /** Distinct participants currently excluded (the delta). */
+  excludedParticipants: number;
+}
+
+/**
+ * Fuller Clean "Summary" statistics (no per-row data) — per-subject score
+ * distribution and completion counts by ResultStatus, each shown BEFORE vs AFTER
+ * cleaning so staff see the effect on the distributions, not just the counts.
+ * Scored exams only (surveys excluded); percentages/averages use the engine's
+ * scored denominator (via `computeScores`), never a naive raw-max sum.
+ */
+export interface CleaningSummaryDist {
+  /** Participants scored in this slice. */
+  n: number;
+  /** Cohort mean % (engine scored denominator). */
+  mean: number;
+  /** Median %. */
+  median: number;
+  /** Standard deviation of %. */
+  sd: number;
+}
+export interface CleaningSummarySubject {
+  assessmentId: string;
+  shortName: string;
+  name: string;
+  before: CleaningSummaryDist;
+  after: CleaningSummaryDist;
+}
+export interface CleaningSummaryStatusRow {
+  status: string;
+  /** Sittings with this ResultStatus across the scored exams, before → after. */
+  before: number;
+  after: number;
+}
+export interface CleaningSummaryModel {
+  cycleId: string;
+  /** Per-subject before/after score distribution (scored exams only). */
+  subjects: CleaningSummarySubject[];
+  /** Completion counts by ResultStatus (scored exams only), before → after. */
+  statusCounts: CleaningSummaryStatusRow[];
+  /** Human note on scope (exams only, engine denominator, "Summary" naming). */
+  note: string;
+}
+
+/**
+ * The cleaned master dataset as a single flat sheet — the exact columns (in the
+ * canonical `CLEANED_DATA_COLUMNS` order) of the team's cleaned export, across
+ * every scored exam, reflecting the current post-clean state (excluded rows
+ * omitted). The single source of truth for the "Export to Excel" workbook.
+ */
+export interface CleanedMasterDataset {
+  /** The cleaned-export column headers, in canonical order (43 columns). */
+  headers: string[];
+  /** One row per retained response, aligned to `headers`. */
+  rows: string[][];
+  /** Retained totals reflected in the sheet. */
+  retained: { participants: number; responses: number; subjects: number };
 }
 
 /**

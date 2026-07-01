@@ -71,6 +71,9 @@ import type {
   RawDataModel,
   DataCleaningModel,
   CleanedDataModel,
+  CleaningImpactModel,
+  CleaningSummaryModel,
+  CleanedMasterDataset,
   NaiveScoresModel,
   MembersModel,
   NewCycleModel,
@@ -305,6 +308,9 @@ export class SupabaseDataProvider implements DataProvider {
   getRawData(cycleId: string, assessmentId: string): RawDataModel | null { return this.inner.getRawData(cycleId, assessmentId); }
   getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null { return this.inner.getDataCleaning(cycleId, assessmentId); }
   getCleanedData(cycleId: string, assessmentId: string): CleanedDataModel | null { return this.inner.getCleanedData(cycleId, assessmentId); }
+  getCleaningImpact(cycleId: string): CleaningImpactModel | null { return this.inner.getCleaningImpact(cycleId); }
+  getCleaningSummary(cycleId: string): CleaningSummaryModel | null { return this.inner.getCleaningSummary(cycleId); }
+  getCleanedMasterDataset(cycleId: string): CleanedMasterDataset | null { return this.inner.getCleanedMasterDataset(cycleId); }
   getNaiveScores(cycleId: string, assessmentId: string): NaiveScoresModel | null { return this.inner.getNaiveScores(cycleId, assessmentId); }
   getReview(cycleId: string, assessmentId: string): ReviewModel | null { return this.inner.getReview(cycleId, assessmentId); }
   getItemDetail(cycleId: string, assessmentId: string, itemId: string): ItemDetailModel | null { return this.inner.getItemDetail(cycleId, assessmentId, itemId); }

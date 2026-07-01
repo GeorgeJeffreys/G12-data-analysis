@@ -166,7 +166,6 @@ function CombinedSplitPanel({ split }: { split: CombinedSplitModel }) {
                   <span style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     {s.name}
                     {s.hasEssay && <Badge tone="accent">has essay</Badge>}
-                    {s.rtl && <Badge>RTL</Badge>}
                   </span>
                 </td>
                 <td className="hf-td hf-mono" style={{ textAlign: "right" }}>{s.items}</td>

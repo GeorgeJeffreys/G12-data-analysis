@@ -131,9 +131,6 @@ export default function NewCyclePage() {
                     <Check on={on} onClick={() => setIncluded((s) => ({ ...s, [a.id]: !on }))} />
                     <span style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>
                       {a.name}
-                      {a.rtl && (
-                        <span className="hf-mono" style={{ fontSize: 9, color: H.ink3, marginLeft: 8, border: `1px solid ${H.line2}`, padding: "1px 5px", borderRadius: 4 }}>RTL</span>
-                      )}
                     </span>
                     <span className="hf-sub" style={{ fontSize: 12 }}>{on ? "Included" : "Not included"}</span>
                   </div>

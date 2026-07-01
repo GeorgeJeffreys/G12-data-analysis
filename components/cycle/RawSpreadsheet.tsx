@@ -28,6 +28,7 @@ export function RawSpreadsheet({
   selectable = false,
   selCols,
   selRows,
+  struckRows,
   onToggleCol,
   onToggleRow,
 }: {
@@ -39,6 +40,12 @@ export function RawSpreadsheet({
   selectable?: boolean;
   selCols?: Set<string>;
   selRows?: Set<string>;
+  /**
+   * Soft-deleted (cohort-excluded) row ids — rendered struck-through in red and
+   * kept visible so the removal is obvious and reversible. Purely presentational;
+   * the exclusion itself lives in the provider.
+   */
+  struckRows?: Set<string>;
   onToggleCol?: (id: string) => void;
   onToggleRow?: (id: string) => void;
 }) {
@@ -120,20 +127,25 @@ export function RawSpreadsheet({
           <tbody>
             {model.rows.map((r) => {
               const rowSel = selectable && selRows?.has(r.id);
+              const struck = struckRows?.has(r.id) ?? false;
               const bg = rowSel ? H.pinkSoft2 : H.paper;
+              // Struck (soft-deleted) rows: red strike-through, kept visible.
+              const strikeStyle: CSSProperties = struck
+                ? { textDecoration: "line-through", textDecorationColor: H.bad }
+                : {};
               return (
                 <tr key={r.id} className="hf-hover">
                   <td
                     className="hf-td hf-mono"
                     onClick={selectable ? () => onToggleRow?.(r.id) : undefined}
-                    style={{ ...stickyTd(0, W.id, bg), fontSize: 11.5, color: H.ink2, cursor: selectable ? "pointer" : "default" }}
+                    style={{ ...stickyTd(0, W.id, bg), fontSize: 11.5, color: struck ? H.bad : H.ink2, cursor: selectable ? "pointer" : "default", ...strikeStyle }}
                   >
                     {r.studentId}
                   </td>
                   <td
                     className="hf-td"
                     onClick={selectable ? () => onToggleRow?.(r.id) : undefined}
-                    style={{ ...stickyTd(W.id, W.name, bg), fontSize: 12.5, fontWeight: 600, boxShadow: `2px 0 0 ${H.line2}`, borderRight: `1px solid ${H.line2}`, cursor: selectable ? "pointer" : "default" }}
+                    style={{ ...stickyTd(W.id, W.name, bg), fontSize: 12.5, fontWeight: 600, boxShadow: `2px 0 0 ${H.line2}`, borderRight: `1px solid ${H.line2}`, cursor: selectable ? "pointer" : "default", color: struck ? H.bad : undefined, ...strikeStyle }}
                   >
                     {r.name}
                   </td>
@@ -149,9 +161,10 @@ export function RawSpreadsheet({
                           padding: "10px 4px",
                           borderBottom: `1px solid ${H.line}`,
                           background: colSel ? H.pinkSoft2 : bg,
-                          color: cellColor(v),
+                          color: struck ? H.bad : cellColor(v),
                           fontWeight: v === 1 ? 600 : 400,
                           fontSize: 12,
+                          ...strikeStyle,
                         }}
                       >
                         {cellText(v)}
