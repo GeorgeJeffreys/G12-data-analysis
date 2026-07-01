@@ -2455,6 +2455,27 @@ export class InMemoryDataProvider implements DataProvider {
     return { id: clean, name: clean };
   }
 
+  /**
+   * Resolve an essay-file ParticipantID to a participant, keyed ONLY on the
+   * P-A internal UNIQUE identity — the stable internal id (`p.id`) or the
+   * guaranteed-unique Student ID (`p.studentId` = `qm_participant_id` on live
+   * data). Deliberately NEVER falls back to the display name (`p.label`): names
+   * collide (the two Fatimas), so a name key would fold distinct students'
+   * essays together — the exact "non-unique derived key" collapse P-A fixed.
+   * Essays therefore land on the correct, un-collapsed student. Returns
+   * `matched: false` (skip + surface as unmatched) when no unique key matches.
+   */
+  private matchEssayStudent(raw: string): { id: string; matched: boolean } {
+    const clean = raw.trim().toLowerCase();
+    for (const p of this.seed.liveCycle.participants) {
+      if (p.id.toLowerCase() === clean) return { id: p.id, matched: true };
+    }
+    for (const p of this.seed.liveCycle.participants) {
+      if ((p.studentId ?? p.id).toLowerCase() === clean) return { id: p.id, matched: true };
+    }
+    return { id: raw.trim(), matched: false };
+  }
+
   private technicalErrorsUpload(cycleId: string): TechnicalErrorsUpload {
     const te = this.technicalErrors.get(cycleId);
     if (!te || !te.uploaded) {
@@ -2565,9 +2586,10 @@ export class InMemoryDataProvider implements DataProvider {
     for (const e of agg.values()) {
       const a = this.essayAssessmentForCode(e.subjectCode);
       if (!a) continue; // only Arabic/English carry essays
-      const stud = this.matchStudent(e.participantId);
-      const isMatched = this.seed.liveCycle.participants.some((p) => p.id === stud.id);
-      if (!isMatched) {
+      // Key on the P-A internal UNIQUE participant id (never the non-unique name),
+      // so essays land on the correct, un-collapsed student.
+      const stud = this.matchEssayStudent(e.participantId);
+      if (!stud.matched) {
         unmatched.add(e.participantId);
         continue;
       }

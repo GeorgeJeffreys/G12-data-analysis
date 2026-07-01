@@ -28,9 +28,9 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
     cycleId,
     cycleName,
     page: "Technical adjustments",
-    stageIndex: 6,
+    stageIndex: 5,
     primary: (
-      // Technical adjustments → Score (step 8) → Cut scores (step 9): the next
+      // Technical adjustments → Score (step 7) → Cut scores (step 8): the next
       // step is the computed-scores screen, not cut scores (no step is skipped).
       <Link href={`/cycles/${cycleId}/score`}>
         <Button variant="pri" title="Continue to scoring">Continue<Icon name="arrow" color="#fff" /></Button>

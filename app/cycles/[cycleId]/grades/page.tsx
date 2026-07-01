@@ -47,7 +47,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
 
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={10}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={9}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this sitting.</div>
       </CycleShell>
     );
@@ -68,7 +68,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
       cycleId={cycleId}
       cycleName={cycleName}
       page="Grades & sign-off"
-      stageIndex={10}
+      stageIndex={9}
       actions={
         <ExportButtons
           xlsxLabel="Performance report (.xlsx)"

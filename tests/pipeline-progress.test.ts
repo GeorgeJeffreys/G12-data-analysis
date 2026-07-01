@@ -22,7 +22,7 @@ import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import type { Seed } from "@/lib/data/seed-types";
 import type { DataProvider } from "@/lib/data/provider";
 
-const TOTAL = PIPELINE.length; // the real, single-sourced step count (11)
+const TOTAL = PIPELINE.length; // the real, single-sourced step count (10)
 
 // The "done" circle renders this checkmark path; counting it counts completed steps.
 const CHECK = "M2.5 6.2l2.2 2.2L9.5 3.5";
@@ -72,7 +72,7 @@ describe("step list is single-sourced", () => {
     // Re-exported, not duplicated — so the tracker, the total and the completed
     // count can never drift apart.
     expect(PIPELINE_STAGES).toBe(PIPELINE);
-    expect(TOTAL).toBe(11);
+    expect(TOTAL).toBe(10);
   });
 });
 
@@ -88,29 +88,30 @@ describe("in-pipeline tracker: 1..N-1 complete, N current, rest pending", () => 
     });
   }
 
-  it("the reported case — Technical adjustments (step 7) — shows steps 3–6 as complete, not grey", () => {
-    // stageIndex 6 = Technical adjustments. Upload..Essay marks (6 steps) complete.
-    const html = renderToStaticMarkup(e(Pipeline, { active: 6 }));
-    expect(countChecks(html)).toBe(6);
+  it("the reported case — Technical adjustments (step 6) — shows steps 2–5 as complete, not grey", () => {
+    // stageIndex 5 = Technical adjustments. Upload..Diagnostics (5 steps) complete.
+    const html = renderToStaticMarkup(e(Pipeline, { active: 5 }));
+    expect(countChecks(html)).toBe(5);
   });
 });
 
 describe("Technical adjustments page renders all prior steps complete", () => {
-  it("the live sitting's adjustments page shows 6 checkmarked steps (Upload..Essay marks)", async () => {
+  it("the live sitting's adjustments page shows 5 checkmarked steps (Upload..Diagnostics)", async () => {
     activeProvider = new InMemoryDataProvider();
     const liveId = activeProvider.listCycles()[0]!.id;
     const { default: AdjustmentsPage } = await import("@/app/cycles/[cycleId]/adjustments/page");
     const html = renderToStaticMarkup(e(AdjustmentsPage, { params: { cycleId: liveId } }));
     // Regression: a stale `done: 2` override used to leave only 2 checkmarks here.
-    expect(countChecks(html)).toBe(6);
+    expect(countChecks(html)).toBe(5);
   });
 });
 
 describe("Years card 'k/N steps' label", () => {
   it("an advanced sitting reads k/total with total = the real step count (no '9/8')", async () => {
-    // stageIndex 9 = on CGJ, 9 steps complete — the exact state class that read "9/8".
+    // stageIndex 9 = on Grades (final step), 9 steps complete — the exact state
+    // class that read "9/8".
     const html = await renderYear(seedAt(9), "year-2026");
-    expect(html).toContain(`9/${TOTAL} steps`); // i.e. "9/11 steps"
+    expect(html).toContain(`9/${TOTAL} steps`); // i.e. "9/10 steps"
     expect(html).not.toContain("/8 steps");
     expect(html).not.toContain("9/8");
   });

@@ -30,13 +30,16 @@ export interface CurrentUser {
 // (app/years/[yearId]/overall/documents), not a single sitting. The per-sitting
 // pipeline therefore ends at Grades. (Per-page CSV/Excel data exports remain — they
 // are legitimately per-sitting, but they are page actions, not a pipeline stage.)
+// Essay marks are NOT a standalone pipeline step: the offline-marked English /
+// Arabic essays are uploaded up front on Upload (step 1) alongside the QM exports
+// and fold automatically into the scored subject totals (a post-engine layer, see
+// lib/engine/scores.ts). There is no separate essay stage to visit.
 export const PIPELINE = [
   "Upload",
   "Clean",
   "Raw scores",
   "Question review",
   "Diagnostics",
-  "Essay marks",
   "Technical adjustments",
   "Score",
   "Cut scores",
