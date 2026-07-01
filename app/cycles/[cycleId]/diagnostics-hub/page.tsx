@@ -214,7 +214,7 @@ export default function DiagnosticsHubPage({ params }: { params: { cycleId: stri
                 <>
                   A stronger <b>negative</b> correlation on a tier means slower responses there tended to score lower —
                   usually a sign those items were demanding, not a data fault. A positive correlation means the students who
-                  spent longer scored better. Undefined (—) when too few students on that tier have timing. Informational only.
+                  spent longer scored better. Undefined (—) when too few students on that tier have timing.
                 </>
               }
             />
