@@ -118,6 +118,7 @@ export {
   rateP,
   rateCorrelation,
   worstRating,
+  discriminationGroupSize,
 } from "./stats";
 export { computeScores } from "./scores";
 export { rollUp } from "./rollup";

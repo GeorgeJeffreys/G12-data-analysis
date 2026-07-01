@@ -1,21 +1,36 @@
 /**
- * Item statistics — the transparent TypeScript implementation of the four
- * psychometric measures and their Good/Review/Flag ratings.
+ * Item statistics — the transparent TypeScript port of the analyst's validated
+ * psychometric notebook (the four measures and their Good/Review/Flag ratings).
  *
- * The maths here was reverse-engineered and verified cell-for-cell against the
- * data scientist's published outputs in `data/parity_fixtures.json`: it
- * reproduces the p-value, corrected item-total correlation, point-biserial
- * correlation and discrimination for all 177 items across the five assessments
- * exactly (see tests/engine.parity.test.ts). This is the parity/trust gate.
+ * The formulae below are ported **verbatim** from that notebook — the notebook is
+ * the oracle. They are verified cell-for-cell against the analyst's published
+ * outputs in `data/parity_fixtures.json`: this reproduces the p-value, corrected
+ * item-total correlation, point-biserial correlation and discrimination for every
+ * item across the five assessments exactly (see tests/engine.parity.test.ts). That
+ * is the parity/trust gate.
  *
- * Verified definitions (dichotomous 0/1 items):
- *   p-value         = mean item score.
- *   item-total      = Pearson(item score, total of the OTHER items)   [corrected]
- *   point-biserial  = Pearson(item score, full total incl. the item)
- *   discrimination  = mean(upper group) - mean(lower group), where the groups
- *                     are the top/bottom g = round(n/3) participants ranked by
- *                     the corrected (item-excluded) total, descending, with ties
- *                     broken by the full total descending.
+ * ## The score matrix (built per assessment, over cleaned MCQ items)
+ * rows = students (the stable internal unique id from P-A), cols = QuestionId,
+ * value = AnswerScore. Duplicate `(student, QuestionId)` rows are collapsed keeping
+ * the **last** row; missing cells are filled with 0.0 (`fillna(0.0)`). Each
+ * student's `total` is the row sum over the fillna'd matrix.
+ *
+ * ## Definitions (dichotomous 0/1 items; identical formulae for 0..1 part-marks)
+ *   p-value         = mean of the item's scores across ALL students.
+ *   item-total (IT-R)      = Pearson(item score, total EXCLUDING the item)  [corrected]
+ *   point-biserial (PT-BIS) = Pearson(item score, full total INCLUDING the item)
+ *   discrimination  = mean(upper group) − mean(lower group), where the group size
+ *                     is `discriminationGroupSize(n)` and students are ranked
+ *                     ASCENDING by (corrected total, full total, id): the lower
+ *                     group is the head, the upper group is the tail.
+ * IT-R and PT-BIS are defined to TRACK: PT-BIS uses the total including the item,
+ * IT-R the total excluding it, so PT-BIS ≥ IT-R and the gap is small and positive
+ * (see tests/engine.item-stats.notebook.test.ts).
+ *
+ * ## Pearson helper
+ * Returns NaN (null here) when there are fewer than 3 valid pairs, or when either
+ * series has zero variance — both are treated downstream as an undefined
+ * correlation (a Flag), never as 0.
  *
  * Ratings (verified default thresholds, now read from `ScoringConfig.quality`):
  *   p-value: <0.20 Flag · <0.30 Review · ≤0.85 Good · ≤0.90 Review · else Flag
@@ -53,13 +68,14 @@ export function round(value: number, decimals: number): number {
 }
 
 /**
- * Pearson product-moment correlation. Returns null when either variable has
- * zero variance (the correlation is undefined), which the published pipeline
- * treats as a Flag.
+ * Pearson product-moment correlation. Returns null (the analyst's NaN) when there
+ * are fewer than 3 valid pairs, or when either variable has zero variance — both
+ * mean the correlation is undefined, which the published pipeline treats as a
+ * Flag.
  */
 export function pearson(x: readonly number[], y: readonly number[]): number | null {
   const n = x.length;
-  if (n === 0 || y.length !== n) return null;
+  if (n < 3 || y.length !== n) return null;
   let sx = 0;
   let sy = 0;
   let sxx = 0;
@@ -104,23 +120,37 @@ interface ParticipantRow {
 }
 
 /**
- * Discrimination index: proportion correct in the upper group minus the lower
- * group, where groups are the top/bottom g = round(n/3) participants ranked by
- * the corrected (item-excluded) total descending, ties broken by full total
- * descending. participantId is a final, result-neutral tiebreak for
- * determinism.
+ * Upper/lower group size for the discrimination index, ported verbatim from the
+ * analyst's validated notebook:
+ *
+ *   group_size = max(1, min(n // 2, round(n * 0.33)))
+ *   if n >= 9:  group_size = max(3, group_size)
+ *
+ * For the Applicable Math cohort (n = 15) this resolves to 5 (top 5 vs bottom 5).
+ */
+export function discriminationGroupSize(n: number): number {
+  let g = Math.max(1, Math.min(Math.floor(n / 2), Math.round(n * 0.33)));
+  if (n >= 9) g = Math.max(3, g);
+  return g;
+}
+
+/**
+ * Discrimination index: mean item score of the upper group minus the lower group.
+ * Students are ranked ASCENDING by (corrected total, full total, id) — exactly as
+ * the analyst's notebook does — so the lower group is the head and the upper group
+ * is the tail. `id` is a final, result-neutral tiebreak for determinism.
  */
 function discrimination(rows: ParticipantRow[]): number {
   const n = rows.length;
-  const g = Math.max(1, Math.round(n / 3));
+  const g = discriminationGroupSize(n);
   const ranked = [...rows].sort(
     (a, b) =>
-      b.rest - a.rest ||
-      b.total - a.total ||
+      a.rest - b.rest ||
+      a.total - b.total ||
       (a.participantId < b.participantId ? -1 : a.participantId > b.participantId ? 1 : 0),
   );
-  const upper = ranked.slice(0, g);
-  const lower = ranked.slice(n - g);
+  const lower = ranked.slice(0, g);
+  const upper = ranked.slice(n - g);
   const mean = (group: ParticipantRow[]) =>
     group.reduce((acc, r) => acc + r.score, 0) / group.length;
   return mean(upper) - mean(lower);
@@ -156,34 +186,51 @@ export function computeItemStats(
   const out: ItemStat[] = [];
 
   for (const [assessmentId, recs] of byAssessment) {
-    // Per-participant total within this assessment.
-    const totalByParticipant = new Map<string, number>();
+    // Build the score matrix: rows = students (unique id), cols = QuestionId,
+    // value = AnswerScore. Deduplicate (student, item) keeping the LAST row, then
+    // fillna(0.0) over the full student × item grid. Student/item order is
+    // first-seen (result-neutral; the maths is order-independent and
+    // discrimination re-sorts explicitly). This is the analyst's validated matrix.
+    const studentOrder: string[] = [];
+    const itemOrder: string[] = [];
+    const seenStudent = new Set<string>();
+    const seenItem = new Set<string>();
+    const cell = new Map<string, Map<string, number>>(); // student -> item -> score
     for (const r of recs) {
-      totalByParticipant.set(
-        r.participantId,
-        (totalByParticipant.get(r.participantId) ?? 0) + r.score,
-      );
-    }
-
-    // Group this assessment's responses by item, preserving first-seen order.
-    const byItem = new Map<string, ResponseRecord[]>();
-    for (const r of recs) {
-      let bucket = byItem.get(r.itemId);
-      if (!bucket) {
-        bucket = [];
-        byItem.set(r.itemId, bucket);
+      if (!seenStudent.has(r.participantId)) {
+        seenStudent.add(r.participantId);
+        studentOrder.push(r.participantId);
       }
-      bucket.push(r);
+      if (!seenItem.has(r.itemId)) {
+        seenItem.add(r.itemId);
+        itemOrder.push(r.itemId);
+      }
+      let row = cell.get(r.participantId);
+      if (!row) {
+        row = new Map();
+        cell.set(r.participantId, row);
+      }
+      row.set(r.itemId, r.score); // last write wins
     }
 
-    for (const [itemId, itemRecs] of byItem) {
-      const rows: ParticipantRow[] = itemRecs.map((r) => {
-        const total = totalByParticipant.get(r.participantId) ?? r.score;
+    // Per-student total = row sum over the fillna(0) matrix.
+    const totalByParticipant = new Map<string, number>();
+    for (const student of studentOrder) {
+      const row = cell.get(student)!;
+      let t = 0;
+      for (const itemId of itemOrder) t += row.get(itemId) ?? 0;
+      totalByParticipant.set(student, t);
+    }
+
+    for (const itemId of itemOrder) {
+      const rows: ParticipantRow[] = studentOrder.map((student) => {
+        const score = cell.get(student)!.get(itemId) ?? 0; // fillna(0.0)
+        const total = totalByParticipant.get(student)!;
         return {
-          participantId: r.participantId,
-          score: r.score,
+          participantId: student,
+          score,
           total,
-          rest: total - r.score,
+          rest: total - score,
         };
       });
 
