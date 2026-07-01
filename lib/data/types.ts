@@ -340,6 +340,8 @@ export interface CleaningImpactSubject {
   records: CleaningImpactStat;
   /** Distinct participants sitting this subject, before → after. */
   participants: CleaningImpactStat;
+  /** This subject's records by `QuestionMajorElement`, before → after. */
+  byElement: CleaningImpactElement[];
 }
 export interface CleaningImpactElement {
   major: string;
@@ -386,6 +388,8 @@ export interface CleaningSummarySubject {
   name: string;
   before: CleaningSummaryDist;
   after: CleaningSummaryDist;
+  /** This subject's completion counts by ResultStatus, before → after. */
+  statusCounts: CleaningSummaryStatusRow[];
 }
 export interface CleaningSummaryStatusRow {
   status: string;

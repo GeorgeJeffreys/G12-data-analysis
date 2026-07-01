@@ -2,10 +2,8 @@
 
 /**
  * Read-only Cronbach's-α (reliability) surfaces, shared by the Review tab and
- * Diagnostics. Every α is shown with its item count (k) and participant count (n)
- * and an instability caution where k or n is small; α is never shown as a bare
- * authoritative number. Undefined α (k<2 etc.) renders as "n/a — …"; negative α
- * is shown as-is.
+ * Diagnostics. Every α is shown with its item count (k) and participant count (n).
+ * Undefined α (k<2 etc.) renders as "n/a — …"; negative α is shown as-is.
  */
 import type { ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";
@@ -36,7 +34,7 @@ export function AlphaValue({ row, size = 13 }: { row: ReliabilityRow | null | un
   );
 }
 
-/** k / n with a caution chip where the estimate is fragile; "—" when the group is absent. */
+/** k / n item and participant counts; "—" when the group is absent. */
 function KnCell({ row }: { row: ReliabilityRow | null | undefined }) {
   if (!row) {
     return <span className="hf-sub" style={{ fontSize: 11.5, color: H.ink3 }}>—</span>;
@@ -49,16 +47,6 @@ function KnCell({ row }: { row: ReliabilityRow | null | undefined }) {
       <span className="hf-mono" style={{ fontSize: 11.5, color: H.ink2 }} title="participants used (complete cases)">
         n={row.n}
       </span>
-      {row.lowItems && row.alpha !== null && (
-        <span title="Too few items — α is fragile here" style={{ fontSize: 9, fontWeight: 700, color: H.bad, background: H.badSoft, padding: "1px 5px", borderRadius: 4, letterSpacing: 0.3 }}>
-          few items
-        </span>
-      )}
-      {row.smallSample && !row.lowItems && row.alpha !== null && (
-        <span title="Small cohort — α is unstable" style={{ fontSize: 9, fontWeight: 700, color: H.warn, background: H.warnSoft, padding: "1px 5px", borderRadius: 4, letterSpacing: 0.3 }}>
-          small n
-        </span>
-      )}
     </span>
   );
 }
@@ -105,7 +93,7 @@ export function ReliabilityPanel({ model, assessmentId }: { model: ReliabilityMo
           <span className="hf-h2">Internal consistency — Cronbach&rsquo;s α</span>
           <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>
             How consistently the items in each group measure the same thing. Read with the item (k) and participant (n)
-            counts — α is fragile at this cohort size.
+            counts.
           </div>
         </div>
         {subject && (
@@ -114,14 +102,6 @@ export function ReliabilityPanel({ model, assessmentId }: { model: ReliabilityMo
             <span className="hf-sub" style={{ fontSize: 10.5 }}>this subject · k={subject.k} · n={subject.n}</span>
           </div>
         )}
-      </div>
-
-      {/* small-sample caution */}
-      <div style={{ display: "flex", gap: 9, alignItems: "center", padding: "9px 18px", background: H.warnSoft, borderBottom: `1px solid ${H.warn}33` }}>
-        <span style={{ fontSize: 11.5, color: H.ink }}>
-          Reliability is unstable with only {model.participants} students; α over a handful of items (k &lt; {model.lowItemsThreshold})
-          is essentially noise. Treat demand-level α as indicative, not authoritative.
-        </span>
       </div>
 
       <table style={{ width: "100%", borderCollapse: "collapse" }}>

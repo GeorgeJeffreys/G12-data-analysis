@@ -20,8 +20,6 @@ import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
-import { Badge } from "@/components/ui/primitives";
-import { Mark } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import {
   DemandLegend,
@@ -58,13 +56,12 @@ export default function DiagnosticsHubPage({ params }: { params: { cycleId: stri
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
           <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
             <div className="hf-h1">Diagnostics</div>
-            <Badge tone="neutral"><Mark kind="warn" size={11} />Exploratory · not a grading step</Badge>
           </div>
           <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>
             Reference breakdowns by difficulty tier (D1/D2/D3) and item, for exploring where time pressure concentrates.
             The whole-assessment go/no-go check lives on the{" "}
             <Link href={`/cycles/${cycleId}/diagnostics`} style={{ color: H.pink, fontWeight: 600 }}>Assessment Health</Link>{" "}
-            step in the critical path. Informational only — nothing here changes a student’s mark or grade.
+            step in the critical path.
           </div>
         </div>
 

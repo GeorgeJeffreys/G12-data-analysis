@@ -22,7 +22,7 @@
  * NOT shown in this user view — the displayed item-total correlation is the
  * Point-Biserial (PT-BIS). The cohort-level summary lives on the Diagnostics tab.
  */
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import type { ItemRow, ItemDetailModel, AnswerOption } from "@/lib/data/types";
@@ -39,13 +39,20 @@ import { InfoTip } from "@/components/ui/infotip";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { StepIntro } from "@/components/ui/StepIntro";
 
+/**
+ * Exclusion reasons offered by the "Exclude this item…" menu. The chosen reason
+ * is stored with the exclusion and written to the audit trail (see
+ * provider.setItemExcluded). "Other…" opens a free-text field instead of
+ * recording a canned reason.
+ */
 const REASONS = [
-  "Negative discrimination",
-  "Low point-biserial",
-  "Too easy / too hard",
-  "Ambiguous wording",
-  "Off-syllabus",
+  "Mis-keyed / wrong answer key",
+  "Ambiguous or unclear wording",
+  "Off-syllabus / out of scope",
+  "Technical fault (didn’t display or score correctly)",
+  "Non-discriminating (too easy / too hard)",
 ];
+const OTHER_REASON = "Other…";
 
 /**
  * Inline plain-language definition of the item-quality score. Kept accurate to
@@ -493,7 +500,6 @@ function QuestionSidebar({
   onRestore: (id: string) => void;
   onClose: () => void;
 }) {
-  const [reasonOpen, setReasonOpen] = useState(false);
   const [showDefs, setShowDefs] = useState(false);
 
   const total = Math.max(1, detail.outcome.correct + detail.outcome.incorrect + detail.outcome.notAnswered);
@@ -623,19 +629,123 @@ function QuestionSidebar({
               <span className="hf-sub" style={{ flex: 1, fontSize: 11.5 }}>Excluded — {detail.reason ?? "flagged in review"}</span>
               <Button variant="ghost" onClick={() => onRestore(detail.id)}>Restore item</Button>
             </div>
-          ) : reasonOpen ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              <span className="hf-lbl">Reason to exclude</span>
-              {REASONS.map((r) => (
-                <button key={r} className="hf-btn ghost" style={{ textAlign: "left", fontSize: 12, padding: "7px 9px" }} onClick={() => { onExclude(detail.id, r); setReasonOpen(false); }}>{r}</button>
-              ))}
-              <Button variant="ghost" style={{ color: H.ink3 }} onClick={() => setReasonOpen(false)}>Cancel</Button>
-            </div>
           ) : (
-            <Button variant="danger" style={{ width: "100%", justifyContent: "center" }} onClick={() => setReasonOpen(true)}>Exclude this item…</Button>
+            <ExcludeMenu onExclude={(reason) => onExclude(detail.id, reason)} />
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The "Exclude this item…" control: a button that opens a dropdown / drop-up menu
+ * of exclusion reasons. Picking a reason excludes the item and records that reason
+ * (persisted + written to the audit trail via provider.setItemExcluded). Because
+ * this control sits low in the sidebar, the menu drops UP by default, falling back
+ * to dropping down only when there isn't room above. "Other…" swaps the list for a
+ * free-text field so an ad-hoc reason can be captured.
+ */
+function ExcludeMenu({ onExclude }: { onExclude: (reason: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [dropUp, setDropUp] = useState(true);
+  const [otherMode, setOtherMode] = useState(false);
+  const [otherText, setOtherText] = useState("");
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const close = () => { setOpen(false); setOtherMode(false); setOtherText(""); };
+
+  // Choose drop-up vs drop-down from where the control sits in the viewport when
+  // it opens. Default is up (this button is near the bottom of the sidebar); fall
+  // back to down only if there's more room below than above.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const MENU = 280; // approx menu height in px
+    const spaceBelow = window.innerHeight - r.bottom;
+    const spaceAbove = r.top;
+    setDropUp(!(spaceBelow >= MENU || spaceBelow >= spaceAbove));
+  }, [open]);
+
+  // Close on outside click or Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) close(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+
+  // Focus the free-text field when "Other…" is chosen.
+  useEffect(() => { if (otherMode) inputRef.current?.focus(); }, [otherMode]);
+
+  const pick = (reason: string) => { onExclude(reason); close(); };
+  const confirmOther = () => { const t = otherText.trim(); if (t) pick(t); };
+
+  return (
+    <div ref={wrapRef} style={{ position: "relative" }}>
+      <Button
+        variant="danger"
+        style={{ width: "100%", justifyContent: "center" }}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => (open ? close() : setOpen(true))}
+      >
+        Exclude this item…
+        <span style={{ display: "inline-flex", marginLeft: 6, transform: dropUp ? "rotate(180deg)" : "none" }}>
+          <Icon name="chev" size={12} color="#fff" />
+        </span>
+      </Button>
+      {open && (
+        <div
+          role="menu"
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            zIndex: 20,
+            ...(dropUp ? { bottom: "calc(100% + 6px)" } : { top: "calc(100% + 6px)" }),
+            background: H.paper,
+            border: `1px solid ${H.line2}`,
+            borderRadius: 10,
+            boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+            padding: 6,
+            display: "flex",
+            flexDirection: "column",
+            gap: 2,
+          }}
+        >
+          {otherMode ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 7, padding: 4 }}>
+              <span className="hf-lbl">Reason to exclude</span>
+              <input
+                ref={inputRef}
+                value={otherText}
+                onChange={(e) => setOtherText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") confirmOther(); }}
+                placeholder="Type a reason…"
+                style={{ padding: "7px 9px", fontSize: 12, color: H.ink, border: `1px solid ${H.line2}`, borderRadius: 8, outline: "none", background: H.paper }}
+                aria-label="Exclusion reason (free text)"
+              />
+              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                <Button variant="ghost" style={{ color: H.ink3 }} onClick={() => { setOtherMode(false); setOtherText(""); }}>Back</Button>
+                <Button variant="danger" disabled={!otherText.trim()} onClick={confirmOther}>Exclude</Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <span className="hf-lbl" style={{ padding: "4px 8px 2px" }}>Reason to exclude</span>
+              {REASONS.map((r) => (
+                <button key={r} role="menuitem" className="hf-btn ghost" style={{ textAlign: "left", justifyContent: "flex-start", fontSize: 12, padding: "8px 9px" }} onClick={() => pick(r)}>{r}</button>
+              ))}
+              <button role="menuitem" className="hf-btn ghost" style={{ textAlign: "left", justifyContent: "flex-start", fontSize: 12, padding: "8px 9px", color: H.ink2, borderTop: `1px solid ${H.line}`, borderRadius: 0, marginTop: 2 }} onClick={() => setOtherMode(true)}>{OTHER_REASON} (free-text reason)</button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

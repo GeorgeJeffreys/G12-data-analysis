@@ -1385,6 +1385,10 @@ export class InMemoryDataProvider implements DataProvider {
       let sAfter = 0;
       const sParts = new Set<string>();
       const sPartsAfter = new Set<string>();
+      // Per-subject element tallies (parallel to the cohort-wide el* maps).
+      const sElBefore = new Map<string, number>();
+      const sElAfter = new Map<string, number>();
+      const sElLabel = new Map<string, string>();
       for (const r of a.responses) {
         const major = itemMajor.get(r.i) ?? null;
         sBefore += 1;
@@ -1392,21 +1396,32 @@ export class InMemoryDataProvider implements DataProvider {
         if (major) {
           elBefore.set(major, (elBefore.get(major) ?? 0) + 1);
           if (!elLabel.has(major)) elLabel.set(major, labels.get(major)?.label ?? major);
+          sElBefore.set(major, (sElBefore.get(major) ?? 0) + 1);
+          if (!sElLabel.has(major)) sElLabel.set(major, labels.get(major)?.label ?? major);
         }
         if (dropRows.has(r.p) || dropCols.has(r.i)) continue;
         sAfter += 1;
         sPartsAfter.add(r.p);
-        if (major) elAfter.set(major, (elAfter.get(major) ?? 0) + 1);
+        if (major) {
+          elAfter.set(major, (elAfter.get(major) ?? 0) + 1);
+          sElAfter.set(major, (sElAfter.get(major) ?? 0) + 1);
+        }
       }
       recBefore += sBefore;
       recAfter += sAfter;
       const ref = refs.find((x) => x.id === a.id)!;
+      const subjectByElement: CleaningImpactElement[] = [...sElBefore.keys()].map((major) => ({
+        major,
+        label: sElLabel.get(major) ?? major,
+        records: { before: sElBefore.get(major) ?? 0, after: sElAfter.get(major) ?? 0 },
+      }));
       bySubject.push({
         assessmentId: a.id,
         shortName: ref.shortName,
         name: a.name,
         records: { before: sBefore, after: sAfter },
         participants: { before: sParts.size, after: sPartsAfter.size },
+        byElement: subjectByElement,
       });
     }
 
@@ -1458,40 +1473,56 @@ export class InMemoryDataProvider implements DataProvider {
       };
     };
 
+    // Order: "Finished OK" first, then technical statuses alphabetically.
+    const orderStatus = (keys: string[]) =>
+      keys.sort((x, y) => {
+        const nx = isTechnicalIncidentStatus(x) ? 1 : 0;
+        const ny = isTechnicalIncidentStatus(y) ? 1 : 0;
+        return nx - ny || x.localeCompare(y);
+      });
+
+    // Cohort-wide completion counts by ResultStatus, accumulated as we walk each
+    // subject so the Overall (global) and per-subject views stay in lock-step.
+    const before = new Map<string, number>();
+    const after = new Map<string, number>();
+
     const subjects: CleaningSummarySubject[] = exams.map((a) => {
       const cleanRowSet = this.cleanRows.get(`${cycleId}:${a.id}`) ?? new Set<string>();
       const cleanColSet = [...(this.cleanCols.get(`${cycleId}:${a.id}`) ?? [])];
       const afterDrop = new Set([...cohortExcluded, ...cleanRowSet]);
       const ref = refs.find((x) => x.id === a.id)!;
+
+      // This subject's completion counts by ResultStatus (before → after).
+      const status = new Map<string, string>();
+      for (const ti of a.technicalIncidents ?? []) status.set(ti.p, ti.status);
+      const sBefore = new Map<string, number>();
+      const sAfter = new Map<string, number>();
+      for (const p of this.participantsIn(a)) {
+        const s = status.get(p) ?? "Finished OK";
+        sBefore.set(s, (sBefore.get(s) ?? 0) + 1);
+        before.set(s, (before.get(s) ?? 0) + 1);
+        if (!afterDrop.has(p)) {
+          sAfter.set(s, (sAfter.get(s) ?? 0) + 1);
+          after.set(s, (after.get(s) ?? 0) + 1);
+        }
+      }
+      const subjectStatusCounts: CleaningSummaryStatusRow[] = orderStatus([
+        ...new Set([...sBefore.keys(), ...sAfter.keys()]),
+      ]).map((s) => ({ status: s, before: sBefore.get(s) ?? 0, after: sAfter.get(s) ?? 0 }));
+
       return {
         assessmentId: a.id,
         shortName: ref.shortName,
         name: a.name,
         before: distOf(a, new Set(), []),
         after: distOf(a, afterDrop, cleanColSet),
+        statusCounts: subjectStatusCounts,
       };
     });
 
-    // Completion counts by ResultStatus (sittings across the scored exams).
-    const before = new Map<string, number>();
-    const after = new Map<string, number>();
-    for (const a of exams) {
-      const status = new Map<string, string>();
-      for (const ti of a.technicalIncidents ?? []) status.set(ti.p, ti.status);
-      const afterDrop = new Set([...cohortExcluded, ...(this.cleanRows.get(`${cycleId}:${a.id}`) ?? [])]);
-      for (const p of this.participantsIn(a)) {
-        const s = status.get(p) ?? "Finished OK";
-        before.set(s, (before.get(s) ?? 0) + 1);
-        if (!afterDrop.has(p)) after.set(s, (after.get(s) ?? 0) + 1);
-      }
-    }
-    // Order: "Finished OK" first, then technical statuses alphabetically.
-    const statusKeys = [...new Set([...before.keys(), ...after.keys()])].sort((x, y) => {
-      const nx = isTechnicalIncidentStatus(x) ? 1 : 0;
-      const ny = isTechnicalIncidentStatus(y) ? 1 : 0;
-      return nx - ny || x.localeCompare(y);
-    });
-    const statusCounts: CleaningSummaryStatusRow[] = statusKeys.map((status) => ({
+    const statusCounts: CleaningSummaryStatusRow[] = orderStatus([
+      ...new Set([...before.keys(), ...after.keys()]),
+    ]).map((status) => ({
       status,
       before: before.get(status) ?? 0,
       after: after.get(status) ?? 0,
@@ -1502,7 +1533,7 @@ export class InMemoryDataProvider implements DataProvider {
       subjects,
       statusCounts,
       note:
-        "Summary statistics for the five scored exams only (survey instruments are excluded so they can’t skew cohort averages). Percentages use the scoring engine’s scored denominator (max-0 stimulus items excluded), shown before vs after the current cleaning. Labelled “Summary” to avoid confusion with the year-level Overall page.",
+        "Summary statistics for the five scored exams only (survey instruments are excluded so they can’t skew cohort averages). Percentages use the scoring engine’s scored denominator (max-0 stimulus items excluded), shown before vs after the current cleaning.",
     };
   }
 

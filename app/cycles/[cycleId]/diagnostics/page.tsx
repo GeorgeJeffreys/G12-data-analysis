@@ -17,10 +17,10 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
-import { Badge, Button } from "@/components/ui/primitives";
+import { Button } from "@/components/ui/primitives";
 import { ExportButtons } from "@/components/ui/ExportButtons";
 import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
-import { Icon, Mark } from "@/components/ui/icons";
+import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { ReliabilityPanel } from "@/components/ui/reliability";
 import { CorrMeter, DiagStatusBadge, Hc, HelpNote, SpeededRow } from "@/components/ui/diagnostics-parts";
@@ -83,11 +83,10 @@ export default function AssessmentHealthPage({ params }: { params: { cycleId: st
         <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
           <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
             <div className="hf-h1">Assessment Health</div>
-            <Badge tone="neutral"><Mark kind="warn" size={11} />Review only · not a grading step</Badge>
           </div>
           <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>
             A whole-assessment health check — was the paper timed right, and is it internally consistent — before results
-            are confirmed. Informational only: nothing here changes a student’s mark or grade. Demand-level and item
+            are confirmed. Demand-level and item
             breakdowns live on the <Link href={`/cycles/${cycleId}/diagnostics-hub`} style={{ color: H.pink, fontWeight: 600 }}>Diagnostics</Link> tab.
           </div>
         </div>
@@ -172,13 +171,6 @@ export default function AssessmentHealthPage({ params }: { params: { cycleId: st
                   </tr>
                 </tbody>
               </table>
-            </div>
-            <div style={{ display: "flex", padding: "12px 18px", gap: 9, alignItems: "center", background: H.canvas, borderTop: `1px solid ${H.line}` }}>
-              <Mark kind="warn" size={13} />
-              <span className="hf-sub" style={{ fontSize: 11.5 }}>
-                A stronger negative correlation means slower responses tended to score lower — usually a sign the paper
-                was demanding, not a data fault. Informational only; nothing here changes a grade.
-              </span>
             </div>
           </div>
 

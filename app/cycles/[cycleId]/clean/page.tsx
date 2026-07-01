@@ -20,8 +20,9 @@
  * reversible decision. The question-level cleaned stats table now lives in Question
  * Review (03a) and is no longer shown here.
  */
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
@@ -36,28 +37,46 @@ import type {
   RawDataModel,
   CleaningImpactModel,
   CleaningImpactStat,
+  CleaningImpactSubject,
   CleaningSummaryModel,
+  CleaningSummarySubject,
 } from "@/lib/data/types";
 
 /** A queued cleaning action, so the last one can be undone. */
 type CleanAction = { kind: "remove" | "restore"; ids: string[] };
 
+/** Sentinel tab id for the cross-subject "Overall" (global) view. */
+const OVERALL = "__overall__";
+
+/** useSearchParams() (for the `?tab=` deep-link) needs a Suspense boundary in the
+ *  App Router — wrap the client page so `next build` can statically render it. */
 export default function CleanPage({ params }: { params: { cycleId: string } }) {
+  return (
+    <Suspense fallback={null}>
+      <CleanPageInner params={params} />
+    </Suspense>
+  );
+}
+
+function CleanPageInner({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const provider = useProvider();
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const first = useProviderData((p) => p.getCycle(cycleId)?.assessments[0]?.id, [cycleId]);
-  const [scope, setScope] = useState<string | undefined>(undefined);
-  const assessmentId = scope ?? first ?? "";
+  // The selected tab: "Overall" (global view) or a subject id. Overall is first,
+  // but a `?tab=<assessmentId>` deep-link opens straight on that subject.
+  const searchParams = useSearchParams();
+  const [scope, setScope] = useState<string>(searchParams?.get("tab") || OVERALL);
+  const isOverall = scope === OVERALL;
+  // On the Overall tab there is no per-subject model; we still resolve the first
+  // assessment id so the shell renders (its per-row model is simply unused there).
+  const assessmentId = isOverall ? (first ?? "") : scope;
   const model = useProviderData((p) => (assessmentId ? p.getDataCleaning(cycleId, assessmentId) : null), [cycleId, assessmentId]);
   const raw = useProviderData((p) => (assessmentId ? p.getRawData(cycleId, assessmentId) : null), [cycleId, assessmentId]);
-  // Live, cohort-wide cleaning-impact figures for the pinned top panel + Summary.
+  // Live cleaning-impact figures — cohort-wide (Overall) plus per-subject slices.
   const impact = useProviderData((p) => p.getCleaningImpact(cycleId), [cycleId]);
   const summary = useProviderData((p) => p.getCleaningSummary(cycleId), [cycleId]);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
-
-  // Which sub-tab: the cleaning surface, or the fuller summary statistics.
-  const [subTab, setSubTab] = useState<"clean" | "summary">("clean");
 
   // Local, session-scoped selection + undo stack (the exclusion state itself lives
   // in the provider and persists; the stack only lets us reverse the last action).
@@ -151,14 +170,15 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
         </Link>
       }
       subjectTabs={
-        subTab === "clean" ? (
-          <AssessmentTabs
-            activeId={assessmentId}
-            tabs={model.assessments.map((a) => ({ id: a.id, label: a.shortName, rtl: a.rtl }))}
-            onSelect={(id) => { setScope(id); clearSel(); }}
-            right={<ZoomControl zoom={zoom} onZoom={setZoom} />}
-          />
-        ) : undefined
+        <AssessmentTabs
+          activeId={scope}
+          tabs={[
+            { id: OVERALL, label: "Overall" },
+            ...model.assessments.map((a) => ({ id: a.id, label: a.shortName, rtl: a.rtl })),
+          ]}
+          onSelect={(id) => { setScope(id); clearSel(); }}
+          right={isOverall ? undefined : <ZoomControl zoom={zoom} onZoom={setZoom} />}
+        />
       }
       intro={
         <StepIntro>
@@ -169,39 +189,26 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
       }
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        {/* Pinned, live cleaning-impact panel — always visible while cleaning. */}
-        {impact && <ImpactPanel model={impact} />}
-
-        {/* Sub-tab switcher: Clean surface vs fuller Summary statistics. */}
-        <div style={{ display: "flex", gap: 4, padding: "10px 24px 0", alignItems: "center" }}>
-          {([["clean", "Clean"], ["summary", "Summary"]] as const).map(([key, label]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setSubTab(key)}
-              aria-pressed={subTab === key}
-              style={{
-                padding: "7px 16px",
-                borderRadius: "9px 9px 0 0",
-                border: `1px solid ${subTab === key ? H.line2 : "transparent"}`,
-                borderBottom: "none",
-                cursor: "pointer",
-                font: "inherit",
-                fontSize: 13,
-                fontWeight: subTab === key ? 700 : 500,
-                color: subTab === key ? H.pink : H.ink2,
-                background: subTab === key ? H.paper : "transparent",
-              }}
-            >
-              {label}
-            </button>
-          ))}
-          <div style={{ flex: 1, borderBottom: `1px solid ${H.line2}` }} />
-        </div>
-
-        {subTab === "clean" ? (
-          <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
-            <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "16px 24px", gap: 12, minWidth: 0 }}>
+        {isOverall ? (
+          /* ── Overall tab: the cross-subject, global view ──────────────────── */
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            {impact && <ImpactPanel model={impact} />}
+            <div style={{ flex: 1, padding: "16px 24px", overflow: "auto", minHeight: 0 }}>
+              {summary && <SummaryTab model={summary} />}
+            </div>
+          </div>
+        ) : (
+          /* ── Subject tab: this subject's impact + stats + cleaning surface ── */
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+            {impact && (
+              <SubjectImpactPanel
+                subject={impact.bySubject.find((s) => s.assessmentId === assessmentId)}
+                summary={summary?.subjects.find((s) => s.assessmentId === assessmentId)}
+                fallbackName={model.assessment.shortName}
+              />
+            )}
+            <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
+              <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "16px 24px", gap: 12, minWidth: 0 }}>
               {raw && <RawOverview model={raw} />}
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div className="hf-h2" style={{ fontSize: 16 }}>Clean data — {model.assessment.shortName}</div>
@@ -277,10 +284,7 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
                 </span>
               </div>
             </aside>
-          </div>
-        ) : (
-          <div style={{ flex: 1, padding: "16px 24px", overflow: "auto", minHeight: 0 }}>
-            {summary && <SummaryTab model={summary} />}
+            </div>
           </div>
         )}
       </div>
@@ -288,19 +292,137 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
   );
 }
 
-/** before → after with the delta highlighted. */
-function StatPair({ label, stat, big }: { label: string; stat: CleaningImpactStat; big?: boolean }) {
+/** before → after with the delta highlighted. `suffix` (e.g. "%") is appended to
+ *  each figure; when set, the delta line is suppressed (a %-point delta is noise). */
+function StatPair({ label, stat, big, suffix }: { label: string; stat: CleaningImpactStat; big?: boolean; suffix?: string }) {
   const delta = stat.after - stat.before;
   const changed = delta !== 0;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
       <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 600, color: H.ink3 }}>{stat.before.toLocaleString()}</span>
+        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 600, color: H.ink3 }}>{stat.before.toLocaleString()}{suffix}</span>
         <Icon name="arrow" size={big ? 15 : 12} color={H.ink3} />
-        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 700, color: changed ? H.pink : H.ink }}>{stat.after.toLocaleString()}</span>
+        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 700, color: changed ? H.pink : H.ink }}>{stat.after.toLocaleString()}{suffix}</span>
       </div>
-      {changed && <span className="hf-mono" style={{ fontSize: 10.5, fontWeight: 700, color: H.pink }}>{delta > 0 ? "+" : ""}{delta.toLocaleString()}</span>}
+      {changed && !suffix && <span className="hf-mono" style={{ fontSize: 10.5, fontWeight: 700, color: H.pink }}>{delta > 0 ? "+" : ""}{delta.toLocaleString()}</span>}
+    </div>
+  );
+}
+
+/**
+ * The subject-scoped counterpart to ImpactPanel, shown at the top of each subject
+ * tab. Every figure is THAT subject's own: its records + participants before →
+ * after, its records excluded, and (expandable) its per-major-element breakdown,
+ * alongside its own summary stats — mean / median / std % and completion by
+ * ResultStatus (before → after). No global figures appear here.
+ */
+function SubjectImpactPanel({
+  subject,
+  summary,
+  fallbackName,
+}: {
+  subject: CleaningImpactSubject | undefined;
+  summary: CleaningSummarySubject | undefined;
+  fallbackName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  if (!subject) {
+    return (
+      <div style={{ borderBottom: `1px solid ${H.line2}`, background: H.canvas, padding: "12px 24px" }}>
+        <span className="hf-h2" style={{ fontSize: 14 }}>Cleaning impact — {fallbackName}</span>
+        <div className="hf-sub" style={{ fontSize: 11 }}>No scored records for this subject.</div>
+      </div>
+    );
+  }
+  const excludedRecords = subject.records.before - subject.records.after;
+  const excludedParticipants = subject.participants.before - subject.participants.after;
+  const meanStat = summary && { before: summary.before.mean, after: summary.after.mean };
+  const medianStat = summary && { before: summary.before.median, after: summary.after.median };
+  const sdStat = summary && { before: summary.before.sd, after: summary.after.sd };
+  const hasDetail = subject.byElement.length > 0 || (summary?.statusCounts.length ?? 0) > 0;
+  return (
+    <div style={{ borderBottom: `1px solid ${H.line2}`, background: H.canvas, padding: "12px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", flexDirection: "column", paddingRight: 4 }}>
+          <span className="hf-h2" style={{ fontSize: 14 }}>Cleaning impact — {subject.shortName}</span>
+          <span className="hf-sub" style={{ fontSize: 10.5 }}>this subject · before → after · live</span>
+        </div>
+        <StatPair label="Records" stat={subject.records} big />
+        <StatPair label="Participants" stat={subject.participants} big />
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
+          <span className="hf-lbl" style={{ fontSize: 9.5 }}>Records excluded</span>
+          <span className="hf-mono" style={{ fontSize: 20, fontWeight: 700, color: excludedRecords ? H.bad : H.ink }}>
+            {excludedRecords.toLocaleString()}
+          </span>
+          <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{excludedParticipants} participant{excludedParticipants === 1 ? "" : "s"}</span>
+        </div>
+        {meanStat && <StatPair label="Mean %" stat={meanStat} suffix="%" />}
+        {medianStat && <StatPair label="Median %" stat={medianStat} suffix="%" />}
+        {sdStat && <StatPair label="Std dev %" stat={sdStat} suffix="%" />}
+        <div style={{ flex: 1, minWidth: 12 }} />
+        {hasDetail && (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            aria-expanded={open}
+            className="hf-btn ghost"
+            style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
+          >
+            {open ? "Hide detail" : "By element & status"}
+            <span style={{ display: "inline-flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+              <Icon name="chev" size={12} color={H.ink3} />
+            </span>
+          </button>
+        )}
+      </div>
+
+      {open && hasDetail && (
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", paddingTop: 4 }}>
+          {subject.byElement.length > 0 && (
+            <div style={{ flex: 1, minWidth: 280 }}>
+              <span className="hf-lbl">Records per major element (before → after)</span>
+              <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
+                <tbody>
+                  {subject.byElement.map((e) => {
+                    const d = e.records.after - e.records.before;
+                    return (
+                      <tr key={e.major}>
+                        <td style={{ padding: "3px 8px 3px 0", color: H.ink, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.label}>{e.label}</td>
+                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{e.records.before.toLocaleString()}</td>
+                        <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
+                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{e.records.after.toLocaleString()}</td>
+                        <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {summary && summary.statusCounts.length > 0 && (
+            <div style={{ flex: 1, minWidth: 260 }}>
+              <span className="hf-lbl">Completion by result status (before → after)</span>
+              <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
+                <tbody>
+                  {summary.statusCounts.map((r) => {
+                    const d = r.after - r.before;
+                    return (
+                      <tr key={r.status}>
+                        <td style={{ padding: "3px 8px 3px 0", color: H.ink }}>{r.status}</td>
+                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{r.before.toLocaleString()}</td>
+                        <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
+                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{r.after.toLocaleString()}</td>
+                        <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
