@@ -16,6 +16,7 @@
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
+import { hasRole } from "@/lib/auth/roles";
 import { H } from "@/lib/ui/tokens";
 import { Button, Card, Toggle } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
@@ -24,7 +25,7 @@ import type { TestCentreSummary } from "@/lib/data/types";
 export function TestCentresEditor() {
   const provider = useProvider();
   const centres = useProviderData((p) => p.listTestCentres());
-  const editable = provider.getCurrentUser().role === "lead_admin";
+  const editable = hasRole(provider.getCurrentUser().role, "admin");
 
   const [newName, setNewName] = useState("");
   const [newCode, setNewCode] = useState("");

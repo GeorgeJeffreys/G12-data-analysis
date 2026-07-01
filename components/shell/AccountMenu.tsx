@@ -20,7 +20,13 @@ import type { Role } from "@/lib/data/types";
 const SUPABASE = process.env.NEXT_PUBLIC_DATA_PROVIDER === "supabase";
 
 function roleLabel(role: Role): string {
-  return role === "lead_admin" ? "Lead admin" : role === "reviewer" ? "Reviewer" : "Viewer";
+  return role === "lead_admin"
+    ? "Lead admin"
+    : role === "analyst"
+      ? "Data analyst"
+      : role === "reviewer"
+        ? "Reviewer"
+        : "Viewer";
 }
 
 export function AccountMenu() {

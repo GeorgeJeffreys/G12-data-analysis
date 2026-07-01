@@ -18,6 +18,8 @@ import { ingestCleanResponses } from "@/lib/server/ingest-write";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
+import { hasRole } from "@/lib/auth/roles";
+import type { MemberRole } from "@/lib/types/database";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -43,9 +45,9 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
   if (!user) return NextResponse.json({ error: "You must be signed in to upload" }, { status: 401 });
 
   const { data } = await supabase.from("memberships").select("role,cycle_id").eq("user_id", user.id);
-  const memberships = (data ?? []) as unknown as { role: string; cycle_id: string | null }[];
+  const memberships = (data ?? []) as unknown as { role: MemberRole; cycle_id: string | null }[];
   const allowed = memberships.some(
-    (m) => m.role === "lead_admin" && (m.cycle_id === null || m.cycle_id === cycleId),
+    (m) => hasRole(m.role, "admin") && (m.cycle_id === null || m.cycle_id === cycleId),
   );
   if (!allowed) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 

@@ -18,7 +18,10 @@ export type CycleStatus =
 
 export type AssessmentStatus = "pending" | "in_review" | "reviewed" | "scored";
 export type ItemStatus = "active" | "excluded";
-export type MemberRole = "lead_admin" | "reviewer" | "viewer";
+// The physical `member_role` DB enum (0001 + 0015). `analyst` (0015) is the
+// data-analyst tier; `viewer`/`reviewer` are the two sub-flavours of the
+// team-member tier. See lib/auth/roles.ts for the canonical privilege ordering.
+export type MemberRole = "lead_admin" | "analyst" | "reviewer" | "viewer";
 export type QualityRating = "Good" | "Review" | "Flag";
 export type DemandLevel = "D1" | "D2" | "D3";
 export type SchemeMethod = "judgemental" | "fixed_pct";

@@ -107,8 +107,11 @@ export interface SessionUser {
   status: SessionStatus;
   user: CurrentUser | null;
 }
+// Collapse a user's memberships to their single highest-privilege role, in
+// canonical order (admin > analyst > team-member{reviewer > viewer}).
 function pickRole(roles: Role[]): Role {
   if (roles.includes("lead_admin")) return "lead_admin";
+  if (roles.includes("analyst")) return "analyst";
   if (roles.includes("reviewer")) return "reviewer";
   return "viewer";
 }
