@@ -56,7 +56,7 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Check raw scores", body: "Review the naïve (pre-adjustment) scores produced from the cleaned data.", cta: "Go to raw scores" },
   { title: "Review item quality", body: "Assessments are validated and waiting for quality review before scoring.", cta: "Go to item review" },
   { title: "Check assessment health", body: "Check whole-assessment speededness, timing and reliability (Cronbach's alpha) before continuing — review only, never changes a grade.", cta: "Go to assessment health" },
-  { title: "Apply incident adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to incident adjustments" },
+  { title: "Apply incident adjustments", body: "Import the incident log — each incident is matched to a configured code and its capped, add-only mark change is computed for review before scoring.", cta: "Go to incident adjustments" },
   { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },
   { title: "Set cut scores", body: "Scores are confirmed — set cut scores for each subject to derive grades.", cta: "Go to cut scores" },
   { title: "Check centre judgement", body: "Compare the partner centre's expected grades against the actuals as a check on the cut scores.", cta: "Go to CGJ" },

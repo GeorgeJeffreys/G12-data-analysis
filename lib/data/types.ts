@@ -1638,6 +1638,10 @@ export interface IncidentReviewModel {
   canApply: boolean;
   /** The per-student global cap in force (null = no cap), for display. */
   perStudentCap: number | null;
+  /** What incident data is loaded — the file name and whether it is the labelled
+   *  sample (null when nothing is imported). Lets the step surface show the source
+   *  and make clear how to replace the sample with a real incident log. */
+  source: { fileName: string; sample: boolean } | null;
   students: IncidentReviewStudent[];
   /** Incident rows that matched no cohort participant — surfaced for manual attention. */
   unmatched: IncidentReviewStudent[];

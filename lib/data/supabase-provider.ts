@@ -96,7 +96,7 @@ import type {
   ReliabilityModel,
   IncidentDecision,
 } from "./types";
-import type { ResolvedIncidentRow } from "@/lib/incidents/import";
+import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/import";
 
 type DB = SupabaseBrowserClient;
 
@@ -836,8 +836,13 @@ export class SupabaseDataProvider implements DataProvider {
   // incident_applications); writes persist through the SECURITY DEFINER RPCs
   // (0016 import_incident_rows; 0017 apply/unapply, admin-only re-checked server-side).
   getIncidentReview(cycleId: string): IncidentReviewModel | null { return this.inner.getIncidentReview(cycleId); }
-  importIncidentRows(cycleId: string, rows: readonly ResolvedIncidentRow[]): void {
-    this.inner.importIncidentRows(cycleId, rows);
+  getIncidentRoster(cycleId: string): RosterParticipant[] { return this.inner.getIncidentRoster(cycleId); }
+  importIncidentRows(
+    cycleId: string,
+    rows: readonly ResolvedIncidentRow[],
+    source?: { fileName: string; sample: boolean },
+  ): void {
+    this.inner.importIncidentRows(cycleId, rows, source);
     this.bump();
     this.rpc("import_incident_rows", {
       p_cycle: cycleId,
@@ -853,6 +858,17 @@ export class SupabaseDataProvider implements DataProvider {
         errors: r.errors,
       })),
     });
+    // Persist the import source (real file vs sample) so the review surface can
+    // show it after a reload. The labelled sample is demo-only — not persisted.
+    if (source && !source.sample) {
+      this.rpc("set_incident_import_source", { p_cycle: cycleId, p_file_name: source.fileName, p_is_sample: false });
+    }
+  }
+  clearIncidentRows(cycleId: string): void {
+    this.inner.clearIncidentRows(cycleId);
+    this.bump();
+    this.rpc("clear_incident_import_source", { p_cycle: cycleId });
+    void this.rpcThenRehydrate("clear_incident_rows", { p_cycle: cycleId });
   }
   loadSampleIncidentRows(cycleId: string): void { this.inner.loadSampleIncidentRows(cycleId); this.bump(); }
   applyIncidentAdjustments(cycleId: string): void {
