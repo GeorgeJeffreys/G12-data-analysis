@@ -73,7 +73,7 @@ import type {
   IncidentReviewModel,
 } from "./types";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
-import type { ResolvedIncidentRow } from "@/lib/incidents/import";
+import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/import";
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
@@ -501,8 +501,19 @@ export interface DataProvider {
   setIncidentMapping(mapping: IncidentColumnMapping): void;
 
   // Incident Adjustments — apply engine + per-student review surface (02b).
-  /** Replace a cycle's parsed+resolved incident rows (cycle-role import action). */
-  importIncidentRows(cycleId: string, rows: readonly ResolvedIncidentRow[]): void;
+  /** The cohort roster the incident importer resolves rows against — each cohort
+   *  participant's P-A stable internal id + display name. Empty when unknown. */
+  getIncidentRoster(cycleId: string): RosterParticipant[];
+  /** Replace a cycle's parsed+resolved incident rows (cycle-role import action).
+   *  `source` records what was loaded (real file vs the labelled sample), so the
+   *  review surface can show it and explain how to replace the sample. */
+  importIncidentRows(
+    cycleId: string,
+    rows: readonly ResolvedIncidentRow[],
+    source?: { fileName: string; sample: boolean },
+  ): void;
+  /** Clear a cycle's imported incident rows (and any prior commit). Cycle role. */
+  clearIncidentRows(cycleId: string): void;
   /** Load a labelled sample incident set for the review surface (demo / no upload). */
   loadSampleIncidentRows(cycleId: string): void;
   /** The per-student review surface: base + capped adjustment + breakdown. All

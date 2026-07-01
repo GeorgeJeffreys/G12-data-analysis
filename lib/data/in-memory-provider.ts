@@ -188,7 +188,7 @@ import type {
   IncidentCodeInput,
   IncidentColumnMapping,
 } from "@/lib/incidents/types";
-import type { ResolvedIncidentRow } from "@/lib/incidents/import";
+import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/import";
 import { computeStudentAdjustments } from "@/lib/incidents/apply";
 import {
   CLEANED_DATA_COLUMNS,
@@ -421,6 +421,7 @@ export class InMemoryDataProvider implements DataProvider {
   // ledger is DERIVED from these + the config by the apply engine — never stored
   // as a merged number — so base scores are never touched (they reconcile 1:1).
   private incidentRows = new Map<string, ResolvedIncidentRow[]>();
+  private incidentSource = new Map<string, { fileName: string; sample: boolean }>();
   private incidentApplied = new Map<string, { by: string; at: string }>();
 
   // Per-subject A–E element labels (configurable in Settings). Seeded from the
@@ -4708,12 +4709,35 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   // ── Incident Adjustments — apply engine + per-student review surface (02b) ──
-  importIncidentRows(cycleId: string, rows: readonly ResolvedIncidentRow[]): void {
+  /** The cohort roster the importer resolves incident rows against — keyed on P-A's
+   *  stable internal participant id (the same id the review's base scores key on). */
+  getIncidentRoster(cycleId: string): RosterParticipant[] {
+    const comp = this.getComposition(cycleId);
+    if (!comp) return [];
+    return comp.students.map((s) => ({ internalId: s.participantId, name: s.name }));
+  }
+
+  importIncidentRows(
+    cycleId: string,
+    rows: readonly ResolvedIncidentRow[],
+    source?: { fileName: string; sample: boolean },
+  ): void {
     if (this.locked.has(cycleId)) return;
     this.incidentRows.set(cycleId, rows.map((r) => ({ ...r, errors: [...r.errors] })));
+    if (source) this.incidentSource.set(cycleId, { ...source });
     // A fresh import supersedes any prior commit — the team re-reviews before re-applying.
     this.incidentApplied.delete(cycleId);
     this.audit("upload", "Imported incident rows", `${rows.length} row${rows.length === 1 ? "" : "s"}`, cycleId);
+    this.bump();
+  }
+
+  clearIncidentRows(cycleId: string): void {
+    if (this.locked.has(cycleId)) return;
+    if (!this.incidentRows.has(cycleId) && !this.incidentSource.has(cycleId)) return;
+    this.incidentRows.delete(cycleId);
+    this.incidentSource.delete(cycleId);
+    this.incidentApplied.delete(cycleId);
+    this.audit("upload", "Cleared incident rows", "Incident log removed", cycleId);
     this.bump();
   }
 
@@ -4777,7 +4801,7 @@ export class InMemoryDataProvider implements DataProvider {
     }
     // An unmatched row (no cohort participant) — surfaced for manual attention.
     push(null, "A. Nonymous", "Fire alarm", "—", null);
-    this.importIncidentRows(cycleId, rows);
+    this.importIncidentRows(cycleId, rows, { fileName: "sample_incident_log.xlsx", sample: true });
   }
 
   getIncidentReview(cycleId: string): IncidentReviewModel | null {
@@ -4842,6 +4866,7 @@ export class InMemoryDataProvider implements DataProvider {
       appliedAt: applied?.at ?? null,
       canApply: hasRole(this.user.role, "admin"),
       perStudentCap: this.incidentConfig.perStudentCap,
+      source: this.incidentSource.get(cycleId) ?? null,
       students: matched,
       unmatched,
       counts: {
