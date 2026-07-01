@@ -20,6 +20,7 @@ import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { InlineComposition } from "@/components/ui/composition";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import type { GradeCell, GradesModel, StudentComposition, SubjectComposition, PerfReportStudent, PerfReportSubject, PerfElementResult, DemandScore } from "@/lib/data/types";
 
@@ -45,9 +46,17 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const [adjust, setAdjust] = useState<{ participantId: string; assessmentId: string } | null>(null);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
+  const intro = (
+    <StepIntro>
+      This step applies the agreed cut scores to each student&rsquo;s marks to produce a grade per subject. It is a
+      faithful application of decisions already made and signed off — the grade is the consequence of the score and
+      the cut point, nothing more.
+    </StepIntro>
+  );
+
   if (!model) {
     return (
-      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={9}>
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Grades & sign-off" stageIndex={9} intro={intro}>
         <div style={{ padding: 32 }} className="hf-sub">No grades for this sitting.</div>
       </CycleShell>
     );
@@ -134,6 +143,7 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
           ]}
         />
       }
+      intro={intro}
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "16px 32px 18px", gap: 12, flex: 1, minHeight: 0 }}>
         {/* slim header strip — title + compact award distribution + level legend + zoom,

@@ -11,6 +11,7 @@
  *   breadcrumb (G12++ › Sittings › <sitting> › <page>)
  *   cycle tab bar   — Critical Path · Audit log · Diagnostics
  *   pipeline stepper — critical-path pages only, with the top-right primary action
+ *   step intro       — the step's "why this matters" note (critical-path pages)
  *   subject chip row — critical-path per-subject pages only
  *   alerts area      — one predictable place per page for every notice
  *   page body
@@ -39,6 +40,7 @@ export function CycleShell({
   actions,
   subjectTabs,
   alerts,
+  intro,
   children,
 }: {
   cycleId: string;
@@ -55,6 +57,12 @@ export function CycleShell({
   subjectTabs?: ReactNode;
   /** One consolidated alerts area, rendered directly under the header/stepper. */
   alerts?: ReactNode;
+  /**
+   * The step's "why this step matters" intro block (a `StepIntro`). Rendered in a
+   * fixed slot — under the alerts, above the subject chips and body — so the note
+   * lands in the same place on every Critical Path step.
+   */
+  intro?: ReactNode;
   children: ReactNode;
 }) {
   const isPipeline = area === "pipeline";
@@ -78,6 +86,7 @@ export function CycleShell({
         )
       }
     >
+      {intro}
       {subjectTabs}
       {alerts}
       {children}

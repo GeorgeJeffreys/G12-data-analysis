@@ -30,6 +30,7 @@ import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { downloadWorkbook, fileStem } from "@/lib/ui/export";
 import type {
   RawDataModel,
@@ -158,6 +159,13 @@ export default function CleanPage({ params }: { params: { cycleId: string } }) {
             right={<ZoomControl zoom={zoom} onZoom={setZoom} />}
           />
         ) : undefined
+      }
+      intro={
+        <StepIntro>
+          This step defines who and what counts. We remove staff, test and invalid results and correct
+          data-quality issues, because every score, cut point, grade and award downstream is only as trustworthy
+          as the cohort and data it is built on. Removals here are reversible and logged.
+        </StepIntro>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>

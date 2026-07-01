@@ -20,6 +20,7 @@ import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 import { MiniGradeBars } from "@/components/ui/charts";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { AWARD_SHORT } from "@/lib/data/grading";
 import type { OverallGradeCell } from "@/lib/data/types";
 
@@ -143,6 +144,11 @@ export default function YearOverallPage({ params }: { params: { yearId: string }
 
   return (
     <Shell active="Cycles" crumb={crumb}>
+      <StepIntro>
+        This step combines each student&rsquo;s subject grades into their final award and certificate outcome,
+        taking the best of their two sittings where applicable. This is the surface real certificates are issued
+        from, so it reflects only reviewed, signed-off results.
+      </StepIntro>
       <div style={{ display: "flex", flexDirection: "column", padding: "20px 32px 18px", gap: 14, flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div className="hf-h1" style={{ fontSize: 19 }}>{year.name} · Overall</div>
