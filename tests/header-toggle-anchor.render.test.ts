@@ -24,11 +24,14 @@ vi.mock("next/navigation", () => ({
   usePathname: () => "/cycles/c1",
   useSearchParams: () => new URLSearchParams(),
 }));
+// Minimal provider stub: the shell (via NavRail) reads the current user to decide
+// whether the admin-only Developer nav item shows, so both hooks resolve it.
+const providerStub = {
+  getCurrentUser: () => ({ name: "Test Lead", role: "lead_admin", email: "lead@example.com" }),
+};
 vi.mock("@/lib/data/context", () => ({
-  useProvider: () => ({
-    getCurrentUser: () => ({ name: "Test Lead", role: "lead_admin", email: "lead@example.com" }),
-  }),
-  useProviderData: <T,>(selector: (p: unknown) => T) => selector({}),
+  useProvider: () => providerStub,
+  useProviderData: <T,>(selector: (p: unknown) => T) => selector(providerStub),
 }));
 
 // The toggle is identical on every pipeline page; only the page actions differ.
