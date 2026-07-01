@@ -12,6 +12,7 @@
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
+import { hasRole } from "@/lib/auth/roles";
 import { H } from "@/lib/ui/tokens";
 import { Button, Card } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
@@ -27,7 +28,7 @@ export function QualityThresholdsEditor() {
   const provider = useProvider();
   const config = useProviderData((p) => p.getScoringConfig());
   const live = config.quality;
-  const editable = provider.getCurrentUser().role === "lead_admin";
+  const editable = hasRole(provider.getCurrentUser().role, "admin");
 
   const [draft, setDraft] = useState<QualityThresholds>(() => clone(live));
   const [saved, setSaved] = useState(false);

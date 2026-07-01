@@ -10,6 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
+import { hasRole } from "@/lib/auth/roles";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Chip } from "@/components/ui/primitives";
@@ -121,7 +122,7 @@ export default function YearsDashboard() {
   const provider = useProvider();
   const years = useProviderData((p) => p.listYears());
   const centres = useProviderData((p) => p.listTestCentres());
-  const isAdmin = provider.getCurrentUser().role === "lead_admin";
+  const isAdmin = hasRole(provider.getCurrentUser().role, "admin");
   const [filter, setFilter] = useState<Filter>("all");
 
   const rows = years.filter((y) => {

@@ -13,7 +13,10 @@ import type { SeedAnswerOption, SeedPreview } from "./seed-types";
 /** A question's multiple-choice answer option, surfaced to the review UI. */
 export type AnswerOption = SeedAnswerOption;
 
-export type Role = "lead_admin" | "reviewer" | "viewer";
+// A signed-in user's stored privilege role (the `member_role` DB enum). The
+// canonical hierarchy and the hasRole / canOverride primitives that reason over
+// these values live in lib/auth/roles.ts — gate on those, not on raw equality.
+export type Role = "lead_admin" | "analyst" | "reviewer" | "viewer";
 
 export interface CurrentUser {
   id: string;

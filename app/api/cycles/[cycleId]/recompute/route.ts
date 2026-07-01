@@ -11,6 +11,8 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
+import { hasRole } from "@/lib/auth/roles";
+import type { MemberRole } from "@/lib/types/database";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -24,9 +26,9 @@ export async function POST(_req: Request, { params }: { params: { cycleId: strin
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
   const { data } = await supabase.from("memberships").select("role,cycle_id").eq("user_id", user.id);
-  const memberships = (data ?? []) as unknown as { role: string; cycle_id: string | null }[];
+  const memberships = (data ?? []) as unknown as { role: MemberRole; cycle_id: string | null }[];
   const allowed = memberships.some(
-    (m) => m.role === "lead_admin" && (m.cycle_id === null || m.cycle_id === cycleId),
+    (m) => hasRole(m.role, "admin") && (m.cycle_id === null || m.cycle_id === cycleId),
   );
   if (!allowed) return NextResponse.json({ error: "forbidden" }, { status: 403 });
 

@@ -32,6 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
+import { hasRole } from "@/lib/auth/roles";
 import { rollupOverall, overallAwardsReconcile } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
@@ -1920,7 +1921,7 @@ export class InMemoryDataProvider implements DataProvider {
       starMap: this.grading.starMap,
       performanceLevels: perfLevels,
       locked: this.locked.has(cycleId),
-      canLock: this.user.role === "lead_admin" && !this.locked.has(cycleId),
+      canLock: hasRole(this.user.role, "admin") && !this.locked.has(cycleId),
     };
   }
 
@@ -3408,7 +3409,7 @@ export class InMemoryDataProvider implements DataProvider {
         capped: vals.filter((v) => v === "capped").length,
         overridden: vals.filter((v) => v === "override").length,
       },
-      canOverride: this.user.role === "lead_admin",
+      canOverride: hasRole(this.user.role, "admin"),
       attemptedNote:
         "Eligibility uses D3 items answered CORRECTLY against the MAJORITY of D3 items AVAILABLE on each exam (dynamic per exam; recomputed after exclusions) — not attempts, and not a fixed count.",
     };
@@ -3428,7 +3429,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   overrideDistinctionCap(cycleId: string, studentId: string, reason: string): void {
-    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
     const clean = reason.trim();
     if (!clean) return;
     const m = this.distinctionOverrides.get(cycleId) ?? new Map<string, { reason: string; by: string }>();
@@ -3440,7 +3441,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   undoDistinctionOverride(cycleId: string, studentId: string): void {
-    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
     const m = this.distinctionOverrides.get(cycleId);
     if (m?.delete(studentId)) {
       const label = this.seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
@@ -3528,7 +3529,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     if (patch.distinctionThreshold != null && Number.isFinite(patch.distinctionThreshold)) {
       this.safeguard.distinctionThreshold = Math.max(1, Math.round(patch.distinctionThreshold));
     }
@@ -3725,7 +3726,7 @@ export class InMemoryDataProvider implements DataProvider {
     exclude: boolean,
     reason: string,
   ): void {
-    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
     const clean = (reason ?? "").trim();
     if (!clean) return; // an override requires a reason
     const key = `${cycleId}:${assessmentId}:${itemId}`;
@@ -3762,7 +3763,7 @@ export class InMemoryDataProvider implements DataProvider {
     newMark: number | null,
     reason: string,
   ): void {
-    if (this.user.role !== "lead_admin" || this.locked.has(cycleId)) return;
+    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
     const clean = (reason ?? "").trim();
     if (!clean) return;
     const list = this.manualAdjustmentsByCycle.get(cycleId) ?? [];
@@ -4024,7 +4025,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setGradingDefaults(patch: Partial<GradingConfig>): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     // When the level/award arrays are replaced, replace the star map wholesale
     // (rather than merging) so renamed/removed levels don't leave stale stars.
     const starMap = patch.starMap
@@ -4051,7 +4052,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setQualityThresholds(patch: Partial<QualityThresholds>): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     this.quality = {
       pValue: { ...this.quality.pValue, ...(patch.pValue ?? {}) },
       itemTotal: { ...this.quality.itemTotal, ...(patch.itemTotal ?? {}) },
@@ -4150,14 +4151,14 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   lockCycle(cycleId: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     this.locked.add(cycleId);
     const n = this.seed.liveCycle.participants.length;
     this.audit("lock", "Locked grades", `${n} students signed off across ${this.seed.liveCycle.assessments.length} assessments`, cycleId);
     this.bump();
   }
   unlockCycle(cycleId: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     this.locked.delete(cycleId);
     this.audit("reopen", "Re-opened cycle", "Cycle unlocked for further review", cycleId);
     this.bump();
@@ -4184,7 +4185,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   inviteMember(email: string, roleId: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const clean = email.trim();
     if (!clean || this.members.some((m) => m.email.toLowerCase() === clean.toLowerCase())) return;
     const name = clean
@@ -4207,7 +4208,7 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
   setMemberRole(memberId: string, roleId: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const m = this.members.find((x) => x.id === memberId);
     const role = this.roles.find((r) => r.id === roleId);
     if (!m || !role) return;
@@ -4216,7 +4217,7 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
   removeMember(memberId: string): void {
-    if (this.user.role !== "lead_admin" || memberId === this.user.id) return;
+    if (!hasRole(this.user.role, "admin") || memberId === this.user.id) return;
     this.members = this.members.filter((m) => m.id !== memberId);
     this.bump();
   }
@@ -4228,7 +4229,7 @@ export class InMemoryDataProvider implements DataProvider {
     }
   }
   createRole(name: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const clean = name.trim();
     if (!clean) return;
     const id = `role-${Date.now()}`;
@@ -4238,7 +4239,7 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
   renameRole(roleId: string, name: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const r = this.roles.find((x) => x.id === roleId);
     const clean = name.trim();
     if (!r || !clean) return;
@@ -4247,13 +4248,13 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
   setCapability(roleId: string, capabilityId: string, granted: boolean): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const row = this.matrix[roleId] ?? (this.matrix[roleId] = {});
     row[capabilityId] = granted;
     this.bump();
   }
   deleteRole(roleId: string): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const role = this.roles.find((r) => r.id === roleId);
     // The Lead archetype is undeletable, and a role still assigned to members
     // can't be removed (reassign them first).
@@ -4293,7 +4294,7 @@ export class InMemoryDataProvider implements DataProvider {
    * full grade recompute on the next read (marginalInfo runs inside getGrades).
    */
   setBorderlineConfig(patch: Partial<BorderlineConfig>): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     if (patch.bandPct == null || !Number.isFinite(patch.bandPct)) return;
     this.borderline = { bandPct: clampBorderlineBand(patch.bandPct) };
     this.audit("config", "Updated borderline flagging band", `±${this.borderline.bandPct}% around each grade boundary`, null);
@@ -4304,7 +4305,7 @@ export class InMemoryDataProvider implements DataProvider {
     return JSON.parse(JSON.stringify(this.elementLabels));
   }
   setElementLabels(config: ElementLabelsConfig): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     // Server-side parity: reject an invalid set (empty labels, duplicate letters).
     if (validateElementLabels(config)) return;
     this.elementLabels = JSON.parse(JSON.stringify(config));
@@ -4399,7 +4400,7 @@ export class InMemoryDataProvider implements DataProvider {
     decisions.sort((x, y) => (y.decidedAt ?? "").localeCompare(x.decidedAt ?? ""));
     return {
       cycleId,
-      canOverride: this.user.role === "lead_admin" && !this.locked.has(cycleId),
+      canOverride: hasRole(this.user.role, "admin") && !this.locked.has(cycleId),
       decisions,
       counts: { decisions: decisions.length, overridden: decisions.filter((d) => d.override).length },
     };
@@ -4816,7 +4817,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   createTestCentre(input: { name: string; code: string }): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const name = input.name.trim();
     const code = input.code.trim();
     if (!name || !code) return;
@@ -4828,7 +4829,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   updateTestCentre(id: string, patch: { name?: string; code?: string; active?: boolean }): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const c = this.testCentres.find((x) => x.id === id);
     if (!c) return;
     if (patch.name !== undefined && patch.name.trim()) c.name = patch.name.trim();
@@ -4839,7 +4840,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setTestCentreActive(id: string, active: boolean): void {
-    if (this.user.role !== "lead_admin") return;
+    if (!hasRole(this.user.role, "admin")) return;
     const c = this.testCentres.find((x) => x.id === id);
     if (!c) return;
     c.active = active;
@@ -4857,7 +4858,7 @@ export class InMemoryDataProvider implements DataProvider {
    * re-run. `yearId` is the derived year id from `listYears()`.
    */
   moveExamYearToCentre(yearId: string, testCentreId: string): Promise<void> {
-    if (this.user.role !== "lead_admin") return Promise.resolve();
+    if (!hasRole(this.user.role, "admin")) return Promise.resolve();
     const years = this.buildYears();
     const year = years.find((y) => y.id === yearId);
     if (!year) return Promise.reject(new Error("Exam year not found."));
