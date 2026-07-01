@@ -440,8 +440,8 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     name: c.name,
     testCentreId: centreOfCycle(c),
     yearId: c.year_id ?? undefined,
-    stageIndex: 7,
-    stepsDone: 8,
+    stageIndex: 6,
+    stepsDone: 7,
     participants: 0,
     assessments: 0,
     lastActivity: new Date(c.updated_at).toLocaleDateString(),
@@ -552,20 +552,21 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
 }
 
 function stageIndexFromStatus(status: string): number {
-  // 11-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
-  // Diagnostics(4) Essay marks(5) Technical adjustments(6) Score(7)
-  // Cut scores(8) CGJ(9) Grades(10). CGJ (centre grade judgement) is an optional
-  // comparison step with no status of its own; a graded sitting resolves to
-  // Grades, the final per-sitting step. Document generation lives at the
-  // cycle/overall level, not on a sitting.
+  // 10-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
+  // Diagnostics(4) Technical adjustments(5) Score(6) Cut scores(7) CGJ(8)
+  // Grades(9). Essay marks are uploaded on Upload (step 1) and fold into the
+  // scored totals automatically — not a standalone stage. CGJ (centre grade
+  // judgement) is an optional comparison step with no status of its own; a graded
+  // sitting resolves to Grades, the final per-sitting step. Document generation
+  // lives at the cycle/overall level, not on a sitting.
   switch (status) {
     case "draft":
     case "ingested": return 0;
     case "validated": return 1; // Clean
     case "in_review": return 3; // Question review
-    case "scored": return 7; // Score (computed post-adjustment)
-    case "graded": return 10; // Grades
-    case "locked": return 10; // Grades (signed off) — terminal per-sitting step
+    case "scored": return 6; // Score (computed post-adjustment)
+    case "graded": return 9; // Grades
+    case "locked": return 9; // Grades (signed off) — terminal per-sitting step
     default: return 1;
   }
 }

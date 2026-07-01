@@ -39,18 +39,21 @@ function seedAtStage(stageIndex: number): Seed {
 }
 
 describe("stageRoute / doNextForStage", () => {
-  it("routes each stage index to its screen (11-stage pipeline, ending at Grades)", () => {
+  it("routes each stage index to its screen (10-stage pipeline, ending at Grades)", () => {
     expect(stageRoute("c", 0)).toBe("/cycles/c/import"); // Upload
     expect(stageRoute("c", 1)).toBe("/cycles/c/clean"); // Clean (raw data folded in)
     expect(stageRoute("c", 2)).toBe("/cycles/c/raw-scores"); // Raw scores
     expect(stageRoute("c", 3)).toBe("/cycles/c/review"); // Question review
     expect(stageRoute("c", 4)).toBe("/cycles/c/diagnostics"); // Diagnostics (now a step)
-    expect(stageRoute("c", 5)).toBe("/cycles/c/essays"); // Essay marks
-    expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments"); // Technical adjustments
-    expect(stageRoute("c", 7)).toBe("/cycles/c/score"); // Score
-    expect(stageRoute("c", 8)).toBe("/cycles/c/boundaries"); // Cut scores
-    expect(stageRoute("c", 9)).toBe("/cycles/c/cgj"); // CGJ (centre grade judgement)
-    expect(stageRoute("c", 10)).toBe("/cycles/c/grades"); // Grades (final per-sitting step)
+    expect(stageRoute("c", 5)).toBe("/cycles/c/adjustments"); // Technical adjustments
+    expect(stageRoute("c", 6)).toBe("/cycles/c/score"); // Score
+    expect(stageRoute("c", 7)).toBe("/cycles/c/boundaries"); // Cut scores
+    expect(stageRoute("c", 8)).toBe("/cycles/c/cgj"); // CGJ (centre grade judgement)
+    expect(stageRoute("c", 9)).toBe("/cycles/c/grades"); // Grades (final per-sitting step)
+  });
+
+  it("essay marks are uploaded on Upload, not a standalone step — no /essays route", () => {
+    for (let i = 0; i <= 10; i++) expect(stageRoute("c", i)).not.toContain("/essays");
   });
 
   it("document generation is NOT a per-sitting pipeline step", () => {

@@ -3,9 +3,11 @@
  * (which resolves a cycle's current step) and the Pipeline stepper (which links
  * each stage to its screen) so the two never disagree about where a stage lives.
  *
- * The 11-stage order (see PIPELINE): Upload → Clean → Raw scores →
- * Question review → Diagnostics → Essay marks → Technical adjustments → Score →
- * Cut scores → CGJ → Grades. `stageIndex` is the first INCOMPLETE stage for a
+ * The 10-stage order (see PIPELINE): Upload → Clean → Raw scores →
+ * Question review → Diagnostics → Technical adjustments → Score →
+ * Cut scores → CGJ → Grades. Essay marks are uploaded on Upload (step 1) and fold
+ * into the scored totals automatically — they are not a standalone stage.
+ * `stageIndex` is the first INCOMPLETE stage for a
  * cycle, so routing to it lands the user on the earliest action whose
  * prerequisites already exist — never deep in the pipeline on a screen
  * (Review/Cut scores/…) whose data hasn't been produced yet.
@@ -28,18 +30,16 @@ export function stageRoute(cycleId: string, index: number): string {
       return `${base}/review`;
     case 4: // Diagnostics
       return `${base}/diagnostics`;
-    case 5: // Essay marks
-      return `${base}/essays`;
-    case 6: // Technical adjustments
+    case 5: // Technical adjustments
       return `${base}/adjustments`;
-    case 7: // Score
+    case 6: // Score
       return `${base}/score`;
-    case 8: // Cut scores
+    case 7: // Cut scores
       return `${base}/boundaries`;
-    case 9: // CGJ (Centre Grade Judgement) — centre-expected vs actual, sits
+    case 8: // CGJ (Centre Grade Judgement) — centre-expected vs actual, sits
             // directly after Cut scores as a check before grades are confirmed.
       return `${base}/cgj`;
-    case 10: // Grades — final per-sitting step. Document/certificate generation is
+    case 9: // Grades — final per-sitting step. Document/certificate generation is
              // NOT a per-sitting step: it issues from the cycle/overall best-of-two
              // award (app/years/[yearId]/overall/documents), not a single sitting.
       return `${base}/grades`;
@@ -56,7 +56,6 @@ const STEP_COPY: { title: string; body: string; cta: string }[] = [
   { title: "Check raw scores", body: "Review the naïve (pre-adjustment) scores produced from the cleaned data.", cta: "Go to raw scores" },
   { title: "Review item quality", body: "Assessments are validated and waiting for quality review before scoring.", cta: "Go to item review" },
   { title: "Review diagnostics", body: "Check cohort-level diagnostics and reliability (Cronbach's alpha) before continuing — review only, never changes a grade.", cta: "Go to diagnostics" },
-  { title: "Enter essay marks", body: "Load or enter the offline-marked essay scores for English & Arabic.", cta: "Go to essay marks" },
   { title: "Apply technical adjustments", body: "Triage incidents into mark alterations before final scoring.", cta: "Go to technical adjustments" },
   { title: "Review computed scores", body: "Adjustments are applied — review the final post-adjustment computed scores per student.", cta: "Go to scores" },
   { title: "Set cut scores", body: "Scores are confirmed — set cut scores for each subject to derive grades.", cta: "Go to cut scores" },
