@@ -37,6 +37,7 @@ import { ExportButtons } from "@/components/ui/ExportButtons";
 import { downloadCsv, downloadWorkbook, fileStem } from "@/lib/ui/export";
 import { Icon, Mark } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
+import { StepIntro } from "@/components/ui/StepIntro";
 
 export default function BoundariesPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -157,6 +158,13 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
           tabs={model.scopes.map((s) => ({ id: s.id, label: s.label }))}
           onSelect={setScope}
         />
+      }
+      intro={
+        <StepIntro>
+          This step sets the mark thresholds that separate performance levels. Cut scores are where expert
+          judgement enters the pipeline, so they are set deliberately, recorded and locked — because moving a cut
+          point moves real students between grades.
+        </StepIntro>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "24px 32px", gap: 18, flex: 1, minHeight: 0 }}>

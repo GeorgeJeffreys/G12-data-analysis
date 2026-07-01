@@ -23,6 +23,7 @@ import { UploadButton } from "@/components/import/UploadButton";
 import { UploadStatusLine, ConfirmStep, type UploadStage } from "@/components/import/UploadFlow";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { EssayMarksCard } from "@/components/cycle/EssayMarksCard";
+import { StepIntro } from "@/components/ui/StepIntro";
 import { SittingDangerZone } from "@/components/cycle/SittingDangerZone";
 import { ingestThreeExports, DetectionError } from "@/lib/ingest";
 import type { CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
@@ -93,6 +94,13 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
             <Icon name="arrow" color="#fff" />
           </Button>
         </Link>
+      }
+      intro={
+        <StepIntro>
+          This step brings the raw exam data into the app. We upload the Questionmark exports exactly as
+          exported, with no edits, so everything downstream stays traceable to an untouched source. Nothing is
+          scored or changed here — this is the single, auditable point of entry.
+        </StepIntro>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 30px", gap: 14, flex: 1, maxWidth: 1040 }}>

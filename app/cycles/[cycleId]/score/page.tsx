@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { SubjectScoreCell } from "@/components/ui/composition";
+import { StepIntro } from "@/components/ui/StepIntro";
 import type { StudentComposition } from "@/lib/data/types";
 import Link from "next/link";
 
@@ -35,6 +36,14 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const provisional = useProvisionalNotice(cycleId);
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
+
+  const intro = (
+    <StepIntro>
+      This step converts responses into marks using the locked, parity-tested scoring engine. Applying one agreed
+      method to every student is what makes results fair and comparable. The scores here are the raw evidence that
+      cut scores and grades are later applied to.
+    </StepIntro>
+  );
 
   if (!comp || comp.students.length === 0) {
     return (
@@ -52,6 +61,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
             <Icon name="arrow" color="#fff" />
           </Button>
         }
+        intro={intro}
       >
         <div style={{ padding: 32 }} className="hf-sub">No computed scores for this sitting yet.</div>
       </CycleShell>
@@ -76,6 +86,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
         </Link>
       }
       alerts={<AlertStack notices={provisional ? [provisional] : []} />}
+      intro={intro}
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "16px 32px 18px", gap: 12, flex: 1, minHeight: 0 }}>
         {/* slim header strip — title + plain-language note + zoom, kept small so the

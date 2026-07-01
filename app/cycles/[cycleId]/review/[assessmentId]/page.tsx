@@ -37,6 +37,7 @@ import type { DataProvider } from "@/lib/data/provider";
 import { Icon } from "@/components/ui/icons";
 import { InfoTip } from "@/components/ui/infotip";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
+import { StepIntro } from "@/components/ui/StepIntro";
 
 const REASONS = [
   "Negative discrimination",
@@ -235,6 +236,13 @@ export default function ReviewPage({
             href: `/cycles/${cycleId}/review/${encodeURIComponent(a.id)}`,
           }))}
         />
+      }
+      intro={
+        <StepIntro>
+          This step checks that each question behaved as intended. We review item-level statistics and content to
+          spot questions that were too easy, too hard, ambiguous or mis-keyed, so no student is unfairly helped or
+          penalised by a faulty item before we score.
+        </StepIntro>
       }
     >
       {/* slim single control band: compact stats + filters + search + zoom */}
