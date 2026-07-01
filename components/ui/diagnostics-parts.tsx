@@ -12,7 +12,7 @@
 import type { CSSProperties } from "react";
 import { H } from "@/lib/ui/tokens";
 import { Mark } from "@/components/ui/icons";
-import type { DiagStatus, PositionOmission, SpeededResult } from "@/lib/diagnostics";
+import type { DiagStatus, PositionOmission, SpeededResult, TimingResult } from "@/lib/diagnostics";
 
 export type Tone = "good" | "warn" | "bad";
 
@@ -38,6 +38,50 @@ export function SpeededRow({ label, s, whole = false, demand }: { label: string;
       <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13, color: omTone === "bad" ? H.bad : omTone === "warn" ? H.warn : H.ink }}>{(s.omissionRate * 100).toFixed(1)}%</td>
       <td className="hf-td" style={{ textAlign: "right" }}><RateBar v={s.completion * 100} tone={compTone} /></td>
       <td className="hf-td" style={{ textAlign: "right" }}><DiagStatusBadge s={s.speededStatus} /></td>
+    </tr>
+  );
+}
+
+/**
+ * One timing–performance row — whole assessment (highlighted) or a demand level.
+ * Shows the median-item-time ↔ score-% correlation (Pearson meter + Spearman ρ)
+ * and its plain-language strength. Blank (—), never 0, when the correlation is
+ * undefined (too few students with timing, or no variance).
+ */
+export function TimingRow({ label, t, whole = false, demand }: { label: string; t: TimingResult; whole?: boolean; demand?: string }) {
+  return (
+    <tr style={{ background: whole ? H.canvas : "transparent" }} className={whole ? "" : "hf-hover"}>
+      <td className="hf-td" style={{ fontWeight: whole ? 700 : 600, fontSize: 12.5, paddingLeft: whole ? 12 : 26 }}>
+        {demand && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: demandColor(demand), marginRight: 7, verticalAlign: "middle" }} />}
+        {label}
+      </td>
+      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{t.nStudents}</td>
+      <td className="hf-td" style={{ textAlign: "right" }}>{t.pearson === null ? <span className="hf-sub hf-mono">—</span> : <CorrMeter r={t.pearson} />}</td>
+      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{t.spearman === null ? "—" : t.spearman.toFixed(2)}</td>
+      <td className="hf-td" style={{ fontSize: 11.5, color: H.ink2, fontWeight: 600 }}>{t.pearsonStrength}</td>
+    </tr>
+  );
+}
+
+/**
+ * One early-vs-late detail row — the speededness index's two components made
+ * explicit: omission and accuracy over the early items vs the late quarter. A
+ * jump in late omission or a drop in late accuracy is the speededness signature.
+ */
+export function EarlyLateRow({ label, s, demand }: { label: string; s: SpeededResult; demand?: string }) {
+  const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+  const lateOmWorse = s.lateOmission > s.earlyOmission;
+  const lateAccWorse = s.lateAccuracy < s.earlyAccuracy;
+  return (
+    <tr className="hf-hover">
+      <td className="hf-td" style={{ fontWeight: 600, fontSize: 12.5, paddingLeft: 26 }}>
+        {demand && <span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 2, background: demandColor(demand), marginRight: 7, verticalAlign: "middle" }} />}
+        {label}
+      </td>
+      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{pct(s.earlyOmission)}</td>
+      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13, color: lateOmWorse ? H.bad : H.ink }}>{pct(s.lateOmission)}</td>
+      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13 }}>{pct(s.earlyAccuracy)}</td>
+      <td className="hf-td hf-mono" style={{ textAlign: "right", fontSize: 13, color: lateAccWorse ? H.bad : H.ink }}>{pct(s.lateAccuracy)}</td>
     </tr>
   );
 }

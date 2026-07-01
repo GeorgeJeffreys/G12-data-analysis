@@ -3418,6 +3418,7 @@ export class InMemoryDataProvider implements DataProvider {
         whole: d.whole,
         byDemand: d.byDemand,
         byItemSet: d.byItemSet,
+        timingByDemand: d.timingByDemand,
         omissionByPosition: d.omissionByPosition,
       })),
     };

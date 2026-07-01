@@ -8,11 +8,16 @@
  * go/no-go whole-paper checks.
  *
  * This tab holds the demand-level (D1/D2/D3) and item-level breakdowns relocated
- * out of the critical path: speededness/omission/completion by difficulty tier
- * and by item set, plus omission rate by item position. Its fuller analytical
- * content (timing/performance and speededness/omission ported from the analyst's
- * notebooks) follows in a later build; this establishes the home and moves the
- * demand-level breakdown into it. INFORMATIONAL ONLY — nothing here changes a grade.
+ * out of the critical path, ported verbatim from the analyst's two notebooks
+ * (timing/performance and speededness/omission-rate):
+ *   - speededness/omission/completion by difficulty tier and by item set,
+ *   - the speededness index broken into its early-vs-late omission & accuracy parts,
+ *   - timing↔performance (median item time ↔ score %) by difficulty tier,
+ *   - omission rate by item position.
+ * Every measure keys on P-A's stable participant id over the corrected matrix (the
+ * same cohort the item stats use), so counts match the scores. The whole-assessment
+ * speededness + timing go/no-go check stays on the critical path's "Assessment
+ * Health" step. INFORMATIONAL ONLY — nothing here changes a grade.
  */
 import { useState } from "react";
 import Link from "next/link";
@@ -24,11 +29,13 @@ import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import {
   DemandLegend,
   DiagStatusBadge,
+  EarlyLateRow,
   Hc,
   HelpNote,
   OmissionByPosition,
   SectionHead,
   SpeededRow,
+  TimingRow,
   demandLabel,
 } from "@/components/ui/diagnostics-parts";
 import type { DiagnosticsModel } from "@/lib/data/types";
@@ -119,6 +126,95 @@ export default function DiagnosticsHubPage({ params }: { params: { cycleId: stri
                   consider trimming their count, simplifying their wording, or moving them earlier so students reach them.
                   A single <b>item set</b> (shared stimulus/passage) with a much higher rate points at that passage being
                   too long or dense to work through in time — shorten or simplify it.
+                </>
+              }
+            />
+          </div>
+
+          {/* A2 — early vs late (the speededness index's two components, per group) */}
+          <div className="hf-card" style={{ overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span className="hf-h2">Early vs late — omission &amp; accuracy</span>
+                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>The speededness index made explicit: how omission and accuracy shift from the early items to the final quarter.</div>
+              </div>
+            </div>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 520 }}>
+                <thead>
+                  <tr>
+                    <th className="hf-th">Level</th>
+                    <Hc t="Early omission" sub="% blank, early items" />
+                    <Hc t="Late omission" sub="% blank, final quarter" />
+                    <Hc t="Early accuracy" sub="correct ÷ answered" />
+                    <Hc t="Late accuracy" sub="final quarter" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.byDemand.length > 0 && <SectionHead cols={5}>By demand level (item difficulty)</SectionHead>}
+                  {a.byDemand.map((d) => (
+                    <EarlyLateRow key={d.demand} label={demandLabel[d.demand] ?? d.demand} s={d.speeded} demand={d.demand} />
+                  ))}
+                  {a.byItemSet.length > 0 && <SectionHead cols={5}>By item set (shared stimulus / passage)</SectionHead>}
+                  {a.byItemSet.map((it) => (
+                    <EarlyLateRow key={it.itemSet} label={it.itemSet} s={it.speeded} />
+                  ))}
+                  {a.byDemand.length === 0 && a.byItemSet.length === 0 && (
+                    <tr><td colSpan={5} className="hf-sub" style={{ padding: "16px 18px" }}>No demand-level or item-set breakdown for this assessment.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <HelpNote
+              title="How to read this"
+              body={
+                <>
+                  A row where <b>late omission</b> jumps above early, or <b>late accuracy</b> falls below early, is the
+                  speededness signature for that group — students ran short of time on its later items. Flat rows mean the
+                  time was adequate. Late figures that worsen are highlighted.
+                </>
+              }
+            />
+          </div>
+
+          {/* A3 — timing vs performance by demand level (the timing notebook, per tier) */}
+          <div className="hf-card" style={{ overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "center", padding: "14px 18px", borderBottom: `1px solid ${H.line2}`, gap: 12 }}>
+              <div style={{ flex: 1 }}>
+                <span className="hf-h2">Timing &amp; performance by demand level</span>
+                <div className="hf-sub" style={{ fontSize: 11.5, marginTop: 3 }}>Whether time-on-task relates to score, split by item difficulty. The whole-assessment figure is on Assessment Health.</div>
+              </div>
+              <span className="hf-sub" style={{ fontSize: 11 }}>correlation of median item time ↔ score %</span>
+            </div>
+            <div style={{ overflow: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+                <thead>
+                  <tr>
+                    <th className="hf-th">Level</th>
+                    <Hc t="Students" sub="with timing" />
+                    <Hc t="Time ↔ score" sub="Pearson r" />
+                    <Hc t="Spearman" sub="rank ρ" />
+                    <th className="hf-th">Strength</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.timingByDemand.length > 0 ? (
+                    a.timingByDemand.map((d) => (
+                      <TimingRow key={d.demand} label={demandLabel[d.demand] ?? d.demand} t={d.timing} demand={d.demand} />
+                    ))
+                  ) : (
+                    <tr><td colSpan={5} className="hf-sub" style={{ padding: "16px 18px" }}>No demand-tagged timing for this assessment.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <HelpNote
+              title="How to read this"
+              body={
+                <>
+                  A stronger <b>negative</b> correlation on a tier means slower responses there tended to score lower —
+                  usually a sign those items were demanding, not a data fault. A positive correlation means the students who
+                  spent longer scored better. Undefined (—) when too few students on that tier have timing. Informational only.
                 </>
               }
             />

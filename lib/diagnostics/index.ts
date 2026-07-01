@@ -14,7 +14,14 @@
  *                      where accuracy = correct ÷ answered (among attempts).
  *  - Timing–performance: aggregate to student level (score %, median item time),
  *                      then Pearson + Spearman between median item time and
- *                      score %.
+ *                      score %. Also split by demand level for the Analytics tab.
+ *
+ * Keying: callers first pass raw records through `cleanDiagResponses` so every
+ * measure runs on the SAME corrected matrix P-B uses for item stats — keyed on
+ * P-A's stable internal participant id, with cohort-excluded (staff/test) accounts
+ * dropped and `(participant, item)` deduped keeping the last row. That is why the
+ * per-assessment student count matches the corrected matrix (15 for Applicable
+ * Math), not a collapsed or staff-inflated count.
  */
 
 export interface DiagResponse {
@@ -175,6 +182,32 @@ function median(xs: number[]): number {
   return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
 }
 
+/**
+ * Clean a raw diagnostics record set into the matrix P-B builds for item stats,
+ * so speededness/timing key on exactly the same cohort as the scores:
+ *   1. drop cohort-excluded participants (staff / test accounts), keyed on P-A's
+ *      stable internal participant id — never a per-ingest UUID or a name field;
+ *   2. dedupe `(participantId, itemId)` keeping the LAST row (a re-sit or a
+ *      corrected row supersedes the earlier one), the same rule the score matrix
+ *      applies before `fillna(0.0)`.
+ * The result is one record per (participant, item) over the corrected, un-collapsed
+ * cohort — so the per-assessment student count matches the corrected matrix (e.g.
+ * 15 for Applicable Math, not a collapsed or staff-inflated count).
+ */
+export function cleanDiagResponses(
+  records: readonly DiagResponse[],
+  opts: { excludedParticipantIds?: ReadonlySet<string> } = {},
+): DiagResponse[] {
+  const excluded = opts.excludedParticipantIds;
+  const byCell = new Map<string, DiagResponse>();
+  for (const r of records) {
+    if (excluded?.has(r.participantId)) continue;
+    // Overwrite keeps the LAST occurrence for a (participant, item) cell.
+    byCell.set(`${r.participantId} ${r.itemId}`, r);
+  }
+  return [...byCell.values()];
+}
+
 /** Timing–performance correlation over one group of responses. */
 export function timingPerformance(records: readonly DiagResponse[]): TimingResult {
   // Aggregate to student level: score % (correct ÷ presented) and median item time.
@@ -237,6 +270,24 @@ export interface DemandSpeeded {
 export function speededByDemand(records: readonly DiagResponse[]): DemandSpeeded[] {
   const groups = groupBy(records, (r) => r.demandLevel);
   return DEMAND_ORDER.filter((d) => groups.has(d)).map((d) => ({ demand: d, speeded: speededness(groups.get(d)!) }));
+}
+
+/** Timing–performance for one demand level (D1/D2/D3). */
+export interface DemandTiming {
+  demand: string;
+  timing: TimingResult;
+}
+
+/**
+ * Timing–performance split by demand level. The whole-assessment measure lives on
+ * the Assessment Health step; this is the per-difficulty-tier lens for the
+ * Analytics tab. Uses the identical `timingPerformance` formula per group (median
+ * item time ↔ score %, Pearson + Spearman), restricted to that tier's items. Only
+ * levels that actually carry items appear, in fixed D1→D3 order.
+ */
+export function timingByDemand(records: readonly DiagResponse[]): DemandTiming[] {
+  const groups = groupBy(records, (r) => r.demandLevel);
+  return DEMAND_ORDER.filter((d) => groups.has(d)).map((d) => ({ demand: d, timing: timingPerformance(groups.get(d)!) }));
 }
 
 /** Speededness/omission for one item set (a shared stimulus/passage). */
@@ -323,6 +374,7 @@ export interface AssessmentDiagnostics {
   whole: WholeDiagnostics;
   byDemand: DemandSpeeded[];
   byItemSet: ItemSetSpeeded[];
+  timingByDemand: DemandTiming[];
   omissionByPosition: PositionOmission[];
 }
 
@@ -331,6 +383,7 @@ export function buildAssessmentDiagnostics(records: readonly DiagResponse[]): As
     whole: { speeded: speededness(records), timing: timingPerformance(records) },
     byDemand: speededByDemand(records),
     byItemSet: speededByItemSet(records),
+    timingByDemand: timingByDemand(records),
     omissionByPosition: omissionByPosition(records),
   };
 }
