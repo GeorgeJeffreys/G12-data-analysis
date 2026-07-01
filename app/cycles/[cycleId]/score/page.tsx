@@ -23,7 +23,6 @@ import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { SubjectScoreCell } from "@/components/ui/composition";
-import type { StudentComposition } from "@/lib/data/types";
 import Link from "next/link";
 
 export default function ScorePage({ params }: { params: { cycleId: string } }) {
@@ -41,7 +40,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
       <CycleShell
         cycleId={cycleId}
         cycleName={cycleName}
-        page="Score"
+        page="Candidate Scores"
         stageIndex={7}
         // Keep the forward CTA present but disabled in the empty state — the step
         // should never look broken/incomplete, but you can't advance to cut scores
@@ -85,9 +84,8 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
           <span className="hf-sub" style={{ fontSize: 12, maxWidth: 660 }}>
             Final post-adjustment scores per student — the numbers boundaries are set against. Each subject cell shows
             raw/max and %, plus that subject’s D3 (top-difficulty) correct % beneath; hover for the MCQ + Essay +
-            Alterations breakdown. The last two columns are display-only signals (D3 questions attempted, technical
-            incidents). There is no sitting “Overall” here — the final Overall is the best of February + May at the
-            year level.
+            Alterations breakdown. The last column is a display-only signal (technical incidents). There is no sitting
+            “Overall” here — the final Overall is the best of February + May at the year level.
           </span>
           <div style={{ flex: 1, minWidth: 12 }} />
           <ZoomControl zoom={zoom} onZoom={setZoom} />
@@ -107,14 +105,6 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
                   {comp.subjects.map((s) => (
                     <th key={s.id} className="hf-th" style={{ textAlign: "right", width: 104 }}>{subjectHeader(s.shortName)}</th>
                   ))}
-                  <th
-                    className="hf-th"
-                    style={{ textAlign: "right", width: 100 }}
-                    title="Of all the top-difficulty (D3) questions across this student's exams, the share they attempted. Display only — does not change any score or grade."
-                  >
-                    D3 answered
-                    <div style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: H.ink3, fontSize: 9 }}>% attempted</div>
-                  </th>
                   <th
                     className="hf-th"
                     style={{ textAlign: "right", width: 92 }}
@@ -147,9 +137,6 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
                         );
                       })}
                       <td className="hf-td" style={{ textAlign: "right" }}>
-                        <D3AnsweredCell d3={st.signals.d3} />
-                      </td>
-                      <td className="hf-td" style={{ textAlign: "right" }}>
                         <IncidentsCell n={st.signals.incidents} />
                       </td>
                     </tr>
@@ -161,26 +148,6 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
         </div>
       </div>
     </CycleShell>
-  );
-}
-
-/**
- * % of this student's top-difficulty (D3) questions attempted — a display-only
- * engagement signal (does not affect scoring). Shows "–" when the student had no
- * D3 items; the attempted/available counts are revealed on hover.
- */
-function D3AnsweredCell({ d3 }: { d3: StudentComposition["signals"]["d3"] }) {
-  if (d3.pct === null || d3.available === 0) {
-    return <span className="hf-sub hf-mono" title="No top-difficulty (D3) questions in this student's exams">–</span>;
-  }
-  return (
-    <span
-      className="hf-mono"
-      style={{ fontSize: 12, color: H.ink, fontWeight: 600, whiteSpace: "nowrap" }}
-      title={`Attempted ${d3.attempted} of ${d3.available} top-difficulty (D3) questions`}
-    >
-      {Math.round(d3.pct)}%
-    </span>
   );
 }
 

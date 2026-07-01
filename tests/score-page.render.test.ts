@@ -7,8 +7,7 @@
  * MCQ + Essay + Alterations composition — the same composition the Grades screen
  * renders, reused. There is deliberately NO per-sitting "Overall" column here (the
  * meaningful Overall is the best-of-two at the year level); instead the table ends
- * with two display-only signal columns: D3 questions attempted and technical
- * incidents. It reads already-computed
+ * with a display-only technical-incidents signal column. It reads already-computed
  * `participant_scores` (getComposition), so it is independent of boundaries and is
  * a DISTINCT page from Boundaries (no cut-point UI). Consumes provider read-models
  * only; engine parity is unaffected (covered by engine.parity.test.ts).
@@ -39,15 +38,18 @@ async function renderScore(cycleId: string): Promise<string> {
 }
 
 describe("Score page — per-student post-adjustment computed scores", () => {
-  it("renders a per-student table with every subject + the two signal columns, and no per-sitting Overall", async () => {
+  it("renders a per-student table with every subject + the incidents signal column, and no per-sitting Overall", async () => {
     activeProvider = live;
     const comp = live.getComposition(liveId)!;
     const html = await renderScore(liveId);
 
     expect(html).toContain("Computed scores");
-    // The display-only per-student signal columns are present…
-    expect(html).toContain("D3 answered");
+    // The technical-incidents signal column is present…
     expect(html).toContain("Incidents");
+    // …and the standalone "D3 answered" column has been removed (it was a
+    // st.signals.d3 display-only column — the underlying signal read-model is
+    // unaffected and still covered by composition.signals.test.ts).
+    expect(html).not.toContain("D3 answered");
     // …and there is no per-sitting "Overall" column masquerading as the final result.
     expect(html).not.toMatch(/<th[^>]*>[^<]*Overall/);
     // One row per participant — the student names reach the markup.

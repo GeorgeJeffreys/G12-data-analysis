@@ -38,7 +38,7 @@ export const PIPELINE = [
   "Diagnostics",
   "Essay marks",
   "Technical adjustments",
-  "Score",
+  "Candidate Scores",
   "Cut scores",
   // CGJ (Centre Grade Judgement) sits directly after Cut scores, before Grades:
   // once the boundaries are set the partner centre's EXPECTED grades can be lined

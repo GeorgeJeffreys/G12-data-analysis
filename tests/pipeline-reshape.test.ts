@@ -25,7 +25,7 @@ const EXPECTED_ORDER = [
   "Diagnostics",
   "Essay marks",
   "Technical adjustments",
-  "Score",
+  "Candidate Scores",
   "Cut scores",
   "CGJ",
   "Grades",
