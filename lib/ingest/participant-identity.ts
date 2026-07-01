@@ -1,34 +1,58 @@
 /**
  * Participant identity on the ingest path (root cause: identity collapse).
  *
- * A participant's identity MUST be keyed on a guaranteed-unique field from the
- * export — never on a derived, hashed, initial-based or name-based value that can
- * collide. The Questionmark export's `ResultParticipantName` is NOT safe for this:
- * for a real cohort it is often a short login / initials code ("A-A") that several
- * students share, or blank — so keying identity on it silently folds distinct
- * students into one record (the per-subject "8 participants when 15 sat it"
- * collapse, and the per-student score-matrix corruption that rides on it).
+ * A participant's identity MUST be keyed on the export's natural, collision-free
+ * field — never on a name-, initial- or DOB-shaped value. Confirmed against the raw
+ * Questionmark exports, the ONLY collision-free field is `ResultParticipantName`
+ * (the participant's email / login): 18 distinct, 0 collisions, 0 splits. Every
+ * other candidate collides — `ResultParticipantFirstName` (two shared, e.g. the two
+ * Fatimas / Nours), `ResultParticipantLastName` (one shared), `ResultSpecialField4`
+ * = date-of-birth (two shared, plus many placeholder `01-01` dates). Keying identity
+ * on any of those silently folds distinct students into one record (the per-subject
+ * "8 participants when 15 sat it" collapse, and the per-student score-matrix
+ * corruption that rides on it).
  *
- * Identity is therefore resolved here, in this precedence:
+ * Identity is therefore resolved here, following the analyst's fallback order where
+ * the fields exist:
  *   1. an explicit, guaranteed-unique **ParticipantID** column, when present;
- *   2. the **participant email** (a unique, stable-across-subjects field);
+ *   2. the **participant email** — `ResultParticipantName`, with `ResultSpecialField3`
+ *      as the backup email — the unique, stable-across-subjects natural key;
  *   3. the **result→participant mapping** — the unique `ResultId` — as the final
  *      fallback so two distinct results are NEVER merged.
  *
+ * From the resolved natural key we mint a **stable internal participant id** — a
+ * deterministic, injective (1:1) function of the email (see `internalParticipantId`),
+ * so the same email always yields the same id and two different emails never collide.
+ * The id is NEVER derived from name, initials or DOB. Every per-student structure is
+ * keyed on this internal id (via the P00xx pseudonym, which maps 1:1 from it) — the
+ * email string is not scattered as a join key.
+ *
  * On top of the precedence we apply a collision safety-net: if a chosen stable key
  * is shared by two or more DISTINCT results WITHIN ONE SUBJECT (the collapse
- * signature — a non-unique `ResultParticipantName` folding real sitters together),
- * that key cannot be trusted as an identity, so those results fall back to their
- * unique `ResultId`. Net effect: distinct sitters never collapse, and a
- * participant's cross-subject identity is preserved whenever a real unique id
- * exists. The P00xx pseudonym then maps 1:1 from this resolved identity — it is
- * display-only and never the identity itself.
+ * signature — a non-unique field folding real sitters together), that key cannot be
+ * trusted as an identity, so those results fall back to their unique `ResultId`. Net
+ * effect: distinct sitters never collapse, and a participant's cross-subject identity
+ * is preserved whenever a real unique key exists.
  */
 
 /** Columns that may carry an explicit, guaranteed-unique participant id. */
 export const PARTICIPANT_ID_COLUMNS = ["ParticipantID", "ParticipantId", "Participant ID"] as const;
-/** Columns that may carry the participant email (unique, stable across subjects). */
-export const PARTICIPANT_EMAIL_COLUMNS = ["ParticipantEmail", "ResultParticipantName"] as const;
+/** Columns that may carry the participant email — the natural collision-free key.
+ *  `ResultParticipantName` is the primary (the email / login); `ResultSpecialField3`
+ *  is the export's backup email, used only when the primary is blank. */
+export const PARTICIPANT_EMAIL_COLUMNS = ["ParticipantEmail", "ResultParticipantName", "ResultSpecialField3"] as const;
+
+/**
+ * Mint the stable INTERNAL participant id from a resolved natural key (the email,
+ * or the `result:<id>` fallback). This is the single place the internal id is
+ * derived, and it is an injective, deterministic function of its input — trim +
+ * case-fold only, so the same email always yields the same id and two distinct
+ * emails never collide (1:1). It is NEVER a hash (which could collide) and NEVER
+ * reads a name, initials or a date of birth.
+ */
+export function internalParticipantId(naturalKey: string): string {
+  return naturalKey.trim().toLowerCase();
+}
 
 /** Every column whose value the identity resolver may read off a row. The bridge
  *  copies these from the Assessments row onto each joined response row so the
@@ -68,7 +92,7 @@ export function rawParticipantKey(
   }
   for (const col of PARTICIPANT_EMAIL_COLUMNS) {
     const v = cell(row, col);
-    if (usable(v)) return { key: v.toLowerCase(), source: "email" };
+    if (usable(v)) return { key: internalParticipantId(v), source: "email" };
   }
   return null;
 }
@@ -125,9 +149,13 @@ export function assignParticipantIdentities(
   for (const [resultId, { key, source }] of keyByResult) {
     const subject = subjectByResult.get(resultId) ?? "";
     const folded = !key || (resultsByKeySubject.get(`${key}${SEP}${subject}`)?.size ?? 0) > 1;
+    // Mint the internal id from the resolved natural key (email) or the unique
+    // result→participant mapping — always via the single injective minting fn.
     identityByResult.set(
       resultId,
-      folded ? { id: `result:${resultId}`, source: "result_id" } : { id: key, source: source ?? "email" },
+      folded
+        ? { id: internalParticipantId(`result:${resultId}`), source: "result_id" }
+        : { id: key, source: source ?? "email" },
     );
   }
   return identityByResult;

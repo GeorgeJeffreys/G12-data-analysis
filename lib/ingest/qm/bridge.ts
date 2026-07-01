@@ -33,8 +33,8 @@ export function toCombinedRows(items: CsvTable, assessments: CsvTable): RawExpor
     const a = assessmentByResult.get(rid);
     if (!a) continue;
     // Every participant-identity column from the Assessments row, so the legacy
-    // normaliser resolves the SAME guaranteed-unique identity the canonical model
-    // does (and never collapses on a non-unique ResultParticipantName).
+    // normaliser resolves the SAME internal identity the canonical model does
+    // (keyed on the collision-free email, never a name/DOB-shaped field).
     const identityCols: Record<string, string> = {};
     for (const col of PARTICIPANT_IDENTITY_COLUMNS) {
       if (a[col] !== undefined) identityCols[col] = a[col] ?? "";

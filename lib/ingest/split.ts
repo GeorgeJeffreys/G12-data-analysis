@@ -124,8 +124,9 @@ export function assertParticipantIdentityIntact(clean: readonly CleanResponse[])
       throw new Error(
         `participant identity collapse at ingest: "${subject}" has ${g.results.size} sitter(s) ` +
           `(distinct ResultIds) but only ${g.participants.size} distinct participant(s) — distinct ` +
-          `students folded into one identity. Key participant identity on a guaranteed-unique field ` +
-          `(ParticipantID / email / the result→participant mapping), never ResultParticipantName.`,
+          `students folded into one identity. Key participant identity on the collision-free ` +
+          `natural key (ParticipantID / email = ResultParticipantName / the result→participant ` +
+          `mapping), never a name-, initial- or DOB-shaped field.`,
       );
     }
   }

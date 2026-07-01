@@ -94,6 +94,17 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       );
     }
   }
+  // INVARIANT (identity, root cause D): distinct input participants (internal ids)
+  // must equal distinct output participants (pseudonyms). The bijection loop above
+  // enforces this pairwise; assert the cardinality explicitly so any collapse fails
+  // loudly in buildLiveCycleData, not silently downstream.
+  const distinctInputIds = new Set(clean.map((r) => r.qmParticipantId)).size;
+  if (distinctInputIds !== realIdByPseudonym.size) {
+    throw new Error(
+      `buildLiveCycleData: ${distinctInputIds} distinct input participant id(s) collapsed to ` +
+        `${realIdByPseudonym.size} output participant(s) — participant identity collapse.`,
+    );
+  }
   const partOrder = [...realIdByPseudonym.keys()].sort();
   const participants: SeedParticipant[] = partOrder.map((id, i) => ({
     id,

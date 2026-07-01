@@ -1908,6 +1908,20 @@ export class InMemoryDataProvider implements DataProvider {
       };
     });
 
+    // INVARIANT (identity, root cause D) — grades boundary: every distinct cohort
+    // participant (by internal id) must surface as exactly one grade row. A silent
+    // drop or a collapsed identity would leave fewer award rows than the cohort;
+    // fail loudly here, at the final grade-bearing stage, rather than mis-issue.
+    const gradesCohortIds = new Set(
+      this.seed.liveCycle.participants.filter((p) => !cohortRemoved.has(p.id)).map((p) => p.id),
+    );
+    const gradeRowIds = new Set(rows.map((r) => r.id));
+    if (gradeRowIds.size !== gradesCohortIds.size) {
+      throw new Error(
+        `getGrades: ${gradesCohortIds.size} cohort participant(s) produced ${gradeRowIds.size} distinct grade row(s) — participant collapse at grades.`,
+      );
+    }
+
     const distCounts = new Map<string, number>();
     for (const r of rows) distCounts.set(r.award, (distCounts.get(r.award) ?? 0) + 1);
     const distribution = awardLevels.map((level) => ({ level, count: distCounts.get(level) ?? 0 }));

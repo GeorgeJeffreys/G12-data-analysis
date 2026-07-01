@@ -128,10 +128,11 @@ export interface NormalizeResult {
  * Participants are given a stable sequential pseudonym (P0001, P0002 …) in order
  * of first appearance, so downstream consumers never need the PII identifier.
  *
- * Participant identity is resolved up-front from the export's guaranteed-unique
- * field (ParticipantID / email / result→participant mapping), NEVER from the
- * collision-prone ResultParticipantName — so distinct students never fold into one
- * record. The pseudonym maps 1:1 from that resolved identity.
+ * Participant identity is resolved up-front from the export's collision-free
+ * natural key (ParticipantID / email = ResultParticipantName / result→participant
+ * mapping) and minted into a stable internal id, NEVER from a name-, initial- or
+ * DOB-shaped field — so distinct students never fold into one record. The pseudonym
+ * maps 1:1 from that resolved internal id.
  */
 export function normalizeResponses(rows: readonly RawExportRow[]): NormalizeResult {
   const clean: CleanResponse[] = [];

@@ -181,10 +181,11 @@ export function buildCanonicalModelFromTables(
   const sittingTally = new Map<string, { sitting: Sitting; count: number }>();
 
   // ── 0. Resolve a guaranteed-unique participant identity per graded result ────
-  // Keyed on ParticipantID / email / the result→participant mapping — NEVER the
-  // collision-prone ResultParticipantName — so distinct students never fold into
-  // one participant record. Resolved from the SAME inputs the legacy normaliser
-  // sees, so both ingest paths agree on each result's identity.
+  // Keyed on the collision-free natural key (ParticipantID / email = the export's
+  // ResultParticipantName / the result→participant mapping) and minted into a
+  // stable internal id — NEVER a name-, initial- or DOB-shaped field — so distinct
+  // students never fold into one participant record. Resolved from the SAME inputs
+  // the legacy normaliser sees, so both ingest paths agree on each result's identity.
   const identityInputs: IdentityInputRow[] = [];
   for (const row of assessments.rows) {
     const rawName = repairText(row["AssessmentName"] ?? "").trim();
@@ -258,8 +259,8 @@ export function buildCanonicalModelFromTables(
     });
   }
 
-  // ── 2. Participants, keyed by the resolved unique identity, retaining every
-  //       personal field. NEVER keyed on ResultParticipantName (which collides). ──
+  // ── 2. Participants, keyed by the resolved internal identity, retaining every
+  //       personal field. NEVER keyed on a name / initial / DOB-shaped field. ──
   const participantMap = new Map<string, QmParticipant>();
   for (const row of assessments.rows) {
     const rawName = repairText(row["AssessmentName"] ?? "").trim();

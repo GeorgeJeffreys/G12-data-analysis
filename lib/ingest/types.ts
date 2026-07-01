@@ -15,8 +15,9 @@ export interface CleanResponse {
    *  detection-boundary invariant can compare distinct sitters (results) against
    *  distinct output participants (pseudonyms) per subject. */
   qmResultId: string;
-  /** Guaranteed-unique participant identity (ParticipantID / email / result id);
-   *  never the collision-prone ResultParticipantName. See participant-identity.ts. */
+  /** Stable INTERNAL participant id — a deterministic 1:1 mint of the collision-free
+   *  natural key (ParticipantID / email = ResultParticipantName / result id); never a
+   *  name-, initial- or DOB-shaped field. See participant-identity.ts. */
   qmParticipantId: string;
   participantPseudonym: string;
   wording: string | null;

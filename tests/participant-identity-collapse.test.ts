@@ -1,22 +1,28 @@
 /**
- * Participant IDENTITY collapse at ingest — the ~8-per-subject bug (P1-followup-2).
+ * Participant IDENTITY collapse at ingest — the ~8-per-subject bug (P-A).
  *
  * The de-identified 700435 fixture (`tests/fixtures/qm/*.csv`) gives every
  * participant a UNIQUE `ResultParticipantName` (a synthetic email), which sanitises
  * away the real cohort's identity shapes — so it cannot reproduce the collapse.
- * This suite drives a COLLIDING-identity variant (`tests/fixtures/qm-collide/*.csv`)
- * that mirrors the real roster: `ResultParticipantName` is a NON-unique
- * initial-based login code (3 students share "A-A", 2 share "F-A", 2 share "M-A",
- * two "Nour" first names, many "Al-" surnames, RTL Arabic names), while a
- * guaranteed-unique `ParticipantID` and unique `ResultId`s identify each student.
+ * This suite drives a REALISTIC-identity variant (`tests/fixtures/qm-collide/*.csv`)
+ * that mirrors the raw exports: the ONLY collision-free field is
+ * `ResultParticipantName` (the email / login) — 18 distinct, 0 collisions — while
+ * every name- or DOB-shaped field COLLIDES: `ResultParticipantFirstName` (two shared:
+ * the two Fatimas, the two Nours), `ResultParticipantLastName` (one shared), and
+ * `ResultSpecialField4` = date-of-birth (shared + placeholder `2001-01-01` dates).
+ * The roster also carries three students sharing the `A-A` first+last initial and
+ * RTL Arabic names. There is NO magic unique `ParticipantID` column — reality has
+ * none.
  *
- * It proves three things:
- *   1. The collision shape WOULD collapse a name/initial-keyed ingest below the
+ * It proves:
+ *   1. The collision shape WOULD collapse a name/initial/DOB-keyed ingest below the
  *      true sitter count (the bug), and the detection-boundary invariant catches it.
- *   2. The fixed ingest keys identity on the guaranteed-unique ParticipantID, so the
- *      Upload/detection participant counts hit the oracle exactly and the per-student
- *      score matrix reconciles (no merge / overwrite).
- *   3. Cohort exclusion of the staff + test accounts propagates to the per-subject
+ *   2. The fixed ingest keys identity on the collision-free email and mints a stable
+ *      internal id from it, so the Upload/detection participant counts hit the oracle
+ *      exactly and the per-student score matrix reconciles (no merge / overwrite).
+ *   3. The internal id is a 1:1 function of the email and is NEVER derived from a
+ *      name, initial or DOB — colliding names/DOBs do not merge or split students.
+ *   4. Cohort exclusion of the staff + test accounts propagates to the per-subject
  *      counts without dropping any real sitter below the true count.
  */
 import { describe, it, expect } from "vitest";
@@ -28,6 +34,11 @@ import {
   type NamedInput,
 } from "@/lib/ingest/qm";
 import { assertParticipantIdentityIntact } from "@/lib/ingest";
+import {
+  assignParticipantIdentities,
+  internalParticipantId,
+  type IdentityInputRow,
+} from "@/lib/ingest/participant-identity";
 import { parseCsv } from "@/lib/ingest/qm/csv";
 import { buildLiveCycleData } from "@/lib/data/build-live-cycle";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
@@ -48,9 +59,9 @@ const files = (): NamedInput[] => [
   { name: "Topics.csv", data: read("Topics") },
 ];
 
-// The two non-real accounts (staff + test) in the colliding roster, by ParticipantID.
-const LAVINIA = "L-C-800101"; // G12 Lead (staff) — English only
-const MUAMINA = "M-M-800202"; // re-sit / test — Math re-sit form + Life Skills
+// The two non-real accounts in the roster, by their email (the natural key).
+const LAVINIA = "student15@example.edu"; // G12 Lead (staff) — English only
+const MUAMINA = "student16@example.edu"; // re-sit / test — Applicable Maths form + Life Skills
 
 const CYCLE = "live";
 
@@ -62,7 +73,7 @@ function buildProvider(excludeStaffTest: boolean) {
     engineVersion: ENGINE_VERSION,
     liveCycle: {
       id: CYCLE,
-      name: "Sitting 700435 (colliding identities)",
+      name: "Sitting 700435 (realistic identities)",
       region: "EU",
       startedAt: "x",
       lastActivity: "x",
@@ -80,7 +91,7 @@ function buildProvider(excludeStaffTest: boolean) {
     priorCycles: [],
   };
   const p = new InMemoryDataProvider(seed);
-  const idOf = (pid: string) => built.participants.find((x) => x.studentId === pid)!.id;
+  const idOf = (email: string) => built.participants.find((x) => x.studentId === email)!.id;
   if (excludeStaffTest) {
     p.excludeParticipantFromCohort(CYCLE, idOf(LAVINIA), true, "G12 Lead (staff account)");
     p.excludeParticipantFromCohort(CYCLE, idOf(MUAMINA), true, "Re-sit / test account");
@@ -89,47 +100,94 @@ function buildProvider(excludeStaffTest: boolean) {
   return { p, built, idOf, canonical, cleanedResponses, validationReport, assessmentByName };
 }
 
-describe("participant identity collapse — colliding-identity fixture", () => {
-  // ── the collision shape is real (and not in the unique fields) ─────────────
-  it("the fixture genuinely collides on ResultParticipantName but not on the unique id", () => {
+describe("participant identity collapse — realistic-identity fixture", () => {
+  // ── the collision shape is real (ONLY the email is collision-free) ─────────
+  it("the fixture collides on every name/DOB field but is unique on ResultParticipantName", () => {
     const rows = parseCsv(readFileSync(path.join(collideDir, "Assessments.csv"))).rows.filter(
       (r) => !/survey/i.test(r["AssessmentName"] ?? ""),
     );
-    const names = new Set(rows.map((r) => r["ResultParticipantName"]));
-    const ids = new Set(rows.map((r) => r["ParticipantID"]));
-    const resultIds = new Set(rows.map((r) => r["ResultId"]));
-    // 18 students, but only 14 distinct initial-codes — a name/initial key collapses.
-    expect(ids.size).toBe(18);
-    expect(names.size).toBeLessThan(ids.size);
-    // The result→participant mapping is fully unique (one ResultId per sitting).
-    expect(resultIds.size).toBeGreaterThan(ids.size);
+    const distinct = (f: string) =>
+      new Set(rows.map((r) => String(r[f] ?? "").trim().toLowerCase()).filter(Boolean)).size;
+    // The email (ResultParticipantName) is the ONLY collision-free field: 18 distinct.
+    expect(distinct("ResultParticipantName")).toBe(18);
+    // Every name / DOB-shaped field collides — a key built on any of them would fold
+    // distinct students together (first name: 2 shared; last: 1 shared; DOB: several).
+    expect(distinct("ResultParticipantFirstName")).toBeLessThan(18);
+    expect(distinct("ResultParticipantLastName")).toBeLessThan(18);
+    expect(distinct("ResultSpecialField4")).toBeLessThan(18); // date of birth
+    // Reality carries no magic unique ParticipantID column.
+    expect(parseCsv(readFileSync(path.join(collideDir, "Assessments.csv"))).headers).not.toContain(
+      "ParticipantID",
+    );
   });
 
   // ── 1. the detection-boundary invariant catches a collapse ─────────────────
   it("assertParticipantIdentityIntact throws when distinct sitters fold into fewer participants", () => {
     const collapsed: CleanResponse[] = [
       // two DISTINCT results (sitters) folded onto one pseudonym in one subject.
-      { assessmentName: "Math", qmQuestionId: "q1", qmResultId: "R1", qmParticipantId: "A-A", participantPseudonym: "P0001", wording: null, majorElement: null, subElement: null, demandLevel: null, itemSet: null, questionType: "Multiple Choice", maxScore: 1, answerGiven: "a", answerScore: 1, responseTime: null, resultStatus: "Finished OK" },
-      { assessmentName: "Math", qmQuestionId: "q1", qmResultId: "R2", qmParticipantId: "A-A", participantPseudonym: "P0001", wording: null, majorElement: null, subElement: null, demandLevel: null, itemSet: null, questionType: "Multiple Choice", maxScore: 1, answerGiven: "b", answerScore: 0, responseTime: null, resultStatus: "Finished OK" },
+      { assessmentName: "Math", qmQuestionId: "q1", qmResultId: "R1", qmParticipantId: "a@x.edu", participantPseudonym: "P0001", wording: null, majorElement: null, subElement: null, demandLevel: null, itemSet: null, questionType: "Multiple Choice", maxScore: 1, answerGiven: "a", answerScore: 1, responseTime: null, resultStatus: "Finished OK" },
+      { assessmentName: "Math", qmQuestionId: "q1", qmResultId: "R2", qmParticipantId: "a@x.edu", participantPseudonym: "P0001", wording: null, majorElement: null, subElement: null, demandLevel: null, itemSet: null, questionType: "Multiple Choice", maxScore: 1, answerGiven: "b", answerScore: 0, responseTime: null, resultStatus: "Finished OK" },
     ];
     expect(() => assertParticipantIdentityIntact(collapsed)).toThrow(/identity collapse/i);
   });
 
-  it("the fixed ingest of the colliding fixture passes the invariant (no collapse)", () => {
+  it("the fixed ingest of the realistic fixture passes the invariant (no collapse)", () => {
     const { cleanedResponses } = buildProvider(false);
     expect(() => assertParticipantIdentityIntact(cleanedResponses)).not.toThrow();
   });
 
-  // ── 2. identity keys on the guaranteed-unique ParticipantID ────────────────
-  it("keys participant identity on the unique ParticipantID, not ResultParticipantName", () => {
+  // ── 2. identity keys on the collision-free email, minted into an internal id ─
+  it("keys participant identity on the email, not the colliding name/DOB fields", () => {
     const { built } = buildProvider(false);
-    // Every student survives as a distinct identity, and the identity IS the
-    // ParticipantID (e.g. "A-A-260111"), never the colliding "A-A" login code.
+    // Every student survives as a distinct identity, and the internal id is a 1:1
+    // mint of the email (e.g. "student01@example.edu"), never a name/initial/DOB.
     expect(built.participants).toHaveLength(18);
     expect(new Set(built.participants.map((p) => p.studentId)).size).toBe(18);
     for (const p of built.participants) {
-      expect(p.studentId).toMatch(/^[A-Z]-[A-Z]-\d{6}$/);
+      expect(p.studentId).toMatch(/^student\d{2}@example\.edu$/);
     }
+  });
+
+  // ── 3. the internal id is a 1:1 fn of the email, never of name/DOB ─────────
+  it("colliding names/DOBs do not merge or split students; the same email is stable", () => {
+    // Two DISTINCT students who share first name, last name AND date of birth but
+    // have different emails must resolve to two distinct internal ids.
+    const shared = { subject: "Math" as const };
+    const rows: IdentityInputRow[] = [
+      {
+        resultId: "r1",
+        ...shared,
+        row: {
+          ResultParticipantName: "s7f2a1@example.edu",
+          ResultParticipantFirstName: "Nour",
+          ResultParticipantLastName: "Twin",
+          ResultSpecialField4: "2001-01-01",
+        },
+      },
+      {
+        resultId: "r2",
+        ...shared,
+        row: {
+          ResultParticipantName: "s9b4c3@example.edu",
+          ResultParticipantFirstName: "Nour",
+          ResultParticipantLastName: "Twin",
+          ResultSpecialField4: "2001-01-01",
+        },
+      },
+      // The SAME email appearing again (a second subject) keeps the SAME id.
+      {
+        resultId: "r3",
+        subject: "English",
+        row: { ResultParticipantName: "S7F2A1@example.edu" },
+      },
+    ];
+    const ids = assignParticipantIdentities(rows);
+    expect(ids.get("r1")!.id).not.toBe(ids.get("r2")!.id); // no merge on name+DOB
+    expect(ids.get("r1")!.id).toBe(ids.get("r3")!.id); // same email → same id (case-folded)
+    expect(ids.get("r1")!.id).toBe(internalParticipantId("s7f2a1@example.edu"));
+    // The id is derived only from the email — never from the name or DOB.
+    expect(ids.get("r1")!.id).not.toContain("nour");
+    expect(ids.get("r1")!.id).not.toContain("2001");
   });
 
   // ── Upload/detection oracle — BEFORE cohort exclusion (18 participants) ─────
@@ -162,7 +220,7 @@ describe("participant identity collapse — colliding-identity fixture", () => {
     expect(count(/Life/)).toBe(10);
   });
 
-  // ── 3. the per-student score matrix reconciles (no merge / overwrite) ──────
+  // ── 4. the per-student score matrix reconciles (no merge / overwrite) ──────
   it("all 15 Applicable Math students survive with the exact oracle raw scores", () => {
     const { p, assessmentByName } = buildProvider(true);
     const mathId = assessmentByName(/Applicable Math$/);
@@ -172,7 +230,7 @@ describe("participant identity collapse — colliding-identity fixture", () => {
       .filter((su): su is NonNullable<typeof su> => !!su);
     expect(math).toHaveLength(15);
     // Identical distribution to the de-identified 700435 oracle — proving the
-    // colliding identities are correctly separated, not merged/overwritten.
+    // realistic identities are correctly separated, not merged/overwritten.
     const mcqSorted = math.map((s) => s.mcq).sort((a, b) => b - a);
     expect(mcqSorted).toEqual([24, 19, 19, 19, 17, 17, 17, 16, 16, 16, 16, 14, 14, 14, 10]);
     for (const s of math) expect(s.max).toBe(40);
