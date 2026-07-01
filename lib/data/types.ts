@@ -771,6 +771,12 @@ export interface ManualMarkAdjustment {
   reason: string;
   /** Actor who made the adjustment (resolved server-side). */
   by: string;
+  /**
+   * The acting user's stored role at the time of the adjustment — captured so a
+   * higher role's override can be gated on the canonical `canOverride` (strictly
+   * higher) rule against the role that actually took this action.
+   */
+  byRole?: Role;
   /** ISO timestamp. */
   ts: string;
 }
@@ -1247,7 +1253,16 @@ export interface EffectiveDecision {
   /** Who set the current state, and when. */
   decidedBy: string;
   decidedAt: string;
+  /** The role tier (label) that set the current state — the override subject. */
+  decidedByRole: string;
   reason: string | null;
+  /**
+   * Whether the SIGNED-IN user may override THIS decision — true only when their
+   * role is strictly higher than the role that took it (`canOverride`), the
+   * sitting isn't locked. Drives the per-row Override control; the top-level
+   * `canOverride` only says whether the user has override rights at all.
+   */
+  canOverride: boolean;
   /** Present when the current state is the result of an override. */
   override?: {
     by: string;
@@ -1259,7 +1274,12 @@ export interface EffectiveDecision {
 
 export interface OverrideViewModel {
   cycleId: string;
-  /** Whether the signed-in user may override (lead_admin). */
+  /**
+   * Whether the signed-in user has override rights on this sitting AT ALL (i.e.
+   * their role can override at least the lowest tier — analyst or admin — and the
+   * sitting isn't locked). Whether a SPECIFIC decision can be overridden is the
+   * per-decision `EffectiveDecision.canOverride` (strictly-higher-than-the-setter).
+   */
   canOverride: boolean;
   decisions: EffectiveDecision[];
   counts: { decisions: number; overridden: number };

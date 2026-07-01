@@ -220,6 +220,7 @@ function OverridesPanel({
                 </td>
                 <td className="hf-td" style={{ fontSize: 12 }}>
                   <div style={{ fontWeight: 600 }}>{d.decidedBy}</div>
+                  <div className="hf-sub" style={{ fontSize: 11 }}>{d.decidedByRole}</div>
                   {d.override ? (
                     <div className="hf-sub" style={{ fontSize: 11 }}>
                       overridden by {d.override.by}{d.override.priorActor ? ` — was set by ${d.override.priorActor}` : ""}
@@ -229,8 +230,13 @@ function OverridesPanel({
                   )}
                 </td>
                 <td className="hf-td">
-                  {!model.canOverride ? (
-                    <span className="hf-sub" style={{ fontSize: 11 }}>—</span>
+                  {!d.canOverride ? (
+                    // The signed-in user can't override THIS decision. Distinguish
+                    // "no override rights at all" from "the setter's role equals or
+                    // outranks yours" so the strictly-higher rule is legible.
+                    <span className="hf-sub" style={{ fontSize: 11 }} title={model.canOverride ? "Only a strictly higher role can override this decision" : "You don't have override rights on this sitting"}>
+                      {model.canOverride ? `Set by ${d.decidedByRole} — can't override` : "—"}
+                    </span>
                   ) : pending === d.key ? (
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       <input
