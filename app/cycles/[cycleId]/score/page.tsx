@@ -42,7 +42,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
         cycleId={cycleId}
         cycleName={cycleName}
         page="Score"
-        stageIndex={7}
+        stageIndex={6}
         // Keep the forward CTA present but disabled in the empty state — the step
         // should never look broken/incomplete, but you can't advance to cut scores
         // with nothing to cut. (Enabled once `participant_scores` exist, below.)
@@ -66,7 +66,7 @@ export default function ScorePage({ params }: { params: { cycleId: string } }) {
       cycleId={cycleId}
       cycleName={cycleName}
       page="Score"
-      stageIndex={7}
+      stageIndex={6}
       primary={
         <Link href={`/cycles/${cycleId}/boundaries`}>
           <Button variant="pri" title="Continue to cut scores">

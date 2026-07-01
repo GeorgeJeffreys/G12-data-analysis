@@ -440,8 +440,8 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     name: c.name,
     testCentreId: centreOfCycle(c),
     yearId: c.year_id ?? undefined,
-    stageIndex: 7,
-    stepsDone: 8,
+    stageIndex: 6,
+    stepsDone: 7,
     participants: 0,
     assessments: 0,
     lastActivity: new Date(c.updated_at).toLocaleDateString(),
@@ -514,10 +514,22 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   });
 
   // Clean-stage removals, grouped per subject (rows = participants, cols = items).
+  // Row removals re-resolve through the participant's STABLE key (qm_participant_id,
+  // migration 0016) to the CURRENT row UUID, so an exclusion recorded before a
+  // re-import still applies to the freshly-minted participant row. Rows whose stable
+  // key no longer maps to any participant (or legacy rows with no stable key whose
+  // stored UUID is now dangling) are dropped — they cannot match a live participant.
+  const qmToUuid = new Map(participants.map((p) => [p.qm_participant_id, p.id]));
+  const liveIds = new Set(participants.map((p) => p.id));
   const cleanByAssessment = new Map<string, { rows: string[]; cols: string[] }>();
   for (const r of cleanExclusionRows) {
     const g = cleanByAssessment.get(r.assessment_id) ?? { rows: [], cols: [] };
-    (r.kind === "row" ? g.rows : g.cols).push(r.target_id);
+    if (r.kind === "row") {
+      const resolved = (r.target_key && qmToUuid.get(r.target_key)) || (liveIds.has(r.target_id) ? r.target_id : undefined);
+      if (resolved) g.rows.push(resolved);
+    } else {
+      g.cols.push(r.target_id);
+    }
     cleanByAssessment.set(r.assessment_id, g);
   }
   const cleanRemovals = [...cleanByAssessment.entries()].map(([assessmentId, g]) => ({ assessmentId, ...g }));
@@ -543,7 +555,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     if (code) subjectCodeToAssessmentId.set(code, a.id);
   }
   const lookups = {
-    qmToUuid: new Map(participants.map((p) => [p.qm_participant_id, p.id])),
+    qmToUuid,
     subjectCodeToAssessmentId,
     incidentDbIds: incidentRows.map((r) => r.id),
   };
@@ -552,20 +564,21 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
 }
 
 function stageIndexFromStatus(status: string): number {
-  // 11-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
-  // Diagnostics(4) Essay marks(5) Technical adjustments(6) Score(7)
-  // Cut scores(8) CGJ(9) Grades(10). CGJ (centre grade judgement) is an optional
-  // comparison step with no status of its own; a graded sitting resolves to
-  // Grades, the final per-sitting step. Document generation lives at the
-  // cycle/overall level, not on a sitting.
+  // 10-stage order: Upload(0) Clean(1) Raw scores(2) Question review(3)
+  // Diagnostics(4) Incident adjustments(5) Score(6) Cut scores(7) CGJ(8)
+  // Grades(9). Essay marks are uploaded on Upload (step 1) and fold into the
+  // scored totals automatically — not a standalone stage. CGJ (centre grade
+  // judgement) is an optional comparison step with no status of its own; a graded
+  // sitting resolves to Grades, the final per-sitting step. Document generation
+  // lives at the cycle/overall level, not on a sitting.
   switch (status) {
     case "draft":
     case "ingested": return 0;
     case "validated": return 1; // Clean
     case "in_review": return 3; // Question review
-    case "scored": return 7; // Score (computed post-adjustment)
-    case "graded": return 10; // Grades
-    case "locked": return 10; // Grades (signed off) — terminal per-sitting step
+    case "scored": return 6; // Score (computed post-adjustment)
+    case "graded": return 9; // Grades
+    case "locked": return 9; // Grades (signed off) — terminal per-sitting step
     default: return 1;
   }
 }

@@ -177,6 +177,10 @@ export interface CleanExclusionRow {
   assessment_id: string;
   kind: "row" | "col";
   target_id: string;
+  /** kind='row': participant stable natural key (qm_participant_id / email) so the
+   *  removal re-resolves to the current row UUID after a re-import (migration 0016).
+   *  Null for legacy rows and for kind='col'. */
+  target_key: string | null;
   decided_by: string;
   decided_at: string;
 }
@@ -335,6 +339,51 @@ export interface ElementLabelRow {
   updated_at: string;
 }
 
+// 0016 — Incident Adjustments config registry + parsed rows. Writes are
+// definer-only (upsert_incident_code / set_incident_settings / set_incident_mapping
+// / import_incident_rows). `formula` / `mapping` are opaque JSON blobs whose shape
+// is owned by lib/incidents/types.ts.
+export interface IncidentCodeRow {
+  id: string;
+  code: string;
+  label: string;
+  match_types: string[];
+  formula: unknown;
+  per_code_cap: number;
+  active: boolean;
+  updated_by: string | null;
+  updated_at: string;
+}
+export interface IncidentSettingsRow {
+  id: boolean;
+  per_student_cap: number | null;
+  updated_by: string | null;
+  updated_at: string;
+}
+export interface IncidentImportMappingRow {
+  id: boolean;
+  mapping: unknown;
+  updated_by: string | null;
+  updated_at: string;
+}
+export interface IncidentRowRow {
+  id: string;
+  cycle_id: string;
+  /** P-A stable internal participant id (participants.qm_participant_id). */
+  participant_key: string;
+  /** Resolved cohort participant UUID, or null when unmatched. */
+  participant_id: string | null;
+  raw_student_id: string | null;
+  student_name: string | null;
+  incident_type: string | null;
+  question_number: string | null;
+  duration_minutes: number | null;
+  code_id: string | null;
+  status: string;
+  errors: string[];
+  created_at: string;
+}
+
 // --- Helper to describe a table to the Supabase client -----------------------
 type TableDef<Row, Insert, Update> = {
   Row: Row;
@@ -446,6 +495,11 @@ export interface Database {
       workspace_settings: TableDef<WorkspaceSettingRow, never, never>;
       // 0014 — per-subject A–E element labels (definer-only writes).
       element_labels: TableDef<ElementLabelRow, never, never>;
+      // 0016 — Incident Adjustments config + parsed rows (definer-only writes).
+      incident_codes: TableDef<IncidentCodeRow, never, never>;
+      incident_settings: TableDef<IncidentSettingsRow, never, never>;
+      incident_import_mappings: TableDef<IncidentImportMappingRow, never, never>;
+      incident_rows: TableDef<IncidentRowRow, never, never>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -489,7 +543,7 @@ export interface Database {
       set_cycle_status: { Args: { p_cycle: string; p_status: CycleStatus }; Returns: ExamCycleRow };
       set_assessment_status: { Args: { p_assessment: string; p_status: AssessmentStatus }; Returns: undefined };
       decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };
-      set_clean_removal: { Args: { p_cycle: string; p_assessment: string; p_kind: string; p_targets: string[]; p_remove: boolean }; Returns: undefined };
+      set_clean_removal: { Args: { p_cycle: string; p_assessment: string; p_kind: string; p_targets: string[]; p_keys: string[]; p_remove: boolean }; Returns: undefined };
       clear_clean_removals: { Args: { p_cycle: string; p_assessment: string }; Returns: undefined };
       write_item_stats: { Args: { p_cycle: string; p_engine_version: string; p_stats: unknown }; Returns: undefined };
       lock_grades: { Args: { p_cycle: string }; Returns: undefined };
@@ -514,6 +568,13 @@ export interface Database {
       set_workspace_setting: { Args: { p_key: string; p_value: unknown }; Returns: undefined };
       // 0014 — replace the per-subject element-label config (definer-only).
       set_element_labels: { Args: { p_config: unknown }; Returns: undefined };
+      // 0016 — Incident Adjustments config registry + import (admin-only config).
+      upsert_incident_code: { Args: { p_id: string | null; p_code: string; p_label: string; p_match_types: string[]; p_formula: unknown; p_per_code_cap: number; p_active: boolean }; Returns: string };
+      delete_incident_code: { Args: { p_id: string }; Returns: undefined };
+      set_incident_settings: { Args: { p_per_student_cap: number | null }; Returns: undefined };
+      set_incident_mapping: { Args: { p_mapping: unknown }; Returns: undefined };
+      import_incident_rows: { Args: { p_cycle: string; p_rows: unknown }; Returns: undefined };
+      clear_incident_rows: { Args: { p_cycle: string }; Returns: undefined };
       // 0007 — atomic, idempotent 3-CSV persist + destructive sitting controls.
       ingest_persist: { Args: { p_cycle: string; p_payload: unknown; p_actor: string }; Returns: unknown };
       clear_sitting_data: { Args: { p_cycle: string }; Returns: undefined };

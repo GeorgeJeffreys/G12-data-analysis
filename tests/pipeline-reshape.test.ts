@@ -1,12 +1,14 @@
 /**
  * Pipeline reshape (G12++): the single-run step order was reshaped — Raw data is
- * folded into Clean, Assessment Health (was "Diagnostics") and Essay marks are
- * now steps, Adjustments → Technical adjustments, Boundaries → Cut scores. The
- * top cycle tab bar is Critical Path (was "Pipeline") · Audit log · Diagnostics.
- * These tests pin the new order/labels, that Assessment
- * Health renders as a step (with Cronbach's alpha), that the Raw data view lives
- * in Clean, that Essay marks is reachable both as a step and via the Upload card,
- * and that the continue buttons follow the new order with nothing skipped.
+ * folded into Clean, the whole-assessment check is now the "Assessment Health"
+ * step (was "Diagnostics"), Adjustments → Incident adjustments, Boundaries → Cut
+ * scores. Essay marks are uploaded on Upload (step 1) and fold into the scored
+ * totals automatically — NOT a standalone step. The top cycle tab bar is Critical
+ * Path (was "Pipeline") · Audit log · Diagnostics (the exploratory reference tab).
+ * These tests pin the new 10-step order/labels, that Assessment Health renders as
+ * a step (with Cronbach's alpha) and continues to Incident adjustments, that the
+ * Raw data view lives in Clean, that the Essay marks upload lives on Upload, and
+ * that the continue buttons follow the new order with nothing skipped.
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement as e } from "react";
@@ -24,8 +26,7 @@ const EXPECTED_ORDER = [
   "Raw scores",
   "Question review",
   "Assessment Health",
-  "Essay marks",
-  "Technical adjustments",
+  "Incident adjustments",
   "Score",
   "Cut scores",
   "CGJ",
@@ -33,7 +34,7 @@ const EXPECTED_ORDER = [
 ];
 
 describe("stepper order + labels", () => {
-  it("PIPELINE_STAGES is the 11-step order, ending at Grades (no per-sitting Export)", () => {
+  it("PIPELINE_STAGES is the 10-step order, ending at Grades (no per-sitting Export)", () => {
     expect([...PIPELINE_STAGES]).toEqual(EXPECTED_ORDER);
     // Document/certificate generation is not a per-sitting step — it lives at the
     // cycle/overall level — so the stepper no longer carries an "Export" stage.
@@ -45,14 +46,18 @@ describe("stepper order + labels", () => {
   });
 
   it("renames applied and the old labels are gone", () => {
-    expect(PIPELINE_STAGES).toContain("Technical adjustments");
-    expect(PIPELINE_STAGES).toContain("Cut scores");
     expect(PIPELINE_STAGES).toContain("Assessment Health");
+    expect(PIPELINE_STAGES).toContain("Cut scores");
+    // The old "Technical adjustments" label is gone (systematised rename).
+    expect(PIPELINE_STAGES).not.toContain("Technical adjustments");
     expect(PIPELINE_STAGES).not.toContain("Adjustments");
     expect(PIPELINE_STAGES).not.toContain("Boundaries");
     expect(PIPELINE_STAGES).not.toContain("Raw data");
     // The whole-assessment step was renamed off the ambiguous "Diagnostics".
     expect(PIPELINE_STAGES).not.toContain("Diagnostics");
+    // Essay marks is no longer a standalone stage — it's uploaded on Upload and
+    // folds into the scored totals automatically.
+    expect(PIPELINE_STAGES).not.toContain("Essay marks");
   });
 
   it("CGJ sits directly after Cut scores, before Grades", () => {
@@ -82,15 +87,18 @@ describe("top cycle tab bar", () => {
 });
 
 describe("routing follows the new order with nothing skipped", () => {
-  it("each index routes to the right screen and Raw data has no route", () => {
+  it("each index routes to the right screen; Raw data and Essay marks have no route", () => {
     expect(stageRoute("c", 1)).toBe("/cycles/c/clean");
     expect(stageRoute("c", 4)).toBe("/cycles/c/diagnostics");
-    expect(stageRoute("c", 5)).toBe("/cycles/c/essays");
-    expect(stageRoute("c", 6)).toBe("/cycles/c/adjustments");
-    expect(stageRoute("c", 8)).toBe("/cycles/c/boundaries");
-    expect(stageRoute("c", 9)).toBe("/cycles/c/cgj");
-    expect(stageRoute("c", 10)).toBe("/cycles/c/grades");
-    for (let i = 0; i <= 10; i++) expect(stageRoute("c", i)).not.toContain("/raw-data");
+    expect(stageRoute("c", 5)).toBe("/cycles/c/adjustments");
+    expect(stageRoute("c", 6)).toBe("/cycles/c/score");
+    expect(stageRoute("c", 7)).toBe("/cycles/c/boundaries");
+    expect(stageRoute("c", 8)).toBe("/cycles/c/cgj");
+    expect(stageRoute("c", 9)).toBe("/cycles/c/grades");
+    for (let i = 0; i <= 10; i++) {
+      expect(stageRoute("c", i)).not.toContain("/raw-data");
+      expect(stageRoute("c", i)).not.toContain("/essays");
+    }
   });
 });
 
@@ -138,32 +146,22 @@ describe("Assessment Health is a pipeline step with Cronbach's alpha", () => {
     const out = html(e(AssessmentHealthPage, { params: { cycleId: CYCLE } }));
     expect(out).toContain("Assessment Health");
     expect(out).toContain("Cronbach"); // ReliabilityPanel = Cronbach's alpha
-    // It is a step now: a continue button onto Essay marks (not a dead-end tab).
-    expect(out).toContain(`/cycles/${CYCLE}/essays`);
-    expect(out).toContain("Continue to essay marks");
-  });
-});
-
-describe("Essay marks is reachable as a step", () => {
-  it("renders the essay-marks entry and continues to technical adjustments", async () => {
-    active = new InMemoryDataProvider();
-    const { default: EssaysPage } = await import("@/app/cycles/[cycleId]/essays/page");
-    const out = html(e(EssaysPage, { params: { cycleId: CYCLE } }));
-    expect(out).toContain("Essay marks");
-    expect(out).toContain("Add essay-marks file"); // the shared EssayMarksCard
+    // It is a step now: a continue button straight onto Incident adjustments
+    // (essay marks are uploaded on Upload, not a step in between).
     expect(out).toContain(`/cycles/${CYCLE}/adjustments`);
-    expect(out).toContain("Continue to technical adjustments");
+    expect(out).toContain("Continue to incident adjustments");
   });
 });
 
-describe("Essay marks upload card still works on Upload", () => {
-  it("the Upload screen still carries the Essay marks card (both entry points kept)", async () => {
+describe("Essay marks upload lives on Upload (no standalone step)", () => {
+  it("the Upload screen carries the Essay marks card — the sole entry point", async () => {
     active = new InMemoryDataProvider();
     const { default: ImportPage } = await import("@/app/cycles/[cycleId]/import/page");
     const out = html(e(ImportPage, { params: { cycleId: CYCLE } }));
     expect(out).toContain("Upload exam data");
-    // The optional "Essay marks" card is still present on Upload (collapsed by
-    // default — its body opens on click); it shares EssayMarksCard with the step.
+    // The optional "Essay marks" card sits on Upload (collapsed by default — its
+    // body opens on click) via the shared EssayMarksCard; marks fold into the
+    // scored totals automatically, so there is no separate essay-marks step.
     expect(out).toContain("Essay marks");
   });
 });
@@ -177,11 +175,11 @@ describe("continue buttons follow the new order", () => {
     expect(out).toContain(`/cycles/${CYCLE}/diagnostics`);
   });
 
-  it("Technical adjustments → Score", async () => {
+  it("Incident adjustments → Score", async () => {
     active = new InMemoryDataProvider();
     const { default: AdjustmentsPage } = await import("@/app/cycles/[cycleId]/adjustments/page");
     const out = html(e(AdjustmentsPage, { params: { cycleId: CYCLE } }));
-    expect(out).toContain("Technical adjustments");
+    expect(out).toContain("Incident adjustments");
     expect(out).toContain(`/cycles/${CYCLE}/score`);
   });
 

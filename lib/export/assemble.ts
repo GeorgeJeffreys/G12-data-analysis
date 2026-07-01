@@ -6,6 +6,7 @@
  */
 
 import type { ItemStat } from "@/lib/engine";
+import { discriminationGroupSize } from "@/lib/engine";
 import { roundOrNull } from "./sheet-utils";
 import type {
   AssembleItemAnalysisArgs,
@@ -88,7 +89,7 @@ export function assembleItemAnalysis(args: AssembleItemAnalysisArgs): ItemAnalys
       name: assessment.name,
       participants: participantCount,
       rowsAnalysed: aFacts.length,
-      groupSize: Math.max(1, Math.round(participantCount / 3)),
+      groupSize: discriminationGroupSize(participantCount),
       rows,
     });
   }

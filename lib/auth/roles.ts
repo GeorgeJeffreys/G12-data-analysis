@@ -25,6 +25,13 @@ import type { MemberRole } from "@/lib/types/database";
 export const ROLE_TIERS = ["team_member", "analyst", "admin"] as const;
 export type RoleTier = (typeof ROLE_TIERS)[number];
 
+/** Human label for each canonical tier (for the audit / override surface). */
+export const ROLE_TIER_LABEL: Record<RoleTier, string> = {
+  team_member: "G12 team member",
+  analyst: "Data analyst",
+  admin: "Admin",
+};
+
 /**
  * Every storage (`member_role`) value collapsed onto its canonical tier.
  * `viewer`/`reviewer` → team_member; `analyst` → analyst; `lead_admin` → admin.
@@ -76,4 +83,14 @@ export function hasRole(role: AnyRole, minTier: RoleTier): boolean {
  */
 export function canOverride(actorRole: AnyRole, subjectRole: AnyRole): boolean {
   return roleRank(actorRole) > roleRank(subjectRole);
+}
+
+/** The canonical tier a role expression resolves to (e.g. `viewer` → team_member). */
+export function tierOfRole(role: AnyRole): RoleTier {
+  return tierOf(role);
+}
+
+/** Human tier label for a role expression (e.g. `reviewer` → "G12 team member"). */
+export function roleTierLabel(role: AnyRole): string {
+  return ROLE_TIER_LABEL[tierOf(role)];
 }

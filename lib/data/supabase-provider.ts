@@ -25,6 +25,7 @@
  */
 import type { Database } from "@/lib/types/database";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
+import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import { InMemoryDataProvider } from "./in-memory-provider";
 import { hydrate, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
 import { catalogNamesFor } from "./subject-catalog";
@@ -85,6 +86,7 @@ import type {
   DistinctionSafeguardModel,
   EssayMarksModel,
   AdjustmentsModel,
+  IncidentConfigModel,
   CompositionModel,
   DiagnosticsModel,
   ReliabilityModel,
@@ -125,6 +127,7 @@ export class SupabaseDataProvider implements DataProvider {
   private cycleId = "";
   private status: AccessStatus = "loading";
   private qmToUuid = new Map<string, string>();
+  private uuidToQm = new Map<string, string>(); // participant row UUID → stable qm_participant_id
   private subjectToAssessment = new Map<string, string>();
   private incIdMap = new Map<string, string>(); // inner inc-N → DB incident uuid
 
@@ -200,6 +203,7 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner = next;
     this.cycleId = h.seed.liveCycle.id;
     this.qmToUuid = h.lookups.qmToUuid;
+    this.uuidToQm = new Map([...h.lookups.qmToUuid].map(([qm, uuid]) => [uuid, qm]));
     this.subjectToAssessment = h.lookups.subjectCodeToAssessmentId;
     this.incIdMap = new Map(h.lookups.incidentDbIds.map((id, i) => [`inc-${i + 1}`, id]));
     this.status = "ok";
@@ -319,6 +323,7 @@ export class SupabaseDataProvider implements DataProvider {
   getConfig(): ConfigModel { return this.inner.getConfig(); }
   getScoringConfig(): ScoringConfig { return this.inner.getScoringConfig(); }
   getElementLabels(): ElementLabelsConfig { return this.inner.getElementLabels(); }
+  getIncidentConfig(): IncidentConfigModel { return this.inner.getIncidentConfig(); }
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
   getOverrideView(cycleId: string): OverrideViewModel { return this.inner.getOverrideView(cycleId); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
@@ -349,8 +354,10 @@ export class SupabaseDataProvider implements DataProvider {
     this.bump();
     const rows = target.rows ?? [];
     const cols = target.cols ?? [];
-    if (rows.length) this.rpc("set_clean_removal", { p_cycle: cycleId, p_assessment: assessmentId, p_kind: "row", p_targets: rows, p_remove: removed });
-    if (cols.length) this.rpc("set_clean_removal", { p_cycle: cycleId, p_assessment: assessmentId, p_kind: "col", p_targets: cols, p_remove: removed });
+    // Rows carry the participant's STABLE natural key (qm_participant_id) so the
+    // removal re-resolves after a re-import (0016); cols have none.
+    if (rows.length) this.rpc("set_clean_removal", { p_cycle: cycleId, p_assessment: assessmentId, p_kind: "row", p_targets: rows, p_keys: rows.map((id) => this.uuidToQm.get(id) ?? id), p_remove: removed });
+    if (cols.length) this.rpc("set_clean_removal", { p_cycle: cycleId, p_assessment: assessmentId, p_kind: "col", p_targets: cols, p_keys: [], p_remove: removed });
   }
 
   clearCleanRemovals(cycleId: string, assessmentId: string): void {
@@ -373,6 +380,9 @@ export class SupabaseDataProvider implements DataProvider {
     // re-derives the cohort-wide exclusion. getRawData reads the untouched raw
     // matrix, so presence is computed before the exclusion takes effect.
     const cyc = this.inner.getCycle(cycleId);
+    // Key the durable record on P-A's stable natural key (qm_participant_id) so the
+    // exclusion re-resolves after a re-import instead of dangling on the old UUID.
+    const stableKey = this.uuidToQm.get(participantId) ?? participantId;
     for (const a of cyc?.assessments ?? []) {
       const raw = this.inner.getRawData(cycleId, a.id);
       if (raw?.rows.some((r) => r.id === participantId)) {
@@ -381,6 +391,7 @@ export class SupabaseDataProvider implements DataProvider {
           p_assessment: a.id,
           p_kind: "row",
           p_targets: [participantId],
+          p_keys: [stableKey],
           p_remove: excluded,
         });
       }
@@ -778,6 +789,38 @@ export class SupabaseDataProvider implements DataProvider {
       entries.map((e) => ({ subject, matchKey: e.matchKey, letter: e.letter, label: e.label })),
     );
     this.rpc("set_element_labels", { p_config: payload });
+  }
+
+  // Incident Adjustments configuration (admin-only writes; the RPCs re-check the
+  // workspace-admin role and re-validate add-only server-side). Optimistic local
+  // update via the inner provider, then persist.
+  upsertIncidentCode(input: IncidentCodeInput): void {
+    this.inner.upsertIncidentCode(input);
+    this.bump();
+    this.rpc("upsert_incident_code", {
+      p_id: input.id ?? null,
+      p_code: input.code,
+      p_label: input.label,
+      p_match_types: input.matchTypes,
+      p_formula: input.formula,
+      p_per_code_cap: input.perCodeCap,
+      p_active: input.active ?? true,
+    });
+  }
+  deleteIncidentCode(id: string): void {
+    this.inner.deleteIncidentCode(id);
+    this.bump();
+    this.rpc("delete_incident_code", { p_id: id });
+  }
+  setIncidentPerStudentCap(cap: number | null): void {
+    this.inner.setIncidentPerStudentCap(cap);
+    this.bump();
+    this.rpc("set_incident_settings", { p_per_student_cap: cap });
+  }
+  setIncidentMapping(mapping: IncidentColumnMapping): void {
+    this.inner.setIncidentMapping(mapping);
+    this.bump();
+    this.rpc("set_incident_mapping", { p_mapping: mapping });
   }
 
   // audit-writing actions

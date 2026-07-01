@@ -66,7 +66,9 @@ import type {
   DiagnosticsModel,
   ReliabilityModel,
   IncidentDecision,
+  IncidentConfigModel,
 } from "./types";
+import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
@@ -462,6 +464,17 @@ export interface DataProvider {
   getElementLabels(): ElementLabelsConfig;
   /** Replace the per-subject element-label config (lead/admin only, validated). */
   setElementLabels(config: ElementLabelsConfig): void;
+
+  // Incident Adjustments configuration registry (admin-only writes; read-only for
+  // lower roles). Codes/formulae/caps + the reconfigurable import column mapping.
+  getIncidentConfig(): IncidentConfigModel;
+  /** Insert (no id) or update one incident code. Admin only; add-only validated. */
+  upsertIncidentCode(input: IncidentCodeInput): void;
+  deleteIncidentCode(id: string): void;
+  /** Per-student global cap on total incident marks (null = no cap). Admin only. */
+  setIncidentPerStudentCap(cap: number | null): void;
+  /** Reconfigurable import column mapping. Admin only. */
+  setIncidentMapping(mapping: IncidentColumnMapping): void;
 
   // audit-writing actions (UI-driven export / document generation)
   recordExport(cycleId: string, detail: string): void;

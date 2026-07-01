@@ -1,12 +1,13 @@
 "use client";
 
 /**
- * Essay-marks entry — the single shared upload/enter surface for offline-marked
- * essays (English & Arabic only). Used in two places that write to the same
- * provider state: the optional "Essay marks" card on the Upload screen and the
- * dedicated "Essay marks" pipeline step. Keeping one component means both entry
- * points stay in lock-step — same parse, same matching, same preview, same
- * sample loader.
+ * Essay-marks entry — the single upload/enter surface for offline-marked essays
+ * (English & Arabic only). Lives on the Upload screen (step 1) as the optional
+ * "Essay marks" card, alongside the QM exports: marks uploaded here fold into the
+ * scored subject totals automatically (a post-engine layer), so there is no
+ * separate essay-marks step to visit and no manual apply. Keyed on P-A's internal
+ * unique participant id via the provider — same parse, matching, preview and
+ * sample loader in one place.
  */
 import { useRef, useState } from "react";
 import { useProvider } from "@/lib/data/context";

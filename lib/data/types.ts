@@ -9,6 +9,7 @@ import type { PerCutSuggestion } from "@/lib/engine/cut-scores";
 import type { AssessmentDiagnostics } from "@/lib/diagnostics";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { SeedAnswerOption, SeedPreview } from "./seed-types";
+import type { IncidentAdjustmentConfig } from "@/lib/incidents/types";
 
 /** A question's multiple-choice answer option, surfaced to the review UI. */
 export type AnswerOption = SeedAnswerOption;
@@ -30,14 +31,17 @@ export interface CurrentUser {
 // (app/years/[yearId]/overall/documents), not a single sitting. The per-sitting
 // pipeline therefore ends at Grades. (Per-page CSV/Excel data exports remain — they
 // are legitimately per-sitting, but they are page actions, not a pipeline stage.)
+// Essay marks are NOT a standalone pipeline step: the offline-marked English /
+// Arabic essays are uploaded up front on Upload (step 1) alongside the QM exports
+// and fold automatically into the scored subject totals (a post-engine layer, see
+// lib/engine/scores.ts). There is no separate essay stage to visit.
 export const PIPELINE = [
   "Upload",
   "Clean",
   "Raw scores",
   "Question review",
   "Assessment Health",
-  "Essay marks",
-  "Technical adjustments",
+  "Incident adjustments",
   "Score",
   "Cut scores",
   // CGJ (Centre Grade Judgement) sits directly after Cut scores, before Grades:
@@ -771,6 +775,12 @@ export interface ManualMarkAdjustment {
   reason: string;
   /** Actor who made the adjustment (resolved server-side). */
   by: string;
+  /**
+   * The acting user's stored role at the time of the adjustment — captured so a
+   * higher role's override can be gated on the canonical `canOverride` (strictly
+   * higher) rule against the role that actually took this action.
+   */
+  byRole?: Role;
   /** ISO timestamp. */
   ts: string;
 }
@@ -1247,7 +1257,16 @@ export interface EffectiveDecision {
   /** Who set the current state, and when. */
   decidedBy: string;
   decidedAt: string;
+  /** The role tier (label) that set the current state — the override subject. */
+  decidedByRole: string;
   reason: string | null;
+  /**
+   * Whether the SIGNED-IN user may override THIS decision — true only when their
+   * role is strictly higher than the role that took it (`canOverride`), the
+   * sitting isn't locked. Drives the per-row Override control; the top-level
+   * `canOverride` only says whether the user has override rights at all.
+   */
+  canOverride: boolean;
   /** Present when the current state is the result of an override. */
   override?: {
     by: string;
@@ -1259,7 +1278,12 @@ export interface EffectiveDecision {
 
 export interface OverrideViewModel {
   cycleId: string;
-  /** Whether the signed-in user may override (lead_admin). */
+  /**
+   * Whether the signed-in user has override rights on this sitting AT ALL (i.e.
+   * their role can override at least the lowest tier — analyst or admin — and the
+   * sitting isn't locked). Whether a SPECIFIC decision can be overridden is the
+   * per-decision `EffectiveDecision.canOverride` (strictly-higher-than-the-setter).
+   */
   canOverride: boolean;
   decisions: EffectiveDecision[];
   counts: { decisions: number; overridden: number };
@@ -1428,6 +1452,15 @@ export interface BrandingConfig {
 export interface BorderlineConfig {
   /** Borderline band, in percentage points. Bounds enforced server-side. */
   bandPct: number;
+}
+
+/**
+ * Incident Adjustments configuration read-model. The registry of incident codes,
+ * the per-student global cap and the reconfigurable column mapping, plus whether
+ * the current user may EDIT it (admin only — lower roles view read-only).
+ */
+export interface IncidentConfigModel extends IncidentAdjustmentConfig {
+  canEdit: boolean;
 }
 
 export interface ConfigModel {

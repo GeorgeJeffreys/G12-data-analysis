@@ -1,14 +1,15 @@
 "use client";
 
 /**
- * Screen — Technical adjustments (replaces the old per-student exclusion step).
- * This is the single home for the incident log: import it here (Incident_Log +
- * Students Complaints), then triage each incident-log / complaint row into an
- * alteration — applied to a specific student, a whole subject (bulk), or no
- * action. Nothing is auto-applied; every alteration is a recorded human decision
- * (audit-logged). The step is optional/skippable when no incident log was added.
- * (The per-student mark composition now lives on the Grades screen — click a
- * student there.)
+ * Screen — Incident adjustments (formerly "Technical adjustments"; the same step
+ * in the pipeline, now systematised into a rules-based subsystem — see the admin
+ * Incident Adjustments configuration under Settings). This is also the single home
+ * for the incident log: import it here (Incident_Log + Students Complaints), then
+ * triage each incident-log / complaint row into an alteration — applied to a
+ * specific student, a whole subject (bulk), or no action. Nothing is auto-applied;
+ * every alteration is a recorded human decision (audit-logged). The step is
+ * optional/skippable when no incident log was added. (The per-student mark
+ * composition now lives on the Grades screen — click a student there.)
  */
 import { useRef, useState } from "react";
 import Link from "next/link";
@@ -29,10 +30,10 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
   const shellProps = {
     cycleId,
     cycleName,
-    page: "Technical adjustments",
-    stageIndex: 6,
+    page: "Incident adjustments",
+    stageIndex: 5,
     primary: (
-      // Technical adjustments → Score (step 8) → Cut scores (step 9): the next
+      // Incident adjustments → Score (step 7) → Cut scores (step 8): the next
       // step is the computed-scores screen, not cut scores (no step is skipped).
       <Link href={`/cycles/${cycleId}/score`}>
         <Button variant="pri" title="Continue to scoring">Continue<Icon name="arrow" color="#fff" /></Button>
@@ -54,7 +55,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
         {/* header */}
         <div className="hf-pad" style={{ display: "flex", alignItems: "flex-end", gap: 20, padding: "22px 28px 0", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 280 }}>
-            <div className="hf-h1">Technical adjustments</div>
+            <div className="hf-h1">Incident adjustments</div>
             <div className="hf-sub" style={{ marginTop: 7, maxWidth: 640 }}>
               Triage each incident into a raw-mark alteration — per student, a whole subject, or no action.
               Nothing is applied automatically. (See each student’s mark composition on the Grades screen.)

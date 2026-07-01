@@ -65,9 +65,9 @@ export default function CgjPage({ params }: { params: { cycleId: string } }) {
     cycleId,
     cycleName,
     page: "CGJ",
-    stageIndex: 9,
+    stageIndex: 8,
     primary: (
-      // CGJ → Grades (step 11): CGJ is a check, not a gate — it never blocks the
+      // CGJ → Grades (step 10): CGJ is a check, not a gate — it never blocks the
       // move to Grades.
       <Link href={`/cycles/${cycleId}/grades`}>
         <Button variant="pri" title="Continue to grades">

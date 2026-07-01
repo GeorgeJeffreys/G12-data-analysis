@@ -137,7 +137,7 @@ export default function BoundariesPage({ params }: { params: { cycleId: string }
       cycleId={cycleId}
       cycleName={cycleName}
       page="Cut scores"
-      stageIndex={8}
+      stageIndex={7}
       actions={<ExportButtons onCsv={exportBoundariesCsv} onXlsx={exportBoundariesXlsx} />}
       primary={
         // Cut scores → CGJ (step 10) → Grades (step 11): the next step is the

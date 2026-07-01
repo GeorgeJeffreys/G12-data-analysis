@@ -75,7 +75,7 @@ export interface ItemAnalysisBlock {
   name: string;
   participants: number;
   rowsAnalysed: number;
-  /** Upper/lower group size for discrimination = round(participants / 3). */
+  /** Upper/lower group size for discrimination (see `discriminationGroupSize`). */
   groupSize: number;
   rows: ItemAnalysisRow[];
 }

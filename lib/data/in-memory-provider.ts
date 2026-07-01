@@ -32,7 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
-import { hasRole } from "@/lib/auth/roles";
+import { hasRole, canOverride, roleTierLabel } from "@/lib/auth/roles";
 import { rollupOverall, overallAwardsReconcile } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
@@ -40,6 +40,7 @@ import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 import { SUBJECT_CATALOG } from "./subject-catalog";
+import { isStaffTestEmail } from "./staff-exclusions";
 import { isEssaySubject, reservedEssayMax } from "./essays";
 import type {
   AssembleScoreAnalysisArgs,
@@ -87,6 +88,7 @@ import {
   type CompareColumn,
   type CreateCycleInput,
   type CurrentUser,
+  type Role,
   type CycleDetail,
   type CycleSummary,
   type TestCentreSummary,
@@ -160,7 +162,20 @@ import {
   type StudentReviewModel,
   type TechnicalErrorsUpload,
   type TechnicalIncident,
+  type IncidentConfigModel,
 } from "./types";
+import {
+  defaultIncidentConfig,
+  validateIncidentCode,
+  validatePerStudentCap,
+  normalizeIncidentCode,
+} from "@/lib/incidents/config";
+import { describeFormula } from "@/lib/incidents/formula";
+import type {
+  IncidentAdjustmentConfig,
+  IncidentCodeInput,
+  IncidentColumnMapping,
+} from "@/lib/incidents/types";
 import {
   CLEANED_DATA_COLUMNS,
   CLEANED_DATA_UNAVAILABLE,
@@ -382,6 +397,10 @@ export class InMemoryDataProvider implements DataProvider {
   // Default is the ±2% placeholder pending G12's policy value.
   private borderline: BorderlineConfig = { bandPct: DEFAULT_BORDERLINE_BAND_PCT };
 
+  // Incident Adjustments configuration registry (codes/formulae/caps + import
+  // column mapping). Admin-owned; lower roles read-only. Mirrors migration 0016.
+  private incidentConfig: IncidentAdjustmentConfig = defaultIncidentConfig();
+
   // Per-subject A–E element labels (configurable in Settings). Seeded from the
   // confirmed G12++ defaults; the Supabase provider replays the persisted set.
   private elementLabels: ElementLabelsConfig = JSON.parse(JSON.stringify(DEFAULT_ELEMENT_LABELS));
@@ -427,9 +446,10 @@ export class InMemoryDataProvider implements DataProvider {
   };
 
   // Who set the current effective state of each grade-bearing decision, so an
-  // override can name the prior actor. Keyed like the audit detail.
-  //   exclusionBy: `${cycleId}:${assessmentId}:${itemId}` → actor
-  private exclusionBy = new Map<string, { id: string; name: string; at: string }>();
+  // override can name the prior actor AND gate on the strictly-higher `canOverride`
+  // rule against the role that took it. Keyed like the audit detail.
+  //   exclusionBy: `${cycleId}:${assessmentId}:${itemId}` → actor (incl. their role)
+  private exclusionBy = new Map<string, { id: string; name: string; role: Role; at: string }>();
   //   overrideMeta (item exclusions): same key → override provenance
   private exclusionOverride = new Map<string, { by: string; priorActor: string | null; reason: string; ts: string }>();
   //   overrideMeta (mark adjustments): `${cycleId}:${participantId}:${assessmentId}`
@@ -539,9 +559,21 @@ export class InMemoryDataProvider implements DataProvider {
   private cleanRowSet(assessmentId: string): Set<string> | undefined {
     return this.cleanRows.get(`${this.seed.liveCycle.id}:${assessmentId}`);
   }
-  /** Participant ids excluded cohort-wide (staff / test accounts) for the live cycle. */
+  /**
+   * Participant ids excluded cohort-wide (staff / test accounts) for the live
+   * cycle. Two sources, unioned:
+   *   1. the configured staff/test EMAIL list (primary, robust — keyed on the
+   *      participant's stable email `studentId`/qm_participant_id, so it survives
+   *      re-import and needs no stored decision); and
+   *   2. explicit ad-hoc cohort exclusions recorded via
+   *      `excludeParticipantFromCohort` (persisted per-subject, replayed on hydrate).
+   */
   private cohortExcludedSet(): Set<string> {
-    return new Set(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
+    const out = new Set<string>(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
+    for (const p of this.seed.liveCycle.participants) {
+      if (isStaffTestEmail(p.studentId ?? p.id)) out.add(p.id);
+    }
+    return out;
   }
   /**
    * Participants removed from the COHORT entirely — those cleaned out (Clean-stage
@@ -2442,6 +2474,27 @@ export class InMemoryDataProvider implements DataProvider {
     return { id: clean, name: clean };
   }
 
+  /**
+   * Resolve an essay-file ParticipantID to a participant, keyed ONLY on the
+   * P-A internal UNIQUE identity — the stable internal id (`p.id`) or the
+   * guaranteed-unique Student ID (`p.studentId` = `qm_participant_id` on live
+   * data). Deliberately NEVER falls back to the display name (`p.label`): names
+   * collide (the two Fatimas), so a name key would fold distinct students'
+   * essays together — the exact "non-unique derived key" collapse P-A fixed.
+   * Essays therefore land on the correct, un-collapsed student. Returns
+   * `matched: false` (skip + surface as unmatched) when no unique key matches.
+   */
+  private matchEssayStudent(raw: string): { id: string; matched: boolean } {
+    const clean = raw.trim().toLowerCase();
+    for (const p of this.seed.liveCycle.participants) {
+      if (p.id.toLowerCase() === clean) return { id: p.id, matched: true };
+    }
+    for (const p of this.seed.liveCycle.participants) {
+      if ((p.studentId ?? p.id).toLowerCase() === clean) return { id: p.id, matched: true };
+    }
+    return { id: raw.trim(), matched: false };
+  }
+
   private technicalErrorsUpload(cycleId: string): TechnicalErrorsUpload {
     const te = this.technicalErrors.get(cycleId);
     if (!te || !te.uploaded) {
@@ -2552,9 +2605,10 @@ export class InMemoryDataProvider implements DataProvider {
     for (const e of agg.values()) {
       const a = this.essayAssessmentForCode(e.subjectCode);
       if (!a) continue; // only Arabic/English carry essays
-      const stud = this.matchStudent(e.participantId);
-      const isMatched = this.seed.liveCycle.participants.some((p) => p.id === stud.id);
-      if (!isMatched) {
+      // Key on the P-A internal UNIQUE participant id (never the non-unique name),
+      // so essays land on the correct, un-collapsed student.
+      const stud = this.matchEssayStudent(e.participantId);
+      if (!stud.matched) {
         unmatched.add(e.participantId);
         continue;
       }
@@ -3505,6 +3559,7 @@ export class InMemoryDataProvider implements DataProvider {
         delta,
         reason: clean,
         by: this.user.name,
+        byRole: this.user.role,
         ts: new Date().toISOString(),
       });
     }
@@ -3698,7 +3753,12 @@ export class InMemoryDataProvider implements DataProvider {
       this.reasons.delete(`${key}:${itemId}`);
     }
     this.exclusions.set(key, set);
-    this.exclusionBy.set(`${key}:${itemId}`, { id: this.user.id, name: this.user.name, at: new Date().toISOString() });
+    this.exclusionBy.set(`${key}:${itemId}`, {
+      id: this.user.id,
+      name: this.user.name,
+      role: this.user.role,
+      at: new Date().toISOString(),
+    });
   }
 
   setItemExcluded(
@@ -3728,10 +3788,13 @@ export class InMemoryDataProvider implements DataProvider {
   // ── overrides (authorised user reverses another user's action) ─────────────
   /**
    * Override another user's item exclusion/inclusion (e.g. re-include an item a
-   * reviewer excluded). lead_admin only; a reason is required. Re-applies the
-   * SAME effective state the direct action uses, so scoring recomputes through
-   * the full engine (incl. the D3 safeguard), then writes an override audit
-   * entry naming the prior decider. No-op (rejected) for non-admins.
+   * reviewer excluded). Gated on the canonical strictly-higher rule: the actor's
+   * role must OUTRANK the role that took the original decision (admin overrides
+   * analyst & team member; analyst overrides team member; nobody overrides an
+   * equal or higher role). A reason is required. Re-applies the SAME effective
+   * state the direct action uses, so scoring recomputes through the full engine
+   * (incl. the D3 safeguard), then writes an override audit entry naming the prior
+   * decider. No-op (rejected) when the actor can't override, or the sitting locked.
    */
   overrideItemExclusion(
     cycleId: string,
@@ -3740,11 +3803,16 @@ export class InMemoryDataProvider implements DataProvider {
     exclude: boolean,
     reason: string,
   ): void {
-    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
-    const clean = (reason ?? "").trim();
-    if (!clean) return; // an override requires a reason
+    if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${assessmentId}:${itemId}`;
     const prior = this.exclusionBy.get(key);
+    // The role that took the original decision is the override SUBJECT. An
+    // un-attributed decision (seed/demo, or no prior review) defaults to the
+    // lowest tier so any higher role can still act on it.
+    const subjectRole: Role = prior?.role ?? "reviewer";
+    if (!canOverride(this.user.role, subjectRole)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return; // an override requires a reason
     const priorActor = prior && prior.id !== this.user.id ? prior.name : prior?.name ?? null;
 
     this.applyItemExclusionState(cycleId, assessmentId, itemId, exclude, clean);
@@ -3765,10 +3833,13 @@ export class InMemoryDataProvider implements DataProvider {
 
   /**
    * Override another user's manual mark adjustment: set the cell's mark to
-   * `newMark`, or revert it (`newMark === null`). lead_admin only; reason
-   * required. Rides the existing alterations engine input exactly as the direct
-   * adjustment does (full recompute incl. D3), then writes an override audit
-   * entry naming the prior adjuster. No-op (rejected) for non-admins.
+   * `newMark`, or revert it (`newMark === null`). Gated on the canonical
+   * strictly-higher rule: the actor must OUTRANK the role that made the
+   * adjustment (admin > analyst > team member; nobody overrides an equal or higher
+   * role). Reason required. Rides the existing alterations engine input exactly as
+   * the direct adjustment does (full recompute incl. D3), then writes an override
+   * audit entry naming the prior adjuster. No-op (rejected) when the actor can't
+   * override, or the sitting is locked.
    */
   overrideMarkAdjustment(
     cycleId: string,
@@ -3777,11 +3848,15 @@ export class InMemoryDataProvider implements DataProvider {
     newMark: number | null,
     reason: string,
   ): void {
-    if (!hasRole(this.user.role, "admin") || this.locked.has(cycleId)) return;
-    const clean = (reason ?? "").trim();
-    if (!clean) return;
+    if (this.locked.has(cycleId)) return;
     const list = this.manualAdjustmentsByCycle.get(cycleId) ?? [];
     const existing = list.find((m) => m.participantId === participantId && m.assessmentId === assessmentId);
+    // The role that made the adjustment is the override SUBJECT; an un-attributed
+    // adjustment defaults to the lowest tier so a higher role can still act.
+    const subjectRole: Role = existing?.byRole ?? "reviewer";
+    if (!canOverride(this.user.role, subjectRole)) return;
+    const clean = (reason ?? "").trim();
+    if (!clean) return;
     const priorActor = existing && existing.by !== this.user.name ? existing.by : existing?.by ?? null;
     const a = this.assessment(assessmentId);
     const who = this.seed.liveCycle.participants.find((p) => p.id === participantId)?.label ?? participantId;
@@ -3829,6 +3904,7 @@ export class InMemoryDataProvider implements DataProvider {
         delta,
         reason: clean,
         by: this.user.name,
+        byRole: this.user.role,
         ts,
       });
     }
@@ -4327,6 +4403,63 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
 
+  // ── Incident Adjustments configuration ──────────────────────────────────────
+  getIncidentConfig(): IncidentConfigModel {
+    const c = this.incidentConfig;
+    return {
+      canEdit: hasRole(this.user.role, "admin"),
+      perStudentCap: c.perStudentCap,
+      mapping: { ...c.mapping },
+      codes: c.codes.map((code) => ({
+        ...code,
+        matchTypes: [...code.matchTypes],
+        formula: { ...code.formula },
+      })),
+    };
+  }
+
+  upsertIncidentCode(input: IncidentCodeInput): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    // Defence in depth (the UI validates too): reject anything not add-only / invalid.
+    if (validateIncidentCode(input, this.incidentConfig.codes).length > 0) return;
+    if (input.id) {
+      const i = this.incidentConfig.codes.findIndex((c) => c.id === input.id);
+      if (i < 0) return;
+      this.incidentConfig.codes[i] = normalizeIncidentCode(input, input.id);
+      this.audit("config", "Updated incident code", `${input.code} · ${describeFormula(input.formula)}`, null);
+    } else {
+      const id = `code-${++this.seq}-${Date.now().toString(36)}`;
+      this.incidentConfig.codes.push(normalizeIncidentCode(input, id));
+      this.audit("config", "Added incident code", `${input.code} · ${describeFormula(input.formula)}`, null);
+    }
+    this.bump();
+  }
+
+  deleteIncidentCode(id: string): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    const before = this.incidentConfig.codes.length;
+    this.incidentConfig.codes = this.incidentConfig.codes.filter((c) => c.id !== id);
+    if (this.incidentConfig.codes.length !== before) {
+      this.audit("config", "Removed incident code", id, null);
+      this.bump();
+    }
+  }
+
+  setIncidentPerStudentCap(cap: number | null): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    if (validatePerStudentCap(cap).length > 0) return;
+    this.incidentConfig.perStudentCap = cap;
+    this.audit("config", "Updated per-student incident cap", cap === null ? "No cap" : `${cap} marks`, null);
+    this.bump();
+  }
+
+  setIncidentMapping(mapping: IncidentColumnMapping): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    this.incidentConfig.mapping = { ...mapping };
+    this.audit("config", "Updated incident import mapping", "Column mapping", null);
+    this.bump();
+  }
+
   setRetention(patch: Partial<RetentionConfig>): void {
     this.retention = { ...this.retention, ...patch };
     this.bump();
@@ -4365,6 +4498,11 @@ export class InMemoryDataProvider implements DataProvider {
    */
   getOverrideView(cycleId: string): OverrideViewModel {
     const decisions: EffectiveDecision[] = [];
+    const locked = this.locked.has(cycleId);
+    // Whether the signed-in user may override a decision taken by `subjectRole`:
+    // strictly-higher rule, and the sitting must be unlocked.
+    const mayOverride = (subjectRole: Role): boolean =>
+      !locked && canOverride(this.user.role, subjectRole);
 
     // Excluded items (the grade-bearing item-review state).
     for (const [key, set] of this.exclusions) {
@@ -4375,6 +4513,7 @@ export class InMemoryDataProvider implements DataProvider {
         const loc = this.itemLocate(itemId);
         const label = loc?.label ?? itemId;
         const who = this.exclusionBy.get(`${key}:${itemId}`);
+        const subjectRole: Role = who?.role ?? "reviewer";
         const ov = this.exclusionOverride.get(`${cycleId}:${aid}:${itemId}`);
         decisions.push({
           key: `excl:${aid}:${itemId}`,
@@ -4386,6 +4525,8 @@ export class InMemoryDataProvider implements DataProvider {
           excluded: true,
           decidedBy: who?.name ?? "—",
           decidedAt: who?.at ?? "",
+          decidedByRole: roleTierLabel(subjectRole),
+          canOverride: mayOverride(subjectRole),
           reason: this.reasons.get(`${key}:${itemId}`) ?? null,
           override: ov ? { by: ov.by, priorActor: ov.priorActor, reason: ov.reason, ts: ov.ts } : null,
         });
@@ -4396,6 +4537,7 @@ export class InMemoryDataProvider implements DataProvider {
     for (const adj of this.manualAdjustmentsByCycle.get(cycleId) ?? []) {
       const a = this.assessment(adj.assessmentId);
       const who = this.seed.liveCycle.participants.find((p) => p.id === adj.participantId)?.label ?? adj.participantId;
+      const subjectRole: Role = adj.byRole ?? "reviewer";
       const ov = this.adjustmentOverride.get(`${cycleId}:${adj.participantId}:${adj.assessmentId}`);
       decisions.push({
         key: `adj:${adj.participantId}:${adj.assessmentId}`,
@@ -4406,6 +4548,8 @@ export class InMemoryDataProvider implements DataProvider {
         state: `${adj.oldMark} → ${adj.newMark} (${adj.delta >= 0 ? "+" : ""}${adj.delta})`,
         decidedBy: adj.by,
         decidedAt: adj.ts,
+        decidedByRole: roleTierLabel(subjectRole),
+        canOverride: mayOverride(subjectRole),
         reason: adj.reason,
         override: ov ? { by: ov.by, priorActor: ov.priorActor, reason: ov.reason, ts: ov.ts } : null,
       });
@@ -4414,7 +4558,10 @@ export class InMemoryDataProvider implements DataProvider {
     decisions.sort((x, y) => (y.decidedAt ?? "").localeCompare(x.decidedAt ?? ""));
     return {
       cycleId,
-      canOverride: hasRole(this.user.role, "admin") && !this.locked.has(cycleId),
+      // Override rights AT ALL: a role that can outrank at least the lowest tier
+      // (analyst or admin), on an unlocked sitting. Whether a SPECIFIC decision is
+      // overridable is the per-row `canOverride` (strictly higher than its setter).
+      canOverride: hasRole(this.user.role, "analyst") && !locked,
       decisions,
       counts: { decisions: decisions.length, overridden: decisions.filter((d) => d.override).length },
     };
