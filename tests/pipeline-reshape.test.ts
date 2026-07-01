@@ -1,10 +1,10 @@
 /**
  * Pipeline reshape (G12++): the single-run step order was reshaped — Raw data is
  * folded into Clean, Diagnostics is now a step (no longer a top tab), Adjustments
- * → Technical adjustments, Boundaries → Cut scores. Essay marks are uploaded on
+ * → Incident adjustments, Boundaries → Cut scores. Essay marks are uploaded on
  * Upload (step 1) and fold into the scored totals automatically — NOT a standalone
  * step. These tests pin the new 10-step order/labels, that Diagnostics renders as a
- * step (with Cronbach's alpha) and continues to Technical adjustments, that the Raw
+ * step (with Cronbach's alpha) and continues to Incident adjustments, that the Raw
  * data view lives in Clean, that the Essay marks upload lives on Upload, and that
  * the continue buttons follow the new order with nothing skipped.
  */
@@ -24,7 +24,7 @@ const EXPECTED_ORDER = [
   "Raw scores",
   "Question review",
   "Diagnostics",
-  "Technical adjustments",
+  "Incident adjustments",
   "Score",
   "Cut scores",
   "CGJ",
@@ -44,8 +44,10 @@ describe("stepper order + labels", () => {
   });
 
   it("renames applied and the old labels are gone", () => {
-    expect(PIPELINE_STAGES).toContain("Technical adjustments");
+    expect(PIPELINE_STAGES).toContain("Incident adjustments");
     expect(PIPELINE_STAGES).toContain("Cut scores");
+    // The old "Technical adjustments" label is gone (systematised rename).
+    expect(PIPELINE_STAGES).not.toContain("Technical adjustments");
     expect(PIPELINE_STAGES).not.toContain("Adjustments");
     expect(PIPELINE_STAGES).not.toContain("Boundaries");
     expect(PIPELINE_STAGES).not.toContain("Raw data");
@@ -136,10 +138,10 @@ describe("Diagnostics is a pipeline step with Cronbach's alpha", () => {
     const out = html(e(DiagnosticsPage, { params: { cycleId: CYCLE } }));
     expect(out).toContain("Diagnostics");
     expect(out).toContain("Cronbach"); // ReliabilityPanel = Cronbach's alpha
-    // It is a step now: a continue button straight onto Technical adjustments
+    // It is a step now: a continue button straight onto Incident adjustments
     // (essay marks are uploaded on Upload, not a step in between).
     expect(out).toContain(`/cycles/${CYCLE}/adjustments`);
-    expect(out).toContain("Continue to technical adjustments");
+    expect(out).toContain("Continue to incident adjustments");
   });
 });
 
@@ -165,11 +167,11 @@ describe("continue buttons follow the new order", () => {
     expect(out).toContain(`/cycles/${CYCLE}/diagnostics`);
   });
 
-  it("Technical adjustments → Score", async () => {
+  it("Incident adjustments → Score", async () => {
     active = new InMemoryDataProvider();
     const { default: AdjustmentsPage } = await import("@/app/cycles/[cycleId]/adjustments/page");
     const out = html(e(AdjustmentsPage, { params: { cycleId: CYCLE } }));
-    expect(out).toContain("Technical adjustments");
+    expect(out).toContain("Incident adjustments");
     expect(out).toContain(`/cycles/${CYCLE}/score`);
   });
 

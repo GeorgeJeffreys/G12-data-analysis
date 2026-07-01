@@ -25,6 +25,7 @@
  */
 import type { Database } from "@/lib/types/database";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
+import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import { InMemoryDataProvider } from "./in-memory-provider";
 import { hydrate, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
 import { catalogNamesFor } from "./subject-catalog";
@@ -85,6 +86,7 @@ import type {
   DistinctionSafeguardModel,
   EssayMarksModel,
   AdjustmentsModel,
+  IncidentConfigModel,
   CompositionModel,
   DiagnosticsModel,
   ReliabilityModel,
@@ -321,6 +323,7 @@ export class SupabaseDataProvider implements DataProvider {
   getConfig(): ConfigModel { return this.inner.getConfig(); }
   getScoringConfig(): ScoringConfig { return this.inner.getScoringConfig(); }
   getElementLabels(): ElementLabelsConfig { return this.inner.getElementLabels(); }
+  getIncidentConfig(): IncidentConfigModel { return this.inner.getIncidentConfig(); }
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
   getOverrideView(cycleId: string): OverrideViewModel { return this.inner.getOverrideView(cycleId); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
@@ -786,6 +789,38 @@ export class SupabaseDataProvider implements DataProvider {
       entries.map((e) => ({ subject, matchKey: e.matchKey, letter: e.letter, label: e.label })),
     );
     this.rpc("set_element_labels", { p_config: payload });
+  }
+
+  // Incident Adjustments configuration (admin-only writes; the RPCs re-check the
+  // workspace-admin role and re-validate add-only server-side). Optimistic local
+  // update via the inner provider, then persist.
+  upsertIncidentCode(input: IncidentCodeInput): void {
+    this.inner.upsertIncidentCode(input);
+    this.bump();
+    this.rpc("upsert_incident_code", {
+      p_id: input.id ?? null,
+      p_code: input.code,
+      p_label: input.label,
+      p_match_types: input.matchTypes,
+      p_formula: input.formula,
+      p_per_code_cap: input.perCodeCap,
+      p_active: input.active ?? true,
+    });
+  }
+  deleteIncidentCode(id: string): void {
+    this.inner.deleteIncidentCode(id);
+    this.bump();
+    this.rpc("delete_incident_code", { p_id: id });
+  }
+  setIncidentPerStudentCap(cap: number | null): void {
+    this.inner.setIncidentPerStudentCap(cap);
+    this.bump();
+    this.rpc("set_incident_settings", { p_per_student_cap: cap });
+  }
+  setIncidentMapping(mapping: IncidentColumnMapping): void {
+    this.inner.setIncidentMapping(mapping);
+    this.bump();
+    this.rpc("set_incident_mapping", { p_mapping: mapping });
   }
 
   // audit-writing actions

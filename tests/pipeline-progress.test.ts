@@ -88,14 +88,14 @@ describe("in-pipeline tracker: 1..N-1 complete, N current, rest pending", () => 
     });
   }
 
-  it("the reported case — Technical adjustments (step 6) — shows steps 2–5 as complete, not grey", () => {
-    // stageIndex 5 = Technical adjustments. Upload..Diagnostics (5 steps) complete.
+  it("the reported case — Incident adjustments (step 6) — shows steps 2–5 as complete, not grey", () => {
+    // stageIndex 5 = Incident adjustments. Upload..Diagnostics (5 steps) complete.
     const html = renderToStaticMarkup(e(Pipeline, { active: 5 }));
     expect(countChecks(html)).toBe(5);
   });
 });
 
-describe("Technical adjustments page renders all prior steps complete", () => {
+describe("Incident adjustments page renders all prior steps complete", () => {
   it("the live sitting's adjustments page shows 5 checkmarked steps (Upload..Diagnostics)", async () => {
     activeProvider = new InMemoryDataProvider();
     const liveId = activeProvider.listCycles()[0]!.id;
