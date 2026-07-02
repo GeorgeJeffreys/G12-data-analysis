@@ -33,11 +33,18 @@ const HEALTHY: SchemaHealth = { ok: true, migration: "0020", missingColumns: [],
  * the backstop in that case.
  */
 export async function checkSchemaHealth(admin: SupabaseAdminClient): Promise<SchemaHealth> {
-  const rpc = admin.rpc as unknown as (
+  // Call `rpc` THROUGH the client so its `this` stays bound to the client.
+  // Detaching it first (`const rpc = admin.rpc; rpc("schema_health")`) invokes it
+  // unbound, and supabase-js's `rpc()` immediately reads `this.rest` (the internal
+  // PostgREST sub-client) on an undefined `this` — throwing "Cannot read properties
+  // of undefined (reading 'rest')". As this probe is the FIRST thing the ingest
+  // route runs, that TypeError crashed every ingest before any data was touched.
+  // The cast is applied to the member expression only, so the call keeps its
+  // receiver (mirrors `callRpc` in ingest-write.ts).
+  const { data, error } = await (admin.rpc as unknown as (
     n: string,
     a?: unknown,
-  ) => Promise<{ data: unknown; error: { message: string } | null }>;
-  const { data, error } = await rpc("schema_health");
+  ) => Promise<{ data: unknown; error: { message: string } | null }>)("schema_health");
   if (error || !data || typeof data !== "object") return HEALTHY;
   const d = data as {
     ok?: boolean;
