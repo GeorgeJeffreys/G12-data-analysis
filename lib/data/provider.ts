@@ -19,6 +19,19 @@
 import type { AssembleScoreAnalysisArgs, AssembleItemAnalysisArgs } from "@/lib/export/types";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
+
+/**
+ * Schema drift report — whether the live DB has the columns/functions the code
+ * requires. `ok` false means a migration hasn't been run (see `migration`); the
+ * app surfaces this so "did you run the migration?" is answered by the app, not
+ * by a failed import. The in-memory demo has no DB, so it is always `ok`.
+ */
+export interface SchemaHealth {
+  ok: boolean;
+  migration: string;
+  missingColumns: string[];
+  missingFunctions: string[];
+}
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
@@ -345,6 +358,12 @@ export interface DataProvider {
    * Cycle-scoped, audited, lead/admin only.
    */
   deleteSitting(cycleId: string): Promise<void>;
+  /**
+   * Probe the live DB for schema drift — the columns/functions the code needs
+   * versus what's installed. Lets the app flag "the DB is behind — run migration
+   * NNNN" proactively instead of failing at ingest. The demo has no DB (always ok).
+   */
+  getSchemaHealth(): Promise<SchemaHealth>;
   /**
    * Clean-stage, non-destructive removal of rows (participant ids) and/or columns
    * (item ids) from the working (cleaned) set for one subject. The raw data is

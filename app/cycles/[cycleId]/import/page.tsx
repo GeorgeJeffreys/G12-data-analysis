@@ -25,6 +25,7 @@ import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { EssayMarksCard } from "@/components/cycle/EssayMarksCard";
 import { StepIntro } from "@/components/ui/StepIntro";
 import { SittingDangerZone } from "@/components/cycle/SittingDangerZone";
+import { SchemaHealthBanner } from "@/components/cycle/SchemaHealthBanner";
 import { ingestThreeExports, DetectionError } from "@/lib/ingest";
 import type { CombinedSplitModel, DuplicateStrategy, EssayMarksModel, IngestModel } from "@/lib/data/types";
 
@@ -123,6 +124,8 @@ export default function ImportPage({ params }: { params: { cycleId: string } }) 
             and never block progress. The incident log is imported later, on the Technical adjustments step.
           </div>
         </div>
+
+        <SchemaHealthBanner />
 
         {split && <CombinedSplitPanel split={split} />}
 

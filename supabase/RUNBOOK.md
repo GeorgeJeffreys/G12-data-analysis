@@ -11,7 +11,26 @@ haven't, in order — `0003_adjustments_essays_config.sql`,
 `0008_clean_exclusions.sql`), and Node ≥ 20. Then apply `0009`–`0019` in order
 (each is additive + reversible; see the per-migration notes below where present).
 NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_hierarchy.sql`
-and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`.
+and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
+then `0020`.
+
+> **`0020_restore_ingest_delete.sql` — bring the live DB current (RUN THIS if
+> imports fail on `column "item_set" ... does not exist`, or Delete/Clear no-ops).**
+> The single, **idempotent** "bring-DB-current" runner: paste it into the Supabase
+> SQL editor (EU) and Run. Safe on an out-of-date DB and safe to re-run. It
+> `add column if not exists items.item_set` (the fresh-import blocker — migration
+> `0010` was authored but never run in this DB), re-affirms `ingest_persist` at its
+> current definition (item_set + the `0019` cohort guard), and rebuilds
+> `clear_sitting_data` / `delete_sitting` / `reset_cycle_for_reingest` /
+> `app.clear_cycle_ingest` to **return the deleted-row count** so the UI confirms
+> the op actually removed rows (0 rows / absent function → explicit error, never a
+> silent success). `delete_sitting` counts across **every** per-sitting table before
+> the cascade. Adds `public.schema_health()` — the app calls it to flag drift itself
+> instead of failing at ingest. No destructive drops of user data (return-type
+> changes are drop-then-create of FUNCTIONS only; `item_set` is never dropped).
+> Engine parity 183/183 unchanged. Verify with `select public.schema_health();`
+> (expect `ok=true`). Roll back with `0020_restore_ingest_delete.rollback.sql`
+> (restores the void bodies, keeps `item_set`).
 
 > **`0019_ingest_cohort_integrity_guard.sql` — response-attach collapse guard.**
 > Task 17 (result-selection / response-attach). Re-creates `public.ingest_persist`

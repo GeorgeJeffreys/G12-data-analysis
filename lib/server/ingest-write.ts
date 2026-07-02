@@ -35,6 +35,7 @@ import type { SupabaseAdminClient } from "@/lib/supabase/admin";
 import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
+import { schemaDriftMessage } from "@/lib/server/schema-health";
 
 type Admin = SupabaseAdminClient;
 
@@ -291,7 +292,13 @@ export async function ingestCleanResponses(
     p_payload: payload,
     p_actor: opts.createdBy,
   });
-  if (error) throw new Error(`ingest_persist: ${error.message}`);
+  if (error) {
+    // A missing item_set column / absent ingest_persist function means the live
+    // DB is behind the code (migration not run). Surface that as an actionable
+    // instruction rather than a raw Postgres string the operator can't act on.
+    const drift = schemaDriftMessage(error.message);
+    throw new Error(drift ?? `ingest_persist: ${error.message}`);
+  }
 
   return {
     assessments: assessmentRows.length,
