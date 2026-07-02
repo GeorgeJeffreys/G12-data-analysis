@@ -8,10 +8,21 @@ Prereqs: migrations `0001`–`0008` applied in the Supabase SQL editor (run any 
 haven't, in order — `0003_adjustments_essays_config.sql`,
 `0004_create_cycle_with_assessments.sql`, `0005_year_sitting_structure.sql`,
 `0006_qm_3csv_model.sql`, `0007_ingest_idempotent_topic_id.sql`,
-`0008_clean_exclusions.sql`), and Node ≥ 20. Then apply `0009`–`0018` in order
+`0008_clean_exclusions.sql`), and Node ≥ 20. Then apply `0009`–`0019` in order
 (each is additive + reversible; see the per-migration notes below where present).
 NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_hierarchy.sql`
-and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`.
+and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`.
+
+> **`0019_ingest_cohort_integrity_guard.sql` — response-attach collapse guard.**
+> Task 17 (result-selection / response-attach). Re-creates `public.ingest_persist`
+> (identical to `0010` plus one appended check) so a persist whose roster
+> (`result_totals`) and cells (`responses`) disagree fails the WHOLE transaction:
+> every roster `(assessment, participant)` must carry ≥1 attached response, or the
+> ingest raises `dropped-sitter / all-dots response-attach collapse`. This is the
+> DB mirror of the app's `#distinct-input == #distinct-output participants`
+> invariant, so the 15→7 empty-row collapse can never persist silently. No scoring
+> change (engine parity 183/183 unchanged); idempotent (`CREATE OR REPLACE`, same
+> signature/grants). Roll back with `0019_ingest_cohort_integrity_guard.rollback.sql`.
 
 > **`0016_incident_adjustments.sql` + `0017_incident_apply.sql` — Incident
 > Adjustments.** Prompts 02a/02b. `0016` adds the config registry (`incident_codes`
