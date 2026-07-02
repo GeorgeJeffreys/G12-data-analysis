@@ -51,6 +51,18 @@ body {
 }
 
 /* ── Reusable primitives (mirrors hf-* classes) ────────────────────────────── */
+/* Flex layout building blocks. The Data flow inspector (and the compare view)
+   compose their entire layout from hf-row / hf-col; without these the design's
+   connected horizontal flow strip and summary band collapse into a vertical
+   block stack. Gap / alignment / flex sizing are supplied inline per instance. */
+.hf-row {
+  display: flex;
+  flex-direction: row;
+}
+.hf-col {
+  display: flex;
+  flex-direction: column;
+}
 .hf-mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
