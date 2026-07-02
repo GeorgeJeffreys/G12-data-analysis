@@ -8,8 +8,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { H } from "@/lib/ui/tokens";
-import { useProviderData } from "@/lib/data/context";
-import { hasRole } from "@/lib/auth/roles";
 import { AccountMenu } from "./AccountMenu";
 
 // Three areas, with the batch-2 rail icons (design/hf.jsx HRAIL).
@@ -24,23 +22,15 @@ const NAV = [
   },
 ] as const;
 
-// Developer data-flow view — gated to the top admin role only (task 15). Kept out
-// of the normal user flow: it appears in the rail only for admins.
-const DEV_NAV = { k: "Developer", label: "Developer", href: "/developer", d: "M6 4L2.5 8 6 12M10 4l3.5 4L10 12" } as const;
-
-export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Settings" | "Developer" }) {
+export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Settings" }) {
   const pathname = usePathname();
-  const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser().role, "admin"));
-  const nav = isAdmin ? [...NAV, DEV_NAV] : NAV;
   const activeKey =
     active ??
-    (pathname.startsWith("/developer")
-      ? "Developer"
-      : pathname.startsWith("/settings")
-        ? "Settings"
-        : pathname.startsWith("/analytics")
-          ? "Analytics"
-          : "Cycles");
+    (pathname.startsWith("/settings")
+      ? "Settings"
+      : pathname.startsWith("/analytics")
+        ? "Analytics"
+        : "Cycles");
 
   return (
     <nav
@@ -76,7 +66,7 @@ export function NavRail({ active }: { active?: "Cycles" | "Analytics" | "Setting
       >
         <span style={{ fontFamily: "var(--font-script)", fontSize: 22, lineHeight: 1, marginTop: 4 }}>A</span>
       </Link>
-      {nav.map((it) => {
+      {NAV.map((it) => {
         const on = it.k === activeKey;
         return (
           <Link
