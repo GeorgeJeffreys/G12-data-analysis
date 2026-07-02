@@ -7,10 +7,10 @@
 
 import { normalizeResponses } from "../normalize";
 import { validate } from "../validate";
-import { assertParticipantIdentityIntact } from "../split";
+import { assertParticipantIdentityIntact, assertResponsesAttachToRoster } from "../split";
 import type { CleanResponse, ValidationReport } from "../types";
 import { detectThreeExports, type NamedInput, type QmFileKind } from "./detect";
-import { buildCanonicalModelFromTables } from "./canonical";
+import { buildCanonicalModelFromTables, resolveAssessmentIdentities } from "./canonical";
 import { toCombinedRows } from "./bridge";
 import type { CanonicalModel } from "./model";
 
@@ -21,6 +21,7 @@ export type { QmFileKind, NamedInput, DetectionResult } from "./detect";
 export {
   buildCanonicalModel,
   buildCanonicalModelFromTables,
+  resolveAssessmentIdentities,
   normalizeSubjectName,
   detectResitForms,
   subjectBaseKey,
@@ -105,9 +106,17 @@ function augmentReport(report: ValidationReport, model: CanonicalModel): Validat
 
 export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIngest {
   const { items, assessments, topics, sources } = detectThreeExports(files);
-  const canonical = buildCanonicalModelFromTables(items, assessments, topics);
+  // Resolve participant identity ONCE over the authoritative Assessments roster,
+  // then pass the SAME map to BOTH the canonical model (the roster) and the response
+  // normaliser (the cells). This is the fix for the ingest attribution failure: the
+  // two used to resolve identity independently over different row-sets (Assessments
+  // vs Items) and disagreed whenever a code-sharing result appeared in one set but
+  // not the other — so a real sitter's responses attached to a different id than
+  // their roster row (the "all-dots" rows) and other sitters were dropped.
+  const identityByResult = resolveAssessmentIdentities(assessments);
+  const canonical = buildCanonicalModelFromTables(items, assessments, topics, identityByResult);
   const combined = toCombinedRows(items, assessments);
-  const { clean, droppedSurveyRows, droppedNonMcqRows } = normalizeResponses(combined);
+  const { clean, droppedSurveyRows, droppedNonMcqRows } = normalizeResponses(combined, identityByResult);
   // Hold re-sit / alternate forms out of the GRADED response set so their items
   // never inflate the base subject's scored set (root cause A). The form's data is
   // retained on `canonical` (results + resitForms) for analyst review.
@@ -116,6 +125,12 @@ export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIng
   // Detection-boundary guard: any participant collapse fails loudly here, before
   // the per-subject count is shown on Upload (see assertParticipantIdentityIntact).
   assertParticipantIdentityIntact(graded);
+  // Roster↔responses alignment guard (task 16): every response's resolved
+  // participant id MUST be one the authoritative roster resolved — a response
+  // attached to an id absent from the roster is the attribution failure that
+  // surfaced as all-dots rows + dropped sitters. Fails loudly at the earliest point.
+  const rosterIds = new Set([...identityByResult.values()].map((r) => r.id));
+  assertResponsesAttachToRoster(graded, rosterIds);
   const validationReport = validate(combined, graded, droppedSurveyRows, droppedNonMcqRows);
   return {
     canonical,
