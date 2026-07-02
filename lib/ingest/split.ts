@@ -133,6 +133,33 @@ export function assertParticipantIdentityIntact(clean: readonly CleanResponse[])
 }
 
 /**
+ * Roster↔responses attribution guard at the ingest boundary (task 16).
+ *
+ * The identity for each result is resolved ONCE over the authoritative roster
+ * (`rosterIds` = every id the Assessments-based resolution produced). Every cleaned
+ * response must therefore carry a participant id drawn from that roster. A response
+ * whose id is NOT in the roster means the cells were attributed to a DIFFERENT
+ * identity than the roster row — the exact failure that surfaced as "all-dots" rows
+ * (a roster row with no responses) and dropped sitters. Fail loudly here rather than
+ * ship a subject whose participant roster and response cells disagree.
+ */
+export function assertResponsesAttachToRoster(
+  clean: readonly CleanResponse[],
+  rosterIds: ReadonlySet<string>,
+): void {
+  const orphans = new Set<string>();
+  for (const r of clean) if (!rosterIds.has(r.qmParticipantId)) orphans.add(r.qmParticipantId);
+  if (orphans.size > 0) {
+    throw new Error(
+      `participant attribution failure at ingest: ${orphans.size} response identity(ies) ` +
+        `are not in the resolved roster (e.g. ${[...orphans].slice(0, 3).join(", ")}). Responses ` +
+        `were attached to a per-result/again-resolved identity instead of the single roster ` +
+        `identity — resolve participant identity ONCE and carry it to the responses.`,
+    );
+  }
+}
+
+/**
  * Merge several parsed row sets (multiple files or sheets) into one combined
  * dataset before cleaning. Rows are concatenated as-is — each already carries its
  * own AssessmentName / participant id, so the subsequent split re-groups them

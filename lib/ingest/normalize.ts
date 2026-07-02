@@ -9,7 +9,7 @@
 
 import type { DemandLevel } from "@/lib/types/database";
 import { repairText, repairValue } from "./repair";
-import { assignParticipantIdentities, type IdentityInputRow } from "./participant-identity";
+import { assignParticipantIdentities, type ResolvedIdentity } from "./participant-identity";
 import type { CleanResponse, RawExportRow } from "./types";
 
 export const MCQ_QUESTION_TYPE = "Multiple Choice";
@@ -140,18 +140,30 @@ export interface NormalizeResult {
  * DOB-shaped field — so distinct students never fold into one record. The pseudonym
  * maps 1:1 from that resolved internal id.
  */
-export function normalizeResponses(rows: readonly RawExportRow[]): NormalizeResult {
+export function normalizeResponses(
+  rows: readonly RawExportRow[],
+  resolvedByResult?: Map<string, ResolvedIdentity>,
+): NormalizeResult {
   const clean: CleanResponse[] = [];
   let droppedSurveyRows = 0;
   let droppedNonMcqRows = 0;
 
-  // Resolve a guaranteed-unique identity per result before assigning pseudonyms.
-  const identityInputs: IdentityInputRow[] = rows.map((row) => ({
-    resultId: str(row["ResultId"]),
-    subject: repairText(str(row["AssessmentName"])),
-    row: row as Record<string, unknown>,
-  }));
-  const identityByResult = assignParticipantIdentities(identityInputs);
+  // Participant identity is resolved ONCE. The 3-CSV path passes the authoritative
+  // map resolved over the Assessments export (the complete roster — see
+  // canonical.ts `resolveAssessmentIdentities`); the legacy single-file path has no
+  // separate roster, so we resolve here over these rows. Either way a result's id is
+  // resolved a single time and CARRIED to the responses, so the roster and the cells
+  // can never disagree on a result's participant (the "all-dots / dropped sitter"
+  // bug was two independent resolutions over Assessments-vs-Items disagreeing).
+  const identityByResult =
+    resolvedByResult ??
+    assignParticipantIdentities(
+      rows.map((row) => ({
+        resultId: str(row["ResultId"]),
+        subject: repairText(str(row["AssessmentName"])),
+        row: row as Record<string, unknown>,
+      })),
+    );
   const resolveIdentity = (row: RawExportRow): string => {
     const resultId = str(row["ResultId"]);
     return identityByResult.get(resultId)?.id ?? (resultId ? `result:${resultId}` : "result:unknown");

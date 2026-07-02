@@ -7,7 +7,11 @@
 
 import { repairText } from "../repair";
 import { isSurveyAssessment, stripHtml } from "../normalize";
-import { assignParticipantIdentities, type IdentityInputRow } from "../participant-identity";
+import {
+  assignParticipantIdentities,
+  type IdentityInputRow,
+  type ResolvedIdentity,
+} from "../participant-identity";
 import type { CsvTable } from "./csv";
 import { detectThreeExports, type NamedInput } from "./detect";
 import type {
@@ -164,11 +168,45 @@ function groupByResultId(table: CsvTable): Map<string, Record<string, string>[]>
   return map;
 }
 
-/** Build the canonical model from three already-parsed tables. */
+/**
+ * Resolve a guaranteed-unique participant identity per graded result, ONCE, from
+ * the authoritative Assessments export (one row per result — the complete roster).
+ *
+ * This is the SINGLE identity resolution for the 3-CSV path. It is keyed on the
+ * collision-free natural key (ParticipantID / email = ResultParticipantName / the
+ * result→participant mapping) and minted into a stable internal id — NEVER a name-,
+ * initial- or DOB-shaped field. `ingestThreeExports` passes the result of this into
+ * BOTH the canonical model (the roster) AND the response normaliser (the cells), so
+ * the roster and the responses can never resolve a result to two different ids —
+ * the root of the "all-dots / dropped sitter" attribution failure was two
+ * INDEPENDENT resolutions over different row-sets (Assessments vs Items) that
+ * disagreed whenever a code-sharing result was present in one set but not the other.
+ */
+export function resolveAssessmentIdentities(assessments: CsvTable): Map<string, ResolvedIdentity> {
+  const identityInputs: IdentityInputRow[] = [];
+  for (const row of assessments.rows) {
+    const rawName = repairText(row["AssessmentName"] ?? "").trim();
+    if (isSurveyAssessment(rawName)) continue;
+    const resultId = (row["ResultId"] ?? "").trim();
+    if (!resultId) continue;
+    identityInputs.push({ resultId, subject: normalizeSubjectName(rawName), row });
+  }
+  return assignParticipantIdentities(identityInputs);
+}
+
+/**
+ * Build the canonical model from three already-parsed tables.
+ *
+ * `identityByResult` is the authoritative, resolve-once identity map (see
+ * `resolveAssessmentIdentities`). When omitted (standalone callers) it is computed
+ * from `assessments` here; `ingestThreeExports` computes it once and passes the
+ * SAME map here and to the normaliser so both agree on every result's identity.
+ */
 export function buildCanonicalModelFromTables(
   items: CsvTable,
   assessments: CsvTable,
   topics: CsvTable,
+  identityByResult: Map<string, ResolvedIdentity> = resolveAssessmentIdentities(assessments),
 ): CanonicalModel {
   const byResult: RowsByResult = {
     items: groupByResultId(items),
@@ -179,22 +217,6 @@ export function buildCanonicalModelFromTables(
   const excludedSurveys = new Set<string>();
   let surveyResults = 0;
   const sittingTally = new Map<string, { sitting: Sitting; count: number }>();
-
-  // ── 0. Resolve a guaranteed-unique participant identity per graded result ────
-  // Keyed on the collision-free natural key (ParticipantID / email = the export's
-  // ResultParticipantName / the result→participant mapping) and minted into a
-  // stable internal id — NEVER a name-, initial- or DOB-shaped field — so distinct
-  // students never fold into one participant record. Resolved from the SAME inputs
-  // the legacy normaliser sees, so both ingest paths agree on each result's identity.
-  const identityInputs: IdentityInputRow[] = [];
-  for (const row of assessments.rows) {
-    const rawName = repairText(row["AssessmentName"] ?? "").trim();
-    if (isSurveyAssessment(rawName)) continue;
-    const resultId = (row["ResultId"] ?? "").trim();
-    if (!resultId) continue;
-    identityInputs.push({ resultId, subject: normalizeSubjectName(rawName), row });
-  }
-  const identityByResult = assignParticipantIdentities(identityInputs);
   /** The lowercased identity key used to group participants + join result/topic
    *  rows back to them (case-folded so the join is stable). */
   const identityKey = (resultId: string): string =>
