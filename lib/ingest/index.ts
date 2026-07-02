@@ -31,6 +31,7 @@ export {
   summarizeSubject,
   summarizeSubjects,
   assertParticipantIdentityIntact,
+  assertResponsesAttachToRoster,
   mergeRawExports,
 } from "./split";
 export type { SubjectSummary, SubjectElementSummary } from "./split";
