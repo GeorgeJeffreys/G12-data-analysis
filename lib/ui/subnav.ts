@@ -7,7 +7,12 @@ import type { SubnavItem } from "@/components/shell/Shell";
 // No per-sitting "Certificates" tab: certificates & performance reports issue from
 // the cycle/overall best-of-two award (app/years/[yearId]/overall/documents), not an
 // individual sitting. The `documents` area is retained in the type only for back-compat.
-export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "documents" | "diagnostics"): SubnavItem[] {
+export function cyclesSubnav(
+  cycleId: string,
+  active: "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow",
+  /** Append the admin-only "Data flow" developer tab (task 15). */
+  opts?: { dataFlow?: boolean },
+): SubnavItem[] {
   return [
     // "Critical Path" is the per-sitting pipeline (Upload → … → Grades). Renamed
     // from "Pipeline" so the tab name matches how the team refers to it.
@@ -18,6 +23,9 @@ export function cyclesSubnav(cycleId: string, active: "pipeline" | "audit" | "do
     // the whole-assessment "Assessment Health" step (/diagnostics), so this is the
     // only user-facing "Diagnostics".
     { label: "Diagnostics", href: `/cycles/${cycleId}/diagnostics-hub`, on: active === "diagnostics" },
+    // Developer "Data flow" pipeline inspector — admin-only, so it appears only when
+    // the shell says the signed-in user is a top admin.
+    ...(opts?.dataFlow ? [{ label: "Data flow", href: `/cycles/${cycleId}/data-flow`, on: active === "dataflow" }] : []),
   ];
 }
 

@@ -19,7 +19,8 @@ export type IconName =
   | "cal"
   | "mail"
   | "dots"
-  | "trash";
+  | "trash"
+  | "eye";
 
 export function Icon({
   name,
@@ -135,6 +136,13 @@ export function Icon({
           <circle cx="8" cy="3.5" r="1.3" />
           <circle cx="8" cy="8" r="1.3" />
           <circle cx="8" cy="12.5" r="1.3" />
+        </svg>
+      );
+    case "eye":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <path d="M1.5 8S4 3.5 8 3.5 14.5 8 14.5 8 12 12.5 8 12.5 1.5 8 1.5 8z" {...p} />
+          <circle cx="8" cy="8" r="1.8" {...p} />
         </svg>
       );
     case "trash":

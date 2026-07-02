@@ -38,8 +38,8 @@ export function Shell({
   actions?: ReactNode;
   /** Quiet status indicator shown next to the breadcrumb (e.g. locked/read-only). */
   status?: ReactNode;
-  /** Which nav-rail area is active (Cycles | Analytics | Settings | Developer). */
-  active?: "Cycles" | "Analytics" | "Settings" | "Developer";
+  /** Which nav-rail area is active (Cycles | Analytics | Settings). */
+  active?: "Cycles" | "Analytics" | "Settings";
   /** Secondary tab bar under the header. */
   subnav?: SubnavItem[];
   stageIndex?: number;
