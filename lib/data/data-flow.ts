@@ -140,6 +140,9 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
     const raw = provider.getRawData(cycleId, a.id);
     const cleaned = provider.getDataCleaning(cycleId, a.id);
     if (!raw || !cleaned) continue; // subject with no scorable data
+    // The REAL Score-matrix artifact: the students × QuestionId pivot's own output
+    // (getNaiveScores — the as-submitted matrix, before item-review exclusions).
+    const naive = provider.getNaiveScores(cycleId, a.id);
 
     const items = raw.items;
 
@@ -149,8 +152,18 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
 
     // Cohort-excluded ids shown at Clean (staff/test + soft-deletes).
     const excludedIds = new Set(cleaned.excludedRows);
-    // Score-matrix membership = cleaned cohort actually pivoted (staff/soft-deletes gone).
-    const matrixIds = new Set(cleaned.rows.filter((r) => !excludedIds.has(r.id)).map((r) => r.id));
+    // Score-matrix membership = the participants the pivot ACTUALLY emitted a row
+    // for, read straight from getNaiveScores — never re-derived from the cleaned
+    // cohort. Sourcing it from the pivot's own output is what keeps a matrix-stage
+    // drop (a cleaned participant who produces no pivot row) VISIBLE here instead of
+    // being silently folded into a balanced-looking count. Fall back to the cleaned
+    // cohort only when the pivot artifact isn't available yet (e.g. pre-scoring), so
+    // an in-progress cycle isn't misreported as a total matrix collapse.
+    const matrixIds = new Set<string>(
+      naive
+        ? naive.students.map((s) => s.id)
+        : cleaned.rows.filter((r) => !excludedIds.has(r.id)).map((r) => r.id),
+    );
     // Computed membership = students with an engine subject total here.
     const computedIds = new Set<string>();
     if (composition) {

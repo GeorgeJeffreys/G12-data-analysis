@@ -91,6 +91,43 @@ describe("developer data-flow model", () => {
     expect(traced.last).toBe(0); // present only at Ingested now
   });
 
+  it("reads Score-matrix membership from the real pivot (getNaiveScores), so a pivot drop stays visible", () => {
+    // The matrix stage must reflect the pivot's OWN output, never a re-derivation
+    // from the cleaned cohort — otherwise a participant who is cleaned but produces
+    // no pivot row (e.g. all-dots) would be silently retained and the drop hidden.
+    const p = new InMemoryDataProvider();
+    const cid = liveId(p);
+    const base = buildDataFlow(p, cid)!;
+    const subj = base.subjects.find((s) => s.people.some((pp) => pp.last === 3))!;
+    const victim = subj.people.find((pp) => pp.last === 3)!;
+
+    // Simulate the pivot (and the engine) emitting no row for one cleaned sitter,
+    // without touching the raw or cleaned artifacts: they remain fully ingested and
+    // in the cleaned cohort, but vanish at the Score matrix.
+    const origNaive = p.getNaiveScores.bind(p);
+    const origComp = p.getComposition.bind(p);
+    (p as unknown as { getNaiveScores: typeof p.getNaiveScores }).getNaiveScores = (c, aid) => {
+      const m = origNaive(c, aid);
+      return m ? { ...m, students: m.students.filter((s) => s.id !== victim.id) } : m;
+    };
+    (p as unknown as { getComposition: typeof p.getComposition }).getComposition = (c) => {
+      const m = origComp(c);
+      return m ? { ...m, students: m.students.filter((s) => s.participantId !== victim.id) } : m;
+    };
+
+    const after = buildDataFlow(p, cid)!;
+    const s = after.subjects.find((x) => x.key === subj.key)!;
+    // Ingested + Cleaned still hold; Score matrix + Computed both drop by one.
+    expect(s.counts[0]).toBe(subj.counts[0]);
+    expect(s.counts[1]).toBe(subj.counts[1]);
+    expect(s.counts[2]).toBe(subj.counts[2]! - 1);
+    expect(s.counts[3]).toBe(subj.counts[3]! - 1);
+    // The victim is traced as present through Cleaned, then dropped entering the matrix.
+    const traced = s.people.find((pp) => pp.id === victim.id)!;
+    expect(traced.last).toBe(1);
+    expect(after.state).toBe("collapse");
+  });
+
   it("is strictly read-only — buildDataFlow never bumps the provider version", () => {
     const p = new InMemoryDataProvider();
     const cid = liveId(p);
