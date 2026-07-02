@@ -26,7 +26,7 @@
 
 import type { DataProvider } from "./provider";
 import type { RawDataRow } from "./types";
-import { isStaffTestEmail } from "./staff-exclusions";
+import { resolveCohort, type SubjectCohort } from "./resolved-cohort";
 
 export type DataFlowStageKey = "ingested" | "cleaned" | "matrix" | "computed";
 
@@ -135,14 +135,21 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
   const ingest = provider.getIngest(cycleId);
   const composition = provider.getComposition(cycleId);
 
+  // The ONE canonical cohort — Upload, Clean and Data-flow all read this, so their
+  // per-stage counts can never diverge (see lib/data/resolved-cohort.ts). The
+  // membership sets below are taken verbatim from it; the per-person cells/score
+  // detail is still read from the same raw + composition artifacts.
+  const resolved = resolveCohort(provider, cycleId);
+  const cohortByAssessment = new Map<string, SubjectCohort>();
+  for (const c of resolved?.subjects ?? []) cohortByAssessment.set(c.assessmentId, c);
+
   const subjects: DataFlowSubject[] = [];
   for (const a of cycle.assessments) {
     const raw = provider.getRawData(cycleId, a.id);
     const cleaned = provider.getDataCleaning(cycleId, a.id);
     if (!raw || !cleaned) continue; // subject with no scorable data
-    // The REAL Score-matrix artifact: the students × QuestionId pivot's own output
-    // (getNaiveScores — the as-submitted matrix, before item-review exclusions).
-    const naive = provider.getNaiveScores(cycleId, a.id);
+    const cohort = cohortByAssessment.get(a.id);
+    if (!cohort) continue;
 
     const items = raw.items;
 
@@ -150,42 +157,20 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
     const rowById = new Map<string, RawDataRow>();
     for (const r of raw.rows) rowById.set(r.id, r);
 
-    // Cohort-excluded ids shown at Clean (staff/test + soft-deletes).
-    const excludedIds = new Set(cleaned.excludedRows);
-    // Score-matrix membership = the participants the pivot ACTUALLY emitted a row
-    // for, read straight from getNaiveScores — never re-derived from the cleaned
-    // cohort. Sourcing it from the pivot's own output is what keeps a matrix-stage
-    // drop (a cleaned participant who produces no pivot row) VISIBLE here instead of
-    // being silently folded into a balanced-looking count. Fall back to the cleaned
-    // cohort only when the pivot artifact isn't available yet (e.g. pre-scoring), so
-    // an in-progress cycle isn't misreported as a total matrix collapse.
-    const matrixIds = new Set<string>(
-      naive
-        ? naive.students.map((s) => s.id)
-        : cleaned.rows.filter((r) => !excludedIds.has(r.id)).map((r) => r.id),
-    );
-    // Computed membership = students with an engine subject total here.
-    const computedIds = new Set<string>();
-    if (composition) {
-      for (const s of composition.students) {
-        if (s.subjects.some((x) => x.assessmentId === a.id)) computedIds.add(s.participantId);
-      }
-    }
-
     const people: DataFlowPerson[] = [];
     const staff: DataFlowPerson[] = [];
     for (const r of raw.rows) {
       const email = r.studentId;
       const cells = cellsOf(r);
       const att = cells.reduce<number>((n, c) => n + (c === "·" ? 0 : 1), 0);
-      if (isStaffTestEmail(email)) {
+      if (cohort.staff.has(r.id)) {
         staff.push({ id: r.id, name: r.name, email, last: 0, att, items, score: null, cells, staff: true, tag: "staff/test" });
         continue; // staff never counted as participants
       }
-      // last stage reached, from the real membership sets.
-      const inMatrix = matrixIds.has(r.id);
-      const inComputed = computedIds.has(r.id);
-      const inCleaned = !excludedIds.has(r.id);
+      // last stage reached, from the canonical membership sets.
+      const inMatrix = cohort.matrix.has(r.id);
+      const inComputed = cohort.computed.has(r.id);
+      const inCleaned = cohort.cleaned.has(r.id);
       const last = inComputed ? 3 : inMatrix ? 2 : inCleaned ? 1 : 0;
       // Real raw MCQ score for a computed student (correct count on retained items).
       let score: number | null = null;
