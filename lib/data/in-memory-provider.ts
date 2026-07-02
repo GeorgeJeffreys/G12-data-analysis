@@ -58,6 +58,7 @@ import type {
   CgjUploadRow,
   IncidentInput,
   IncidentDecisionInput,
+  SchemaHealth,
 } from "./provider";
 import {
   assumedPldAwardMap,
@@ -4478,6 +4479,10 @@ export class InMemoryDataProvider implements DataProvider {
     this.audit("cycle", "Deleted sitting", `Removed sitting "${name}" and all its ingested data`, null);
     this.bump();
     return Promise.resolve();
+  }
+  // The demo has no database, so there is never any schema drift to report.
+  getSchemaHealth(): Promise<SchemaHealth> {
+    return Promise.resolve({ ok: true, migration: "0020", missingColumns: [], missingFunctions: [] });
   }
 
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void {

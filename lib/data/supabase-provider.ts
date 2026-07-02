@@ -41,6 +41,7 @@ import type {
   IncidentDecisionInput,
   EssayUploadRow,
   CgjUploadRow,
+  SchemaHealth,
 } from "./provider";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
@@ -486,15 +487,73 @@ export class SupabaseDataProvider implements DataProvider {
   // that authorize lead/admin and audit with the resolved session user
   // (auth.uid() — the session client is present here, unlike the ingest path).
   // We await + re-hydrate so the UI reflects the new state immediately.
+  //
+  // 0020: the RPCs RETURN the deleted-row count. We CHECK it — a null (function
+  // absent / stale schema) or a 0 (nothing removed) surfaces an explicit error
+  // instead of a silent "success" while rows survive across tables.
   async clearSittingData(cycleId: string): Promise<void> {
-    const { error } = await this.rpcFn("clear_sitting_data", { p_cycle: cycleId });
-    if (error) throw new Error(error.message);
+    const { data, error } = await this.rpcData<number>("clear_sitting_data", { p_cycle: cycleId });
+    if (error) throw new Error(this.driftHint(error.message));
+    this.assertDeleted(data, "clear");
     await this.rehydrate();
   }
   async deleteSitting(cycleId: string): Promise<void> {
-    const { error } = await this.rpcFn("delete_sitting", { p_cycle: cycleId });
-    if (error) throw new Error(error.message);
+    const { data, error } = await this.rpcData<number>("delete_sitting", { p_cycle: cycleId });
+    if (error) throw new Error(this.driftHint(error.message));
+    this.assertDeleted(data, "delete");
     await this.rehydrate();
+  }
+
+  /** Turn a raw DB error into an actionable message when it's the schema-drift
+   *  class (missing function/column), else pass it through unchanged. */
+  private driftHint(message: string): string {
+    const e = message.toLowerCase();
+    const drift =
+      /function .* does not exist/.test(e) ||
+      /could not find the function/.test(e) ||
+      e.includes("schema cache") ||
+      e.includes("pgrst202");
+    return drift
+      ? `Database schema is out of date — run migration 0020 in Supabase, then retry. (${message})`
+      : message;
+  }
+
+  /** A count of 0 or a null/absent return means the operation did nothing —
+   *  never let that read as success. */
+  private assertDeleted(count: number | null | undefined, kind: "clear" | "delete"): void {
+    if (count == null) {
+      throw new Error(
+        `Couldn’t ${kind} this sitting — the database returned no row count. ` +
+          "The delete function may be missing (run migration 0020 in Supabase).",
+      );
+    }
+    if (count === 0) {
+      throw new Error(
+        kind === "delete"
+          ? "Nothing was deleted — no rows found for this sitting."
+          : "Nothing was cleared — this sitting has no ingested data.",
+      );
+    }
+  }
+
+  /** Probe the live schema for drift (columns/functions the code requires). */
+  async getSchemaHealth(): Promise<SchemaHealth> {
+    const { data, error } = await this.rpcData<{
+      ok?: boolean;
+      migration?: string;
+      missing_columns?: string[];
+      missing_functions?: string[];
+    }>("schema_health", {});
+    // An absent probe (older DB) — report drift so the operator installs 0020.
+    if (error || !data) {
+      return { ok: false, migration: "0020", missingColumns: [], missingFunctions: ["public.schema_health"] };
+    }
+    return {
+      ok: data.ok ?? true,
+      migration: data.migration ?? "0020",
+      missingColumns: data.missing_columns ?? [],
+      missingFunctions: data.missing_functions ?? [],
+    };
   }
 
   lockCycle(cycleId: string): void {

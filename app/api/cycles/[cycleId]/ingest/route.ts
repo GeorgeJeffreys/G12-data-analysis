@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestCleanResponses } from "@/lib/server/ingest-write";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
+import { checkSchemaHealth, describeSchemaHealth } from "@/lib/server/schema-health";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 import { hasRole } from "@/lib/auth/roles";
@@ -63,6 +64,14 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
 
   try {
     const admin = createAdminClient();
+    // Fail loud + early if the live DB is behind the code (e.g. items.item_set
+    // or ingest_persist missing) — an actionable "run migration NNNN" beats a
+    // raw Postgres column error mid-persist. 503: the request is fine, the DB
+    // needs migrating.
+    const health = await checkSchemaHealth(admin);
+    if (!health.ok) {
+      return NextResponse.json({ error: describeSchemaHealth(health) }, { status: 503 });
+    }
     const ingest = await ingestCleanResponses(admin, cycleId, body.clean, {
       fileRef: body.fileName,
       fileSizeMB: body.fileSizeMB,

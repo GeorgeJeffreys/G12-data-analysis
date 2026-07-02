@@ -582,9 +582,15 @@ export interface Database {
       set_incident_import_source: { Args: { p_cycle: string; p_file_name: string; p_is_sample: boolean }; Returns: undefined };
       clear_incident_import_source: { Args: { p_cycle: string }; Returns: undefined };
       // 0007 — atomic, idempotent 3-CSV persist + destructive sitting controls.
+      // 0020 — clear/delete now RETURN the deleted-row count so the UI confirms
+      // the operation did something (0 rows → explicit error, never silent).
       ingest_persist: { Args: { p_cycle: string; p_payload: unknown; p_actor: string }; Returns: unknown };
-      clear_sitting_data: { Args: { p_cycle: string }; Returns: undefined };
-      delete_sitting: { Args: { p_cycle: string }; Returns: undefined };
+      clear_sitting_data: { Args: { p_cycle: string }; Returns: number };
+      delete_sitting: { Args: { p_cycle: string }; Returns: number };
+      // 0018 — SQL-editor clean re-ingest reset (returns the deleted-row count).
+      reset_cycle_for_reingest: { Args: { p_cycle: string; p_actor?: string | null }; Returns: number };
+      // 0020 — schema drift probe (columns/functions the code requires vs live DB).
+      schema_health: { Args: Record<string, never>; Returns: unknown };
     };
     Enums: {
       cycle_status: CycleStatus;
