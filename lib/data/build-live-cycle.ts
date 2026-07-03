@@ -200,6 +200,16 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       return resp;
     });
 
+    // Per-participant SITTING key for this subject: pseudonym → QM ResultId. One
+    // sitting per participant × subject, so the cleaned export keys ResultId on the
+    // real sitting rather than the participant id (first ResultId seen wins).
+    const resultIdByParticipant: Record<string, string> = {};
+    for (const r of recs) {
+      if (r.qmResultId && resultIdByParticipant[r.participantPseudonym] === undefined) {
+        resultIdByParticipant[r.participantPseudonym] = r.qmResultId;
+      }
+    }
+
     // INVARIANT (root cause D): every distinct participant in this subject's input
     // responses must survive to a distinct output participant — no silent overwrite.
     const inParticipants = new Set(recs.map((r) => r.participantPseudonym)).size;
@@ -246,6 +256,7 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
       items,
       responses: seedResponses,
       technicalIncidents,
+      resultIdByParticipant,
     });
   }
 

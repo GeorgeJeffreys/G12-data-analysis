@@ -190,14 +190,20 @@ export async function ingestCleanResponses(
     });
   }
 
-  // ── 4. Responses (long-format facts; dedupe to keep unique(participant,item)) ──
+  // ── 4. Responses (long-format facts; ONE record per SITTING × question) ───────
+  // Keyed at the sitting grain: the QM `ResultId` (`qm_result_id`) is the sitting
+  // key — one per participant × subject — and the DB uniqueness is
+  // (item_id, qm_result_id) (migration 0021). Participant identity (`participant_id`,
+  // the email-keyed participant) is a SEPARATE column used for cross-subject
+  // grouping; it is NEVER the sitting key. Deduping on (qmResultId, item) therefore
+  // never folds a participant's separate subject-sittings into one record.
   const respRows: Record<string, unknown>[] = [];
   const seenResp = new Set<string>();
   for (const r of recs) {
     const pId = participantId.get(r.qmParticipantId);
     const iId = itemId.get(`${r.assessmentName}|${r.qmQuestionId}`);
     if (!pId || !iId) continue;
-    const key = `${pId}|${iId}`;
+    const key = `${r.qmResultId}|${iId}`;
     if (seenResp.has(key)) continue; // first response wins (duplicates flagged in validation)
     seenResp.add(key);
     const ci = canonItem.get(`${r.assessmentName}|${r.qmQuestionId}`);
@@ -205,6 +211,7 @@ export async function ingestCleanResponses(
       cycle_id: cycleId,
       participant_id: pId,
       item_id: iId,
+      qm_result_id: r.qmResultId,
       answer_given: r.answerGiven,
       answer_score: r.answerScore,
       response_time: r.responseTime,

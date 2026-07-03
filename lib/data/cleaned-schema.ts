@@ -80,7 +80,6 @@ export const CLEANED_DATA_UNAVAILABLE: ReadonlySet<CleanedDataColumn> = new Set<
   "AnswerResponseTimeSeconds",
   "MetaTags",
   "TopicQuestionCount",
-  "ParticipantEmail",
   "ResultParticipantFirstName",
   "ResultParticipantLastName",
   "ResultGroupName",
@@ -93,9 +92,16 @@ export const CLEANED_DATA_UNAVAILABLE: ReadonlySet<CleanedDataColumn> = new Set<
   "Feedback",
 ]);
 
-/** PII columns — kept blank by design; never back-fill or export. */
+/**
+ * PII columns — kept blank by design; never back-fill or export.
+ *
+ * `ParticipantEmail` is NOT here: it is the participant identity key (the
+ * lower-cased email = `ParticipantID`), carried as its own column so a
+ * participant's sittings group across subjects independently of the `ResultId`
+ * sitting key. It surfaces the SAME value already shown as `ParticipantID` (no new
+ * exposure); date-of-birth and gender remain blanked PII.
+ */
 export const CLEANED_DATA_PII: ReadonlySet<CleanedDataColumn> = new Set<CleanedDataColumn>([
-  "ParticipantEmail",
   "ParticipantDateOfBirth",
   "ParticipantGender",
 ]);

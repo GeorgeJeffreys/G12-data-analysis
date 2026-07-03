@@ -363,6 +363,16 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       return resp;
     });
 
+    // Per-participant SITTING key: participant row id → the QM ResultId carried on
+    // its responses (one sitting per participant × subject). Keys the cleaned
+    // export's ResultId to the real sitting, not the participant id.
+    const resultIdByParticipant: Record<string, string> = {};
+    for (const r of aResp) {
+      if (r.qm_result_id && resultIdByParticipant[r.participant_id] === undefined) {
+        resultIdByParticipant[r.participant_id] = r.qm_result_id;
+      }
+    }
+
     // INVARIANT (root cause D): every distinct participant in this subject's input
     // responses must survive to a distinct output participant in the bucketed cell
     // matrix — no silent overwrite (mirror of buildLiveCycleData's per-subject
@@ -413,6 +423,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       items: seedItems,
       responses: seedResponses,
       technicalIncidents,
+      resultIdByParticipant,
       _order: info.order,
     });
   }
