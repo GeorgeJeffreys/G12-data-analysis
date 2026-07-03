@@ -243,6 +243,15 @@ function main() {
       return resp;
     });
 
+    // Per-participant SITTING key for this subject: pseudonym → QM ResultId (one
+    // sitting per participant × subject). Keys the cleaned export's ResultId.
+    const resultIdByParticipant: Record<string, string> = {};
+    for (const r of recs) {
+      if (r.qmResultId && resultIdByParticipant[r.participantPseudonym] === undefined) {
+        resultIdByParticipant[r.participantPseudonym] = r.qmResultId;
+      }
+    }
+
     // Per-participant technical incidents from the sitting's result_status flag
     // (one status per participant-assessment). Display-only; no scoring impact.
     const statusByP = new Map<string, string>();
@@ -262,6 +271,7 @@ function main() {
       items,
       responses: seedResponses,
       technicalIncidents,
+      resultIdByParticipant,
       // carry order for sorting below
       ...( { _order: info.order } as object ),
     } as SeedAssessment & { _order: number });

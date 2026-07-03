@@ -97,6 +97,14 @@ export interface SeedAssessment {
    * incident count; never affects scoring. Absent/empty when all finished OK.
    */
   technicalIncidents?: SeedTechnicalIncident[];
+  /**
+   * Per-participant SITTING key for this subject: participant id → the QM
+   * `ResultId` (one sitting per participant × subject). The cleaned export keys its
+   * `ResultId` column on this so a participant's separate subject-sittings stay
+   * distinct records (never one synthetic id per participant). Optional — legacy
+   * seeds without it fall back to the participant id.
+   */
+  resultIdByParticipant?: Record<string, string>;
 }
 
 export interface SeedParticipant {

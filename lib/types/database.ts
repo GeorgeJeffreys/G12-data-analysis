@@ -153,6 +153,11 @@ export interface ResponseRow {
   cycle_id: string;
   participant_id: string;
   item_id: string;
+  /** The QM `ResultId` (sitting key) — one per participant × subject. Distinct
+   *  from `participant_id` (the email-keyed participant). The uniqueness lives at
+   *  the sitting × question grain (item_id, qm_result_id); migration 0021. Null on
+   *  pre-0021 rows until a re-ingest repopulates them. */
+  qm_result_id: string | null;
   answer_given: string | null;
   answer_score: number;
   response_time: number | null;

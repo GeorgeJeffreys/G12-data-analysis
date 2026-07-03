@@ -130,6 +130,13 @@ export interface AssembleScoreAnalysisArgs {
   items: ItemMeta[];
   /** Cohort-excluded item ids (dropped for everyone). */
   excludedItemIds?: string[];
+  /**
+   * Per-(assessment × participant) SITTING key: `${assessmentId}:${participantId}`
+   * → the QM `ResultId`. Lets the per-response dataset export key its `ResultId`
+   * column on the real sitting rather than the participant id. Optional — callers
+   * without it fall back to the participant id.
+   */
+  resultIdByParticipant?: Record<string, string>;
   scoreRunNote?: string;
 }
 

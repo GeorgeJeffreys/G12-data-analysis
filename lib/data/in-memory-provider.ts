@@ -1319,7 +1319,11 @@ export class InMemoryDataProvider implements DataProvider {
         const score = scoreByKey.get(`${p.id} ${it.id}`);
         if (score === undefined) continue; // a row per presented (answered) question
         const rec: Partial<Record<CleanedDataColumn, string>> = {
-          ResultId: p.id,
+          // ResultId is the SITTING key (QM ResultId) — one per participant ×
+          // subject — NOT the participant id, so a participant's separate subjects
+          // stay distinct sitting-records. Falls back to the participant id only for
+          // legacy seeds that predate the per-sitting map.
+          ResultId: a.resultIdByParticipant?.[p.id] ?? p.id,
           QuestionId: it.id,
           QuestionDescription: it.wording ?? "",
           QuestionType: "Multiple Choice",
@@ -1331,6 +1335,10 @@ export class InMemoryDataProvider implements DataProvider {
           AnswerScore: String(score),
           AssessmentId: a.id,
           AssessmentName: a.name,
+          // Participant identity, carried as its OWN column (the email = the
+          // qm_participant_id), distinct from the ResultId/sitting key — the field
+          // used to group a participant's sittings across subjects.
+          ParticipantEmail: p.studentId ?? "",
           ResultStatus: resultStatus,
           ResultTotalScore: String(total),
           ResultPercentageScore: String(pct),
@@ -3371,6 +3379,14 @@ export class InMemoryDataProvider implements DataProvider {
     // would still list them as all-zero rows (the "P0010/P0011 still present"
     // leak), so the participant roster must reflect the cleaned set too.
     const cohortRemoved = this.cohortRemovedParticipants();
+    // Per-(assessment × participant) sitting key for the dataset export's ResultId
+    // column (the QM ResultId — one sitting per participant × subject).
+    const resultIdByParticipant: Record<string, string> = {};
+    for (const a of this.seed.liveCycle.assessments) {
+      for (const [pid, rid] of Object.entries(a.resultIdByParticipant ?? {})) {
+        resultIdByParticipant[`${a.id}:${pid}`] = rid;
+      }
+    }
     return {
       assessments: this.seed.liveCycle.assessments.map((a) => ({ id: a.id, name: a.name })),
       participants: this.seed.liveCycle.participants
@@ -3379,6 +3395,7 @@ export class InMemoryDataProvider implements DataProvider {
       responses,
       items,
       excludedItemIds,
+      resultIdByParticipant,
       scoreRunNote: preExclusion
         ? "Naive (pre-exclusion) overall scores — computed before item review; no items excluded."
         : "Overall scores after item-review exclusions.",

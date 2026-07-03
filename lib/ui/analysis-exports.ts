@@ -20,10 +20,14 @@ export function scoreDatasetCsv(data: AssembleScoreAnalysisArgs): { headers: str
     "ResultId", "Assessment", "QuestionId", "QuestionMajorElement", "QuestionSubElement",
     "DemandLevel", "Score", "QuestionMaximumScore", "Excluded",
   ];
+  const sittingId = data.resultIdByParticipant ?? {};
   const rows = data.responses.map((r) => {
     const m = metaById.get(`${r.assessmentId}:${r.itemId}`);
+    // ResultId is the SITTING key (one per participant × subject), not the
+    // participant id — a participant's subjects stay distinct sitting-records.
+    const resultId = sittingId[`${r.assessmentId}:${r.participantId}`] ?? r.participantId;
     return [
-      r.participantId, nameById.get(r.assessmentId) ?? r.assessmentId, r.itemId,
+      resultId, nameById.get(r.assessmentId) ?? r.assessmentId, r.itemId,
       m?.majorElement ?? "", m?.subElement ?? "", m?.demandLevel ?? "",
       r.score, m?.maxScore ?? 1, excluded.has(r.itemId) ? "Yes" : "No",
     ];
