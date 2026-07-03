@@ -17,10 +17,9 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import { ingestCleanResponses } from "@/lib/server/ingest-write";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
 import { checkSchemaHealth, describeSchemaHealth } from "@/lib/server/schema-health";
+import { authorizeCycleAdmin } from "@/lib/auth/authorize-cycle";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
-import { hasRole } from "@/lib/auth/roles";
-import type { MemberRole } from "@/lib/types/database";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -45,12 +44,12 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
   const user = auth.user;
   if (!user) return NextResponse.json({ error: "You must be signed in to upload" }, { status: 401 });
 
-  const { data } = await supabase.from("memberships").select("role,cycle_id").eq("user_id", user.id);
-  const memberships = (data ?? []) as unknown as { role: MemberRole; cycle_id: string | null }[];
-  const allowed = memberships.some(
-    (m) => hasRole(m.role, "admin") && (m.cycle_id === null || m.cycle_id === cycleId),
-  );
-  if (!allowed) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Authorize via the admin client (service role) so a workspace admin's
+  // cycle_id = NULL membership is honoured even if the memberships RLS/helpers
+  // have drifted — and surface the concrete reason, never a bare "forbidden".
+  const admin = createAdminClient();
+  const gate = await authorizeCycleAdmin(admin, user.id, cycleId);
+  if (!gate.allowed) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   let body: IngestBody;
   try {
@@ -63,7 +62,6 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
   }
 
   try {
-    const admin = createAdminClient();
     // Fail loud + early if the live DB is behind the code (e.g. items.item_set
     // or ingest_persist missing) — an actionable "run migration NNNN" beats a
     // raw Postgres column error mid-persist. 503: the request is fine, the DB

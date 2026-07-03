@@ -14,6 +14,25 @@ NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_h
 and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
 then `0020`.
 
+> **`0024_authorization_workspace_scope.sql` — restore workspace-scope auth
+> (RUN THIS if Delete says "not authorized" and Replace files returns "forbidden").**
+> Task 20. Run AFTER `0001`–`0023`, in the Supabase SQL editor (EU). Idempotent
+> (`create or replace` + one policy swap — no table/column/constraint/DATA change).
+> Both cycle data-mutations gate on the SAME membership authorization: Delete /
+> Clear via `delete_sitting`/`clear_sitting_data`'s `app.has_role(cycle,'lead_admin')`
+> guard, and Replace files via the ingest route reading the caller's admin membership.
+> If `app.is_member` / `app.has_role` drift back to the strict, cycle-scoped 0001
+> bodies, a **workspace admin** (`memberships.cycle_id IS NULL`, RUNBOOK §2) authorizes
+> nothing — Delete raises `not authorized`, Replace answers `forbidden`. This migration
+> re-affirms both helpers at the 0002 global-aware definition
+> (`m.cycle_id is null or m.cycle_id = p_cycle`), corrects `memberships_select` so a
+> user can always read their OWN rows, and hardens `public.schema_health()` to probe
+> the workspace-aware helpers + the self-read policy (so this drift is flagged, not
+> passed as ok). Bumps `schema_health()` to `'0024'`. Verify with
+> `select public.schema_health();` (expect `ok=true`, `migration='0024'`), then test
+> Replace files and Delete on the live app. Engine parity 183/183 unchanged. Roll back
+> with `0024_authorization_workspace_scope.rollback.sql`.
+
 > **`0023_ingest_sitting_completeness.sql` — whole-sitting drop guard (task 19).**
 > Run AFTER `0021` and `0022`, in the Supabase SQL editor (EU). Idempotent
 > (`create or replace` only — no table/column/constraint change). Re-affirms
