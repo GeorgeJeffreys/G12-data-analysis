@@ -505,17 +505,33 @@ export class SupabaseDataProvider implements DataProvider {
     await this.rehydrate();
   }
 
-  /** Turn a raw DB error into an actionable message when it's the schema-drift
-   *  class (missing function/column), else pass it through unchanged. */
+  /** Turn a raw DB error into an actionable message when it's a known class
+   *  (schema drift, or an authorization denial), else pass it through unchanged. */
   private driftHint(message: string): string {
     const e = message.toLowerCase();
+    // Authorization denial: delete_sitting / clear_sitting_data raise 'not authorized'
+    // when app.has_role can't match the caller — most often a workspace-scope
+    // (cycle_id = NULL) admin membership that a drifted, strict app.has_role no
+    // longer honours. Name the fix instead of surfacing a bare permission word.
+    const authDenied =
+      e.includes("not authorized") ||
+      e.includes("permission denied") ||
+      e.includes("row-level security") ||
+      e.includes("row level security");
+    if (authDenied) {
+      return (
+        "Not authorized to modify this sitting — your admin (lead_admin) membership isn’t being " +
+        "recognised. If you hold a workspace-wide (cycle_id = NULL) admin membership, run migration " +
+        `0024 in the Supabase SQL editor so workspace admins are permitted again, then retry. (${message})`
+      );
+    }
     const drift =
       /function .* does not exist/.test(e) ||
       /could not find the function/.test(e) ||
       e.includes("schema cache") ||
       e.includes("pgrst202");
     return drift
-      ? `Database schema is out of date — run migration 0022 in Supabase, then retry. (${message})`
+      ? `Database schema is out of date — run migration 0024 in Supabase, then retry. (${message})`
       : message;
   }
 
@@ -545,13 +561,13 @@ export class SupabaseDataProvider implements DataProvider {
       missing_columns?: string[];
       missing_functions?: string[];
     }>("schema_health", {});
-    // An absent probe (older DB) — report drift so the operator installs 0022.
+    // An absent probe (older DB) — report drift so the operator installs 0024.
     if (error || !data) {
-      return { ok: false, migration: "0022", missingColumns: [], missingFunctions: ["public.schema_health"] };
+      return { ok: false, migration: "0024", missingColumns: [], missingFunctions: ["public.schema_health"] };
     }
     return {
       ok: data.ok ?? true,
-      migration: data.migration ?? "0022",
+      migration: data.migration ?? "0024",
       missingColumns: data.missing_columns ?? [],
       missingFunctions: data.missing_functions ?? [],
     };

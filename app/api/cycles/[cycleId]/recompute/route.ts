@@ -11,8 +11,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
-import { hasRole } from "@/lib/auth/roles";
-import type { MemberRole } from "@/lib/types/database";
+import { authorizeCycleAdmin } from "@/lib/auth/authorize-cycle";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,15 +24,13 @@ export async function POST(_req: Request, { params }: { params: { cycleId: strin
   const user = auth.user;
   if (!user) return NextResponse.json({ error: "unauthenticated" }, { status: 401 });
 
-  const { data } = await supabase.from("memberships").select("role,cycle_id").eq("user_id", user.id);
-  const memberships = (data ?? []) as unknown as { role: MemberRole; cycle_id: string | null }[];
-  const allowed = memberships.some(
-    (m) => hasRole(m.role, "admin") && (m.cycle_id === null || m.cycle_id === cycleId),
-  );
-  if (!allowed) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  // Authorize via the admin client so a workspace (cycle_id = NULL) admin is
+  // honoured under RLS drift, and surface the concrete reason (not "forbidden").
+  const admin = createAdminClient();
+  const gate = await authorizeCycleAdmin(admin, user.id, cycleId);
+  if (!gate.allowed) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
   try {
-    const admin = createAdminClient();
     const result = await recomputeAndWrite(admin, cycleId);
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
