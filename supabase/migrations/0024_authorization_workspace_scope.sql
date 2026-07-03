@@ -53,6 +53,23 @@
 begin;
 
 -- ----------------------------------------------------------------------------
+-- 0. Lock `memberships` FIRST, before replacing the helpers — deadlock safety.
+--    Concurrent app traffic reads memberships (AccessShareLock) and THEN calls
+--    app.is_member / app.has_role via the RLS policy (a lock on those functions).
+--    If this migration replaces those functions first (CREATE OR REPLACE takes an
+--    exclusive lock on them) and only then swaps the policy (AccessExclusiveLock on
+--    the table), it acquires the two resources in the REVERSE order a live reader
+--    holds them — a lock-order inversion that deadlocks (ERROR 40P01: deadlock
+--    detected). Taking the table's exclusive lock up front matches the readers'
+--    order (table → functions): once held, no new memberships-reader can enter the
+--    conflicting state, so the function replacements and the policy swap below are
+--    contention-free. `lock_timeout` fails fast (re-run) instead of hanging if the
+--    table is momentarily busy.
+-- ----------------------------------------------------------------------------
+set local lock_timeout = '10s';
+lock table memberships in access exclusive mode;
+
+-- ----------------------------------------------------------------------------
 -- 1. Re-affirm the GLOBAL-aware membership helpers (0002 bodies). A workspace
 --    membership (cycle_id IS NULL) grants the role across ALL cycles:
 --        (m.cycle_id IS NULL OR m.cycle_id = p_cycle)
