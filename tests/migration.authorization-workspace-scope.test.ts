@@ -65,21 +65,30 @@ describe("0024 — restore workspace-scope authorization", () => {
     expect(SQL).not.toMatch(/participant_scores|item_stats|score_runs/i);
   });
 
-  it("is wrapped in a single transaction (atomic apply)", () => {
-    expect(SQL.trimStart()).toMatch(/^--[\s\S]*\bbegin;/i);
-    expect(SQL).toMatch(/\bcommit;\s*$|\bcommit;\s*--/i);
-  });
+  it("splits the helpers and the memberships-table policy into SEPARATE transactions (deadlock-safe)", () => {
+    // app.is_member/has_role read memberships, so a single txn that both replaces
+    // them and locks the memberships table deadlocks against live readers. The fix:
+    // functions in one transaction, the policy swap in another.
+    const begins = SQL.match(/^\s*begin;/gim) ?? [];
+    const commits = SQL.match(/^\s*commit;/gim) ?? [];
+    expect(begins.length).toBe(2);
+    expect(commits.length).toBe(2);
 
-  it("locks memberships BEFORE replacing the helpers (deadlock-safe lock order)", () => {
-    const lockAt = SQL.search(/lock table memberships in access exclusive mode/i);
-    const fnAt = SQL.search(/create or replace function app\.is_member/i);
+    // The policy swap must NOT sit in the same transaction as the function
+    // replacements: the last function `create or replace` is followed by a COMMIT
+    // before the `create policy memberships_select`.
+    const lastFnAt = SQL.search(/create or replace function public\.schema_health/i);
     const policyAt = SQL.search(/create policy memberships_select/i);
-    expect(lockAt).toBeGreaterThan(-1);
-    // The table lock must come before both the function replacement and the policy swap.
-    expect(lockAt).toBeLessThan(fnAt);
-    expect(lockAt).toBeLessThan(policyAt);
-    // Fail fast instead of hanging if the table is busy.
-    expect(SQL).toMatch(/set local lock_timeout/i);
+    const commitBetween = SQL.slice(lastFnAt, policyAt).search(/\bcommit;/i);
+    expect(policyAt).toBeGreaterThan(lastFnAt);
+    expect(commitBetween).toBeGreaterThan(-1);
+
+    // No `lock table memberships` in the function transaction (that's what deadlocks).
+    const fnTxn = SQL.slice(0, SQL.slice(lastFnAt).search(/\bcommit;/i) + lastFnAt);
+    expect(fnTxn).not.toMatch(/lock table memberships/i);
+
+    // Both transactions fail fast rather than hang.
+    expect((SQL.match(/set local lock_timeout/gi) ?? []).length).toBe(2);
   });
 
   it("rollback restores the plain member-scoped policy + 0023 probe, keeping global helpers", () => {

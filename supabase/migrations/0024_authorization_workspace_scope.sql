@@ -45,29 +45,35 @@
 -- SECURITY DEFINER helpers, one policy swap, and the read-only probe. The engine +
 -- grade-bearing tables are untouched — parity 183/183 unaffected (authorization only).
 --
+-- DEADLOCK SAFETY (why this file is TWO transactions, not one)
+--   app.is_member / app.has_role READ `memberships` internally, so any live query on
+--   an RLS-protected table grabs a share-lock on one of those FUNCTIONS and then a
+--   share-lock on the `memberships` TABLE. If one transaction both replaces those
+--   functions (exclusive lock on the function) AND swaps the `memberships` policy
+--   (AccessExclusiveLock on the table), it holds one of that pair while wanting the
+--   other — the exact reverse of what a live reader holds — and the two collide as
+--   `ERROR 40P01: deadlock detected` (no lock-ordering trick fixes it: locking the
+--   table first just flips which side deadlocks). The fix is to NEVER touch the
+--   functions and the memberships table in the SAME transaction:
+--     * Transaction 1 replaces ONLY the functions (locks function objects, no table
+--       lock) — it can't form a table↔function cycle.
+--     * Transaction 2 swaps ONLY the policy (locks the memberships table, touches no
+--       function) — it can't either.
+--   Each carries a short `lock_timeout`: under heavy load a statement aborts cleanly
+--   (re-run) instead of hanging. Both transactions are independently idempotent, so
+--   re-running the whole file after a mid-way abort is safe.
+--
 -- The human runs this in the Supabase SQL editor (EU) AFTER 0001–0023. It is the
 -- next numbered, append-only migration. Reversible via
 -- 0024_authorization_workspace_scope.rollback.sql.
 -- ============================================================================
 
+-- ============================================================================
+-- TRANSACTION 1 — authorization helpers only (no memberships-table lock).
+-- ============================================================================
 begin;
 
--- ----------------------------------------------------------------------------
--- 0. Lock `memberships` FIRST, before replacing the helpers — deadlock safety.
---    Concurrent app traffic reads memberships (AccessShareLock) and THEN calls
---    app.is_member / app.has_role via the RLS policy (a lock on those functions).
---    If this migration replaces those functions first (CREATE OR REPLACE takes an
---    exclusive lock on them) and only then swaps the policy (AccessExclusiveLock on
---    the table), it acquires the two resources in the REVERSE order a live reader
---    holds them — a lock-order inversion that deadlocks (ERROR 40P01: deadlock
---    detected). Taking the table's exclusive lock up front matches the readers'
---    order (table → functions): once held, no new memberships-reader can enter the
---    conflicting state, so the function replacements and the policy swap below are
---    contention-free. `lock_timeout` fails fast (re-run) instead of hanging if the
---    table is momentarily busy.
--- ----------------------------------------------------------------------------
-set local lock_timeout = '10s';
-lock table memberships in access exclusive mode;
+set local lock_timeout = '15s';
 
 -- ----------------------------------------------------------------------------
 -- 1. Re-affirm the GLOBAL-aware membership helpers (0002 bodies). A workspace
@@ -96,20 +102,12 @@ returns boolean language sql stable security definer set search_path = public, a
   );
 $$;
 
--- ----------------------------------------------------------------------------
--- 2. A user may ALWAYS read their OWN membership rows — including a workspace
---    (cycle_id IS NULL) row that `app.is_member(cycle_id)` alone can't surface to
---    its owner under the strict grain. This is what the ingest route's app gate
---    reads to decide "is the caller an admin of this cycle", so it must never be
---    hidden from the caller themselves. Still a self-read only: no other user's
---    rows become visible.
--- ----------------------------------------------------------------------------
-drop policy if exists memberships_select on memberships;
-create policy memberships_select on memberships for select
-  using (user_id = auth.uid() or app.is_member(cycle_id));
+-- (The memberships self-read POLICY is swapped in TRANSACTION 2 below — it locks
+--  the memberships table, and must not share a transaction with the function
+--  replacements above, or the two deadlock against live readers.)
 
 -- ----------------------------------------------------------------------------
--- 3. HARDENED drift probe. Beyond the 0023 surface, it now verifies the
+-- 2. HARDENED drift probe. Beyond the 0023 surface, it now verifies the
 --    AUTHORIZATION objects this migration restores:
 --      * app.is_member / app.has_role carry the global `cycle_id is null` clause
 --        (a strict, drifted body — the silent cause of the "forbidden" — is flagged);
@@ -205,6 +203,28 @@ end $$;
 
 revoke all on function public.schema_health() from public;
 grant execute on function public.schema_health() to authenticated, service_role;
+
+commit;
+
+-- ============================================================================
+-- TRANSACTION 2 — memberships self-read policy only (locks the memberships table;
+-- touches no function, so it can't deadlock against the helper replacements above).
+--
+-- A user may ALWAYS read their OWN membership rows — including a workspace
+-- (cycle_id IS NULL) row that `app.is_member(cycle_id)` alone can't surface to its
+-- owner. This is what the ingest route's app gate reads to decide "is the caller an
+-- admin of this cycle", so it must never be hidden from the caller themselves. Still
+-- a self-read only: no other user's rows become visible. If this transaction aborts
+-- under load (lock_timeout), just re-run the file — transaction 1 already committed
+-- and both halves are idempotent.
+-- ============================================================================
+begin;
+
+set local lock_timeout = '15s';
+
+drop policy if exists memberships_select on memberships;
+create policy memberships_select on memberships for select
+  using (user_id = auth.uid() or app.is_member(cycle_id));
 
 commit;
 
