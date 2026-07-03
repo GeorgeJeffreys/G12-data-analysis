@@ -6,7 +6,7 @@ import "server-only";
  * moment (a failed import).
  *
  * Two entry points:
- *   * `checkSchemaHealth(admin)` calls the `schema_health()` RPC (migration 0020)
+ *   * `checkSchemaHealth(admin)` calls the `schema_health()` RPC (migration 0022)
  *     and returns the drift report. The app can probe this proactively.
  *   * `schemaDriftMessage(rawError)` classifies a caught Postgres/PostgREST error
  *     and, when it looks like the missing-column/function class, returns an
@@ -15,7 +15,7 @@ import "server-only";
 import type { SupabaseAdminClient } from "@/lib/supabase/admin";
 
 /** The migration that brings a drifted DB current (see supabase/migrations). */
-export const BRING_CURRENT_MIGRATION = "0020_restore_ingest_delete.sql";
+export const BRING_CURRENT_MIGRATION = "0022_delete_reingest_sitting_grain.sql";
 
 export interface SchemaHealth {
   ok: boolean;
@@ -24,7 +24,7 @@ export interface SchemaHealth {
   missingFunctions: string[];
 }
 
-const HEALTHY: SchemaHealth = { ok: true, migration: "0020", missingColumns: [], missingFunctions: [] };
+const HEALTHY: SchemaHealth = { ok: true, migration: "0022", missingColumns: [], missingFunctions: [] };
 
 /**
  * Probe the live schema for the columns/functions the code requires. Returns a
@@ -54,7 +54,7 @@ export async function checkSchemaHealth(admin: SupabaseAdminClient): Promise<Sch
   };
   return {
     ok: d.ok ?? true,
-    migration: d.migration ?? "0020",
+    migration: d.migration ?? "0022",
     missingColumns: d.missing_columns ?? [],
     missingFunctions: d.missing_functions ?? [],
   };

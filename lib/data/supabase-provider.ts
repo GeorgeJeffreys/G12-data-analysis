@@ -488,9 +488,10 @@ export class SupabaseDataProvider implements DataProvider {
   // (auth.uid() — the session client is present here, unlike the ingest path).
   // We await + re-hydrate so the UI reflects the new state immediately.
   //
-  // 0020: the RPCs RETURN the deleted-row count. We CHECK it — a null (function
-  // absent / stale schema) or a 0 (nothing removed) surfaces an explicit error
-  // instead of a silent "success" while rows survive across tables.
+  // 0020/0022: the RPCs RETURN the deleted-row count. We CHECK it — a null
+  // (function absent / stale schema) or a 0 (nothing removed) surfaces an explicit
+  // error instead of a silent "success" while rows survive across tables. (0022
+  // also hardens schema_health so a stale void delete can't pass the drift probe.)
   async clearSittingData(cycleId: string): Promise<void> {
     const { data, error } = await this.rpcData<number>("clear_sitting_data", { p_cycle: cycleId });
     if (error) throw new Error(this.driftHint(error.message));
@@ -514,7 +515,7 @@ export class SupabaseDataProvider implements DataProvider {
       e.includes("schema cache") ||
       e.includes("pgrst202");
     return drift
-      ? `Database schema is out of date — run migration 0020 in Supabase, then retry. (${message})`
+      ? `Database schema is out of date — run migration 0022 in Supabase, then retry. (${message})`
       : message;
   }
 
@@ -524,7 +525,7 @@ export class SupabaseDataProvider implements DataProvider {
     if (count == null) {
       throw new Error(
         `Couldn’t ${kind} this sitting — the database returned no row count. ` +
-          "The delete function may be missing (run migration 0020 in Supabase).",
+          "The delete function may be missing or stale (run migration 0022 in Supabase).",
       );
     }
     if (count === 0) {
@@ -544,13 +545,13 @@ export class SupabaseDataProvider implements DataProvider {
       missing_columns?: string[];
       missing_functions?: string[];
     }>("schema_health", {});
-    // An absent probe (older DB) — report drift so the operator installs 0020.
+    // An absent probe (older DB) — report drift so the operator installs 0022.
     if (error || !data) {
-      return { ok: false, migration: "0020", missingColumns: [], missingFunctions: ["public.schema_health"] };
+      return { ok: false, migration: "0022", missingColumns: [], missingFunctions: ["public.schema_health"] };
     }
     return {
       ok: data.ok ?? true,
-      migration: data.migration ?? "0020",
+      migration: data.migration ?? "0022",
       missingColumns: data.missing_columns ?? [],
       missingFunctions: data.missing_functions ?? [],
     };

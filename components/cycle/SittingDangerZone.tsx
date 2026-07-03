@@ -12,9 +12,17 @@
  *                   never fire on a stray click.
  *
  * Both call the provider, which (live) runs the SECURITY DEFINER RPC that
- * authorizes lead/admin and writes the audit row with the resolved user. After
- * a delete we navigate away (the sitting no longer exists); after a clear we
- * stay — the screen re-hydrates to its empty state.
+ * authorizes lead/admin and writes the audit row with the resolved user. The
+ * provider only resolves once the DB has really removed rows (a null/0 count
+ * throws), so a silent no-op can never read as success.
+ *
+ * Navigation (task 18 — "delete jumped to the end of the pipeline"):
+ *   * Clear — keeps the sitting shell, so we return to the Upload step in its
+ *     EMPTY state (router.replace to /import + refresh), ready for a fresh
+ *     upload. We never advance the pipeline.
+ *   * Delete — removes the sitting entirely, so there is no Upload step to land
+ *     on; we replace to the sittings home. `replace` (not push) means the back
+ *     button can't bounce into the now-dead cycle and redirect to its last step.
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -69,6 +77,7 @@ export function SittingDangerZone({ cycleId, uploaded }: { cycleId: string; uplo
 
 function ClearDialog({ cycleId, onClose }: { cycleId: string; onClose: () => void }) {
   const provider = useProvider();
+  const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -76,8 +85,14 @@ function ClearDialog({ cycleId, onClose }: { cycleId: string; onClose: () => voi
     setBusy(true);
     setError(null);
     try {
+      // Only resolves once the DB confirms rows were really removed. The cycle
+      // shell is kept and returned to 'draft', so we land back on the Upload step
+      // in its empty state — never advancing the pipeline. replace + refresh so a
+      // stale client cache can't keep showing the old (now-cleared) data.
       await provider.clearSittingData(cycleId);
       onClose();
+      router.replace(`/cycles/${cycleId}/import`);
+      router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn’t clear this sitting’s data.");
       setBusy(false);
@@ -115,9 +130,12 @@ function DeleteDialog({ cycleId, onClose }: { cycleId: string; onClose: () => vo
     setBusy(true);
     setError(null);
     try {
+      // Resolves only once the DB confirms the cascade removed rows. The sitting
+      // no longer exists, so there is no Upload step to return to — replace (not
+      // push) to home so the back button can't bounce into the dead cycle and get
+      // redirected to its last pipeline step.
       await provider.deleteSitting(cycleId);
-      // The sitting is gone — leave the (now-dead) cycle screen.
-      router.push("/");
+      router.replace("/");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn’t delete this sitting.");
       setBusy(false);

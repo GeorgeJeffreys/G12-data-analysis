@@ -4499,7 +4499,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
   // The demo has no database, so there is never any schema drift to report.
   getSchemaHealth(): Promise<SchemaHealth> {
-    return Promise.resolve({ ok: true, migration: "0020", missingColumns: [], missingFunctions: [] });
+    return Promise.resolve({ ok: true, migration: "0022", missingColumns: [], missingFunctions: [] });
   }
 
   resolveDuplicates(cycleId: string, strategy: DuplicateStrategy): void {
