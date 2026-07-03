@@ -6,14 +6,18 @@
 -- `app.is_member` / `app.has_role` bodies (0002) — reverting those to the strict
 -- 0001 form is the very bug 0024 fixes, so a rollback must never re-introduce it.
 -- No table/column/constraint/DATA change; engine untouched (parity 183/183).
+--
+-- Split into TWO transactions for the same deadlock-safety reason as the forward
+-- migration: functions and the memberships-table policy must never share a
+-- transaction (they'd deadlock against live readers of app.is_member/has_role).
 -- ============================================================================
 
+-- ============================================================================
+-- TRANSACTION 1 — helpers + probe (no memberships-table lock).
+-- ============================================================================
 begin;
 
--- Lock memberships first (reader lock order: table → helper functions) so the
--- function replacements + policy swap below can't deadlock against live traffic.
-set local lock_timeout = '10s';
-lock table memberships in access exclusive mode;
+set local lock_timeout = '15s';
 
 -- Keep the global-aware helpers (re-affirm 0002 — a no-op if already correct).
 create or replace function app.is_member(p_cycle uuid)
@@ -35,10 +39,7 @@ returns boolean language sql stable security definer set search_path = public, a
   );
 $$;
 
--- Restore the plain member-scoped select policy (0001 shape).
-drop policy if exists memberships_select on memberships;
-create policy memberships_select on memberships for select
-  using (app.is_member(cycle_id));
+-- (The plain member-scoped select policy is restored in TRANSACTION 2 below.)
 
 -- Restore the 0023 probe surface (drops the 0024 authorization probes; reports '0023').
 create or replace function public.schema_health()
@@ -103,5 +104,19 @@ end $$;
 
 revoke all on function public.schema_health() from public;
 grant execute on function public.schema_health() to authenticated, service_role;
+
+commit;
+
+-- ============================================================================
+-- TRANSACTION 2 — restore the plain member-scoped select policy (0001 shape).
+-- Policy-only, so it can't deadlock against the helper replacements above.
+-- ============================================================================
+begin;
+
+set local lock_timeout = '15s';
+
+drop policy if exists memberships_select on memberships;
+create policy memberships_select on memberships for select
+  using (app.is_member(cycle_id));
 
 commit;
