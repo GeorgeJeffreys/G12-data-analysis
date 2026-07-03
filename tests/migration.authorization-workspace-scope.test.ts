@@ -70,6 +70,18 @@ describe("0024 — restore workspace-scope authorization", () => {
     expect(SQL).toMatch(/\bcommit;\s*$|\bcommit;\s*--/i);
   });
 
+  it("locks memberships BEFORE replacing the helpers (deadlock-safe lock order)", () => {
+    const lockAt = SQL.search(/lock table memberships in access exclusive mode/i);
+    const fnAt = SQL.search(/create or replace function app\.is_member/i);
+    const policyAt = SQL.search(/create policy memberships_select/i);
+    expect(lockAt).toBeGreaterThan(-1);
+    // The table lock must come before both the function replacement and the policy swap.
+    expect(lockAt).toBeLessThan(fnAt);
+    expect(lockAt).toBeLessThan(policyAt);
+    // Fail fast instead of hanging if the table is busy.
+    expect(SQL).toMatch(/set local lock_timeout/i);
+  });
+
   it("rollback restores the plain member-scoped policy + 0023 probe, keeping global helpers", () => {
     // Plain member-scoped select policy is restored…
     expect(ROLLBACK).toMatch(/create policy memberships_select on memberships[\s\S]*using \(app\.is_member\(cycle_id\)\)/i);

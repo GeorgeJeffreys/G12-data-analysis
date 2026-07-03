@@ -10,6 +10,11 @@
 
 begin;
 
+-- Lock memberships first (reader lock order: table → helper functions) so the
+-- function replacements + policy swap below can't deadlock against live traffic.
+set local lock_timeout = '10s';
+lock table memberships in access exclusive mode;
+
 -- Keep the global-aware helpers (re-affirm 0002 — a no-op if already correct).
 create or replace function app.is_member(p_cycle uuid)
 returns boolean language sql stable security definer set search_path = public, app as $$
