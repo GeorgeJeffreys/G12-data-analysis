@@ -14,6 +14,23 @@ NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_h
 and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
 then `0020`.
 
+> **`0023_ingest_sitting_completeness.sql` — whole-sitting drop guard (task 19).**
+> Run AFTER `0021` and `0022`, in the Supabase SQL editor (EU). Idempotent
+> (`create or replace` only — no table/column/constraint change). Re-affirms
+> `ingest_persist` at the sitting grain and ADDS a bidirectional **sitting-grain**
+> roster↔responses check: a sitting present in `responses` but not `result_totals`
+> (or vice versa) raises inside the persist transaction (rolls back whole) instead of
+> shipping a silently-short cohort. The app-side fix (`normalizeResultId` canonicalises
+> the `ResultId` join key so representation skew between the three exports — a trailing
+> `.0`, quotes, exponential form — no longer orphans a whole sitting's Items against its
+> Assessments roster row) is the primary recovery; this migration is the DB-side net.
+> Bumps `public.schema_health()` to report `'0023'`. Verify with
+> `select public.schema_health();` (expect `ok=true`, `migration='0023'`). Engine
+> parity 183/183 unchanged. Roll back with
+> `0023_ingest_sitting_completeness.rollback.sql` (restores the `0022` bodies). After
+> applying, delete + re-ingest the `700435` CSVs into a fresh cycle and confirm the
+> per-subject counts read **15 / 11 / 12 / 9 / 10**.
+
 > **`0020_restore_ingest_delete.sql` — bring the live DB current (RUN THIS if
 > imports fail on `column "item_set" ... does not exist`, or Delete/Clear no-ops).**
 > The single, **idempotent** "bring-DB-current" runner: paste it into the Supabase

@@ -12,6 +12,7 @@ import {
   type IdentityInputRow,
   type ResolvedIdentity,
 } from "../participant-identity";
+import { normalizeResultId } from "./result-id";
 import type { CsvTable } from "./csv";
 import { detectThreeExports, type NamedInput } from "./detect";
 import type {
@@ -159,7 +160,7 @@ interface RowsByResult {
 function groupByResultId(table: CsvTable): Map<string, Record<string, string>[]> {
   const map = new Map<string, Record<string, string>[]>();
   for (const row of table.rows) {
-    const rid = (row["ResultId"] ?? "").trim();
+    const rid = normalizeResultId(row["ResultId"] ?? "");
     if (!rid) continue;
     const bucket = map.get(rid);
     if (bucket) bucket.push(row);
@@ -187,7 +188,7 @@ export function resolveAssessmentIdentities(assessments: CsvTable): Map<string, 
   for (const row of assessments.rows) {
     const rawName = repairText(row["AssessmentName"] ?? "").trim();
     if (isSurveyAssessment(rawName)) continue;
-    const resultId = (row["ResultId"] ?? "").trim();
+    const resultId = normalizeResultId(row["ResultId"] ?? "");
     if (!resultId) continue;
     identityInputs.push({ resultId, subject: normalizeSubjectName(rawName), row });
   }
@@ -230,7 +231,7 @@ export function buildCanonicalModelFromTables(
       surveyResults += 1;
       continue;
     }
-    const resultId = (row["ResultId"] ?? "").trim();
+    const resultId = normalizeResultId(row["ResultId"] ?? "");
     if (!resultId) continue;
 
     const subject = normalizeSubjectName(rawName);
@@ -287,7 +288,7 @@ export function buildCanonicalModelFromTables(
   for (const row of assessments.rows) {
     const rawName = repairText(row["AssessmentName"] ?? "").trim();
     if (isSurveyAssessment(rawName)) continue;
-    const resultId = (row["ResultId"] ?? "").trim();
+    const resultId = normalizeResultId(row["ResultId"] ?? "");
     if (!resultId) continue;
     const key = identityKey(resultId);
     let p = participantMap.get(key);

@@ -14,6 +14,7 @@ import type { RawExportRow } from "../types";
 import { PARTICIPANT_IDENTITY_COLUMNS } from "../participant-identity";
 import type { CsvTable } from "./csv";
 import { normalizeSubjectName } from "./canonical";
+import { normalizeResultId } from "./result-id";
 
 /**
  * Join Items → Assessments on ResultId into the combined per-answer rows the
@@ -23,13 +24,16 @@ import { normalizeSubjectName } from "./canonical";
 export function toCombinedRows(items: CsvTable, assessments: CsvTable): RawExportRow[] {
   const assessmentByResult = new Map<string, Record<string, string>>();
   for (const row of assessments.rows) {
-    const rid = (row["ResultId"] ?? "").trim();
+    const rid = normalizeResultId(row["ResultId"] ?? "");
     if (rid && !assessmentByResult.has(rid)) assessmentByResult.set(rid, row);
   }
 
   const combined: RawExportRow[] = [];
   for (const it of items.rows) {
-    const rid = (it["ResultId"] ?? "").trim();
+    // Join on the CANONICAL ResultId so a representational skew between the Items
+    // and Assessments exports (a trailing `.0`, quotes, exponential form) does not
+    // orphan a whole sitting's items against its roster row (task 19).
+    const rid = normalizeResultId(it["ResultId"] ?? "");
     const a = assessmentByResult.get(rid);
     if (!a) continue;
     // Every participant-identity column from the Assessments row, so the legacy
@@ -41,6 +45,10 @@ export function toCombinedRows(items: CsvTable, assessments: CsvTable): RawExpor
     }
     combined.push({
       ...it,
+      // Carry the canonical ResultId so the sitting key persisted from the
+      // responses (`qm_result_id`) matches the one the canonical roster / result
+      // totals use — otherwise the same sitting would key differently per table.
+      ResultId: rid,
       // Assessment-level columns the legacy normaliser reads.
       AssessmentName: normalizeSubjectName(a["AssessmentName"] ?? ""),
       ...identityCols,
