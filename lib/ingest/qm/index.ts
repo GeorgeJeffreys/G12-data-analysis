@@ -12,6 +12,7 @@ import type { CleanResponse, ValidationReport } from "../types";
 import { detectThreeExports, type NamedInput, type QmFileKind } from "./detect";
 import { buildCanonicalModelFromTables, resolveAssessmentIdentities } from "./canonical";
 import { toCombinedRows } from "./bridge";
+import { assertAllGradedSittingsPersisted } from "./sitting-guard";
 import type { CanonicalModel } from "./model";
 
 export { parseCsv } from "./csv";
@@ -30,6 +31,8 @@ export {
 } from "./canonical";
 export type { SubjectAliasMap } from "./canonical";
 export { toCombinedRows } from "./bridge";
+export { normalizeResultId } from "./result-id";
+export { assertAllGradedSittingsPersisted } from "./sitting-guard";
 export type * from "./model";
 
 export interface ThreeExportIngest {
@@ -131,6 +134,12 @@ export function ingestThreeExports(files: readonly NamedInput[]): ThreeExportIng
   // surfaced as all-dots rows + dropped sitters. Fails loudly at the earliest point.
   const rosterIds = new Set([...identityByResult.values()].map((r) => r.id));
   assertResponsesAttachToRoster(graded, rosterIds);
+  // Whole-sitting drop guard (task 19): every graded sitting on the Assessments
+  // roster must have persisted responses. A sitting whose Items rows failed to
+  // attach (a ResultId representation skew between the exports) would otherwise
+  // vanish silently — absent from both responses and result_totals, so the DB's
+  // roster↔responses guard never sees it. Fail loudly, naming the ResultId(s).
+  assertAllGradedSittingsPersisted(canonical, graded);
   const validationReport = validate(combined, graded, droppedSurveyRows, droppedNonMcqRows);
   return {
     canonical,

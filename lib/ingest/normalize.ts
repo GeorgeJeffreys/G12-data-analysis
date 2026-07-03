@@ -10,6 +10,7 @@
 import type { DemandLevel } from "@/lib/types/database";
 import { repairText, repairValue } from "./repair";
 import { assignParticipantIdentities, type ResolvedIdentity } from "./participant-identity";
+import { normalizeResultId } from "./qm/result-id";
 import type { CleanResponse, RawExportRow } from "./types";
 
 export const MCQ_QUESTION_TYPE = "Multiple Choice";
@@ -159,13 +160,13 @@ export function normalizeResponses(
     resolvedByResult ??
     assignParticipantIdentities(
       rows.map((row) => ({
-        resultId: str(row["ResultId"]),
+        resultId: normalizeResultId(str(row["ResultId"])),
         subject: repairText(str(row["AssessmentName"])),
         row: row as Record<string, unknown>,
       })),
     );
   const resolveIdentity = (row: RawExportRow): string => {
-    const resultId = str(row["ResultId"]);
+    const resultId = normalizeResultId(str(row["ResultId"]));
     return identityByResult.get(resultId)?.id ?? (resultId ? `result:${resultId}` : "result:unknown");
   };
 
@@ -198,7 +199,7 @@ export function normalizeResponses(
     clean.push({
       assessmentName,
       qmQuestionId: str(row["QuestionId"]),
-      qmResultId: str(row["ResultId"]),
+      qmResultId: normalizeResultId(str(row["ResultId"])),
       qmParticipantId,
       participantPseudonym: pseudonym(qmParticipantId),
       wording: stripHtml(row["QuestionWording"]),
