@@ -68,6 +68,49 @@ async function sel<T>(p: PromiseLike<{ data: unknown; error: unknown }>): Promis
   const { data } = await p;
   return (data ?? []) as T[];
 }
+
+/**
+ * Page through a cycle-scoped select so a large table is NEVER silently truncated
+ * by PostgREST's `max-rows` cap (Supabase default 1000).
+ *
+ * THE BUG THIS FIXES (the intermittent 15→6 score-matrix collapse). `responses`
+ * carries one row per sitting × question — ~2 400 rows for a full cycle — while
+ * every other table is under a thousand. A bare `.select("*").eq("cycle_id", …)`
+ * with no `.order()`/`.range()` lets PostgREST return AT MOST `max-rows` and, with
+ * no explicit ORDER BY, it serves them via the btree on the unique key
+ * `(cycle_id, qm_result_id, question_id)` — i.e. ordered by `qm_result_id` AS TEXT.
+ * The cap then keeps the first ~1000 rows = the LEXICALLY-FIRST sittings and drops
+ * whole sittings past the cut, so Applicable Math collapses to the 6 string-first
+ * ResultIds (`1032…,1086…,…` survive; `1572…,3536…,…` — larger *numbers* but later
+ * *strings* — vanish). `sittings` (one row per sitting, ~60 rows) is under the cap,
+ * so it stays correct — which is exactly why `sittings` and `responses` diverge.
+ *
+ * The fix: fetch EVERY row in explicit, stable key order, one bounded page at a
+ * time, so no page ever hits the cap and nothing is dropped. The order is the
+ * sitting-qualified natural key, so pagination is deterministic and complete.
+ */
+async function selAllByCycle<T>(
+  supabase: DB,
+  table: string,
+  cycleId: string,
+  orderCols: readonly string[],
+): Promise<T[]> {
+  const PAGE = 1000; // request window; the server may return fewer if max-rows is lower
+  const out: T[] = [];
+  // Advance by the number of rows ACTUALLY returned and stop only on an EMPTY page —
+  // so this is correct whatever the server's max-rows cap is (a short page may just be
+  // the cap, not the end). Ranges are contiguous and non-overlapping, so no row is
+  // fetched twice or skipped.
+  for (let from = 0; ; ) {
+    let q = supabase.from(table).select("*").eq("cycle_id", cycleId);
+    for (const col of orderCols) q = q.order(col, { ascending: true });
+    const page = await sel<T>(q.range(from, from + PAGE - 1));
+    if (page.length === 0) break;
+    out.push(...page);
+    from += page.length;
+  }
+  return out;
+}
 async function selOne<T>(p: PromiseLike<{ data: unknown; error: unknown }>): Promise<T | null> {
   const { data } = await p;
   return (data ?? null) as T | null;
@@ -219,11 +262,48 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     sel<AssessmentRow>(supabase.from("assessments").select("*").eq("cycle_id", cycleId)),
     sel<ItemRow>(supabase.from("items").select("*").eq("cycle_id", cycleId)),
     sel<ParticipantRow>(supabase.from("participants").select("*").eq("cycle_id", cycleId)),
-    sel<ResponseRow>(supabase.from("responses").select("*").eq("cycle_id", cycleId)),
+    // `responses` is the ONLY per-(sitting × question) table and routinely exceeds
+    // the PostgREST max-rows cap — page through it in stable key order so no sitting
+    // is ever silently dropped by a truncated, text-ordered read (see selAllByCycle).
+    selAllByCycle<ResponseRow>(supabase, "responses", cycleId, ["qm_result_id", "question_id"]),
     // The authoritative ingest roster (migration 0026). Every ingest-stage
     // participant count reads from this, not the MCQ `responses` matrix.
     sel<SittingRow>(supabase.from("sittings").select("*").eq("cycle_id", cycleId)),
   ]);
+
+  // ── READ-TIME INTEGRITY GUARD: responses distinct sittings == sittings, per subject.
+  // The persist transaction guarantees every sitting carries responses (migration
+  // 0029/0030), so at read time the two MUST still agree per subject. If `responses`
+  // shows FEWER distinct `qm_result_id` than `sittings` for a subject that has any
+  // responses, the read dropped whole sittings (a truncated/mis-ordered fetch — the
+  // 15→6 collapse). Fail LOUD here rather than render a silently-collapsed score
+  // matrix. Subjects with zero MCQ responses (e.g. a held-out re-sit form) are skipped.
+  {
+    const sitBySubject = new Map<string, Set<string>>();
+    for (const s of sittingRows) {
+      if (!s.assessment_id || !s.qm_result_id) continue;
+      (sitBySubject.get(s.assessment_id) ?? sitBySubject.set(s.assessment_id, new Set()).get(s.assessment_id)!).add(s.qm_result_id);
+    }
+    const respBySubject = new Map<string, Set<string>>();
+    const assessmentOfItem = new Map(items.map((it) => [it.id, it.assessment_id] as const));
+    for (const r of responses) {
+      const aId = assessmentOfItem.get(r.item_id);
+      if (!aId || !r.qm_result_id) continue;
+      (respBySubject.get(aId) ?? respBySubject.set(aId, new Set()).get(aId)!).add(r.qm_result_id);
+    }
+    const nameOf = new Map(assessments.map((a) => [a.id, a.name] as const));
+    for (const [aId, sits] of sitBySubject) {
+      const resp = respBySubject.get(aId);
+      if (!resp || resp.size === 0) continue; // no MCQ responses for this subject — nothing to reconcile
+      if (resp.size < sits.size) {
+        throw new Error(
+          `hydrate: "${nameOf.get(aId) ?? aId}" read ${resp.size} distinct sitting(s) from responses but ` +
+            `${sits.size} exist in the sittings roster — whole sittings were dropped on read (a truncated or ` +
+            `text-ordered responses fetch). The score matrix would be collapsed; refusing to render it.`,
+        );
+      }
+    }
+  }
 
   const itemIds = items.map((i) => i.id);
   const idFilter = itemIds.length ? itemIds : [ZERO_UUID];
