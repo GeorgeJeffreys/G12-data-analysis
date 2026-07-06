@@ -187,6 +187,19 @@ export interface SetBoundaryInput {
   waiveGuardrail?: boolean;
 }
 
+/**
+ * The authoritative ingest roster read from the `sittings` spine (migration 0026).
+ * Every INGEST-stage participant count reads from here (staff INCLUDED) instead of
+ * the MCQ `responses` matrix, so the UI matches `count(distinct participant_email)`
+ * in the DB.
+ */
+export interface SittingRoster {
+  /** assessmentId → (participant row id → participant email) for that subject. */
+  byAssessment: Map<string, Map<string, string>>;
+  /** Distinct participant emails across the whole cycle (staff included). */
+  totalParticipants: number;
+}
+
 export interface DataProvider {
   // identity / auth (mocked for now)
   getCurrentUser(): CurrentUser;
@@ -203,6 +216,13 @@ export interface DataProvider {
   listCycles(): CycleSummary[];
   getCycle(cycleId: string): CycleDetail | null;
   getIngest(cycleId: string): IngestModel | null;
+  /**
+   * The authoritative per-sitting ingest roster (migration 0026 `sittings`): which
+   * participants sat each subject, staff INCLUDED. Every ingest-stage participant
+   * count (`count(distinct participant_email)`) reads from this, not the MCQ
+   * response matrix. Null when the cycle is unknown.
+   */
+  getSittingRoster(cycleId: string): SittingRoster | null;
   /** Combined-upload detection: subjects split out of the single export. */
   getCombinedSplit(cycleId: string): CombinedSplitModel | null;
   /** Raw "show me my data" view for one subject (summary + breakdown + matrix). */

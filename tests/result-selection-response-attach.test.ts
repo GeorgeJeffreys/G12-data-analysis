@@ -248,6 +248,8 @@ describe("result-selection & response-attach — sitting 700435", () => {
     const healthy = {
       cycleId: CYCLE,
       detectedTotal: 2,
+      cleanedTotal: 2,
+      computedTotal: 2,
       subjects: [
         {
           assessmentId: "a1",

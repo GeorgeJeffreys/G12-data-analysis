@@ -24,6 +24,7 @@ import type {
   SeedParticipant,
   SeedPreview,
   SeedResponse,
+  SeedSitting,
   SeedTechnicalIncident,
 } from "./seed-types";
 import type { CleanResponse } from "@/lib/ingest/types";
@@ -58,6 +59,9 @@ export interface LiveCycleData {
   assessments: SeedAssessment[];
   diagnostics: SeedAssessmentDiagnostics[];
   preview: SeedPreview;
+  /** The per-sitting ingest roster (one entry per participant × subject) — the
+   *  authoritative source for the ingest-stage participant counts. */
+  sittings: SeedSitting[];
 }
 
 /**
@@ -121,9 +125,17 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
 
   const assessments: SeedAssessment[] = [];
   const diagnostics: SeedAssessmentDiagnostics[] = [];
+  // The per-sitting ingest roster (one entry per participant × subject), staff
+  // INCLUDED — the authoritative source for ingest-stage counts (mirrors the DB
+  // `sittings` table). Email is the participant's stable studentId.
+  const emailByPseudonym = new Map(participants.map((p) => [p.id, p.studentId ?? p.id]));
+  const sittings: SeedSitting[] = [];
 
   for (const [name, recs] of byName) {
     const assessmentId = name;
+    for (const pseudo of new Set(recs.map((r) => r.participantPseudonym))) {
+      sittings.push({ assessmentId, participantId: pseudo, participantEmail: emailByPseudonym.get(pseudo) ?? pseudo });
+    }
 
     // Distinct items (first occurrence) with metadata, keyed by qm question id.
     const itemMetaMap = new Map<string, ItemMeta>();
@@ -281,5 +293,5 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
     };
   }
 
-  return { participants, assessments, diagnostics, preview };
+  return { participants, assessments, diagnostics, preview, sittings };
 }

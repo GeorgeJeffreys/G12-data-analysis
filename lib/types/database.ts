@@ -148,6 +148,26 @@ export interface ParticipantRow {
   created_at: string;
 }
 
+/** The per-sitting spine (migration 0026): one row per participant × subject, keyed
+ *  on the natural (cycle_id, qm_result_id). The authoritative ingest roster. */
+export interface SittingRow {
+  cycle_id: string;
+  qm_result_id: string;
+  participant_email: string;
+  participant_id: string | null;
+  assessment_id: string | null;
+  subject_name: string | null;
+  result_status: string | null;
+  attempt_number: number | null;
+  total_score: number | null;
+  maximum_score: number | null;
+  percentage_score: number | null;
+  scoreband: string | null;
+  sitting: string | null;
+  reconciled: boolean;
+  created_at: string;
+}
+
 export interface ResponseRow {
   id: string;
   cycle_id: string;

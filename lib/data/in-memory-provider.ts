@@ -59,6 +59,7 @@ import type {
   IncidentInput,
   IncidentDecisionInput,
   SchemaHealth,
+  SittingRoster,
 } from "./provider";
 import {
   assumedPldAwardMap,
@@ -1111,6 +1112,41 @@ export class InMemoryDataProvider implements DataProvider {
     for (const r of a.responses) set.add(r.p);
     return set;
   }
+
+  /**
+   * The authoritative ingest roster (migration 0026 `sittings`): which participants
+   * sat each subject, STAFF INCLUDED, read from the sitting spine carried in the
+   * seed — not the MCQ response matrix. Falls back to the response matrix for legacy
+   * seeds that predate the carried sittings (the two agree on correct data). Every
+   * ingest-stage per-subject / cycle participant count reads from this.
+   */
+  getSittingRoster(cycleId: string): SittingRoster | null {
+    const live = this.seed.liveCycle;
+    if (cycleId !== live.id) return null;
+    const emailOf = new Map(live.participants.map((p) => [p.id, p.studentId ?? p.id]));
+    const byAssessment = new Map<string, Map<string, string>>();
+
+    if (live.sittings && live.sittings.length > 0) {
+      for (const s of live.sittings) {
+        const roster = byAssessment.get(s.assessmentId) ?? new Map<string, string>();
+        roster.set(s.participantId, s.participantEmail || emailOf.get(s.participantId) || s.participantId);
+        byAssessment.set(s.assessmentId, roster);
+      }
+    } else {
+      // Legacy fallback: derive the roster from the response matrix (== sittings on
+      // correctly-ingested data), so a seed without the sitting spine still reads a
+      // per-subject roster rather than nothing.
+      for (const a of live.assessments) {
+        const roster = new Map<string, string>();
+        for (const id of this.participantsIn(a)) roster.set(id, emailOf.get(id) ?? id);
+        byAssessment.set(a.id, roster);
+      }
+    }
+
+    const distinctEmails = new Set<string>();
+    for (const roster of byAssessment.values()) for (const email of roster.values()) distinctEmails.add(email.toLowerCase());
+    return { byAssessment, totalParticipants: distinctEmails.size };
+  }
   /** Distinct major elements in an assessment, in first-appearance order. */
   private majorsOf(a: SeedAssessment): string[] {
     return this.majorsOfItems(a.items);
@@ -1171,11 +1207,15 @@ export class InMemoryDataProvider implements DataProvider {
     // upload yet (empty cycle) there is nothing to split — return null so the
     // Import screen shows its upload prompt, not "Detected 0-item subjects".
     if (!live.assessments.some((a) => a.responses.length > 0)) return null;
-    const counts = live.assessments.map((a) => this.participantsIn(a).size);
+    // Per-subject participants = the authoritative ingest roster (sittings,
+    // count(distinct participant_email), staff INCLUDED) — not the MCQ matrix.
+    const roster = this.getSittingRoster(cycleId);
+    const rosterSize = (a: SeedAssessment) => roster?.byAssessment.get(a.id)?.size ?? this.participantsIn(a).size;
+    const counts = live.assessments.map((a) => rosterSize(a));
     const maxParts = Math.max(...counts, 0);
     const essayIds = new Set(this.essaySubjectIds());
     const subjects: DetectedSubject[] = live.assessments.map((a) => {
-      const participants = this.participantsIn(a).size;
+      const participants = rosterSize(a);
       const warn = participants < maxParts;
       return {
         id: a.id,
@@ -1196,7 +1236,8 @@ export class InMemoryDataProvider implements DataProvider {
       fileSizeMB: live.fileSizeMB,
       uploadedAgo: live.uploadedAgo,
       totalItems: live.assessments.reduce((n, a) => n + a.items.length, 0),
-      totalParticipants: live.participants.length,
+      // Distinct participants across the cycle from the sitting roster (staff incl).
+      totalParticipants: roster?.totalParticipants ?? live.participants.length,
       subjects,
     };
   }
@@ -4471,6 +4512,7 @@ export class InMemoryDataProvider implements DataProvider {
     lc.participants = built.participants;
     lc.assessments = built.assessments;
     lc.diagnostics = built.diagnostics;
+    lc.sittings = built.sittings; // authoritative ingest roster (recomputed)
     lc.stageIndex = 1; // uploaded → next action is Clean
 
     const sittingNote = extra?.canonical?.sitting ? ` · ${extra.canonical.sitting.label} sitting` : "";
@@ -4526,6 +4568,7 @@ export class InMemoryDataProvider implements DataProvider {
           participants: [],
           assessments: [],
           diagnostics: [],
+          sittings: [], // authoritative ingest roster emptied → 0 ingested
           stageIndex: 0, // back to the Upload step
           duplicates: 0,
           preview: { headers: [], rows: [] },

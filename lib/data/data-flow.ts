@@ -106,15 +106,26 @@ export interface DataFlowModel {
   cycleName: string;
   stages: DataFlowStage[];
   subjects: DataFlowSubject[];
-  /** Per-stage totals across all subjects. */
+  /** Per-stage DISTINCT participant totals across the cycle: [ingested, cleaned,
+   *  matrix, computed]. A participant sitting five subjects counts once. */
   totals: number[];
+  /** Distinct participants ingested (staff/test INCLUDED) — the roster of record. */
   ingested: number;
+  /** Distinct participants after Clean (staff/test + soft-deletes removed). */
+  cleaned: number;
+  /** Distinct participants with a computed subject total. */
   computed: number;
-  /** Participants lost overall (ingested − computed). */
+  /** EXPECTED reduction at Clean = ingested − cleaned (staff/test + soft-deletes).
+   *  This is a legitimate exclusion, never "loss". */
+  removedByCleaning: number;
+  /** UNEXPECTED loss = cleaned − computed: cleaned sitters that never produced a
+   *  score (the dropped-sitter / collapse signature). 0 on a healthy pipeline. */
   lost: number;
-  /** The stage transition that lost the most participants (null when none). */
+  /** The worst UNEXPECTED transition (cleaned→matrix→computed); null when none.
+   *  The expected detected→cleaned staff drop is never reported here. */
   worstStage: DataFlowWorstStage | null;
-  /** empty → not ingested · collapse → a drop exists · healthy → counts hold. */
+  /** empty → not ingested · collapse → an UNEXPECTED drop exists · healthy → the
+   *  only reduction is the expected staff/soft-delete removal at Clean. */
   state: DataFlowState;
 }
 
@@ -182,22 +193,42 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
       people.push({ id: r.id, name: r.name, email, last, att, items, score, cells });
     }
 
-    // Distinct participant count at each stage (staff already excluded from `people`).
-    const atLeast = (si: number) => people.filter((p) => p.last >= si).length;
-    const counts = [people.length, atLeast(1), atLeast(2), atLeast(3)];
+    // Per-stage per-subject counts come from the ONE canonical cohort (sittings-
+    // backed), NOT the `people` array: `detected` (ingest) INCLUDES staff/test, and
+    // `cleaned` drops them — so the legitimate staff reduction at Clean is visible
+    // instead of pre-hidden. matrix/computed are the pivot's / engine's own output.
+    const counts = [cohort.detected.size, cohort.cleaned.size, cohort.matrix.size, cohort.computed.size];
 
     subjects.push({ key: a.id, subj: a.shortName, name: a.name, items, rtl: a.rtl, counts, people, staff });
   }
 
   const stageCount = DF_STAGES.length;
-  const totals = Array.from({ length: stageCount }, (_, i) => subjects.reduce((acc, s) => acc + s.counts[i]!, 0));
+  // Totals are DISTINCT participants across the whole cycle at each stage (a person
+  // sitting five subjects is one participant), never the sum of per-subject counts —
+  // so "18 ingested / 16 computed" reads as the real headcount, not 59 sitting-rows.
+  const distinctAt = (pick: (c: SubjectCohort) => Set<string>) => {
+    const all = new Set<string>();
+    for (const c of resolved?.subjects ?? []) for (const id of pick(c)) all.add(id);
+    return all.size;
+  };
+  const totals = [
+    resolved?.detectedTotal ?? distinctAt((c) => c.detected),
+    resolved?.cleanedTotal ?? distinctAt((c) => c.cleaned),
+    distinctAt((c) => c.matrix),
+    resolved?.computedTotal ?? distinctAt((c) => c.computed),
+  ];
   const ingested = totals[0]!;
+  const cleaned = totals[1]!;
   const computed = totals[stageCount - 1]!;
-  const lost = ingested - computed;
+  // detected→cleaned is the EXPECTED staff/test + soft-delete removal, not loss.
+  const removedByCleaning = Math.max(0, ingested - cleaned);
+  // Loss is only what disappears AFTER Clean — a cleaned sitter that never scored.
+  const lost = Math.max(0, cleaned - computed);
 
-  // Worst stage = the transition that lost the most participants overall.
+  // Worst stage = the worst UNEXPECTED transition (cleaned→matrix→computed only).
+  // The expected detected→cleaned staff drop (i=1) is never a "worst stage".
   let worstStage: DataFlowWorstStage | null = null;
-  for (let i = 1; i < stageCount; i++) {
+  for (let i = 2; i < stageCount; i++) {
     const delta = totals[i]! - totals[i - 1]!;
     if (delta < 0 && (!worstStage || delta < worstStage.delta)) {
       worstStage = { key: DF_STAGES[i]!.key, name: DF_STAGES[i]!.name, delta, from: totals[i - 1]!, to: totals[i]! };
@@ -205,8 +236,14 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
   }
 
   const hasData = subjects.length > 0 && (ingest?.uploaded ?? true) && ingested > 0;
-  const anyDrop = subjects.some((s) => s.counts.some((c, i) => i > 0 && c < s.counts[i - 1]!));
-  const state: DataFlowState = !hasData ? "empty" : anyDrop ? "collapse" : "healthy";
+  // An UNEXPECTED drop is one at or after the score matrix — a cleaned sitter that
+  // failed to produce a score. The staff/soft-delete reduction at Clean (detected→
+  // cleaned) is expected and does NOT make the pipeline "collapsed".
+  const anomalousDrop =
+    totals[2]! < totals[1]! ||
+    totals[3]! < totals[2]! ||
+    subjects.some((s) => s.counts[2]! < s.counts[1]! || s.counts[3]! < s.counts[2]!);
+  const state: DataFlowState = !hasData ? "empty" : anomalousDrop ? "collapse" : "healthy";
 
   return {
     cycleId,
@@ -215,7 +252,9 @@ export function buildDataFlow(provider: DataProvider, cycleId: string): DataFlow
     subjects,
     totals,
     ingested,
+    cleaned,
     computed,
+    removedByCleaning,
     lost,
     worstStage,
     state,

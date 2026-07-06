@@ -25,6 +25,7 @@ import type {
   ItemStatsRow,
   ParticipantRow,
   ResponseRow,
+  SittingRow,
   ItemReviewRow,
   CleanExclusionRow,
   GradeSchemeRow,
@@ -50,6 +51,7 @@ import type {
   SeedParticipant,
   SeedAssessmentDiagnostics,
   SeedPriorCycle,
+  SeedSitting,
   SeedTechnicalIncident,
 } from "./seed-types";
 import { isTechnicalIncidentStatus } from "./result-status";
@@ -213,11 +215,14 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     active: t.active,
   }));
 
-  const [assessments, items, participants, responses] = await Promise.all([
+  const [assessments, items, participants, responses, sittingRows] = await Promise.all([
     sel<AssessmentRow>(supabase.from("assessments").select("*").eq("cycle_id", cycleId)),
     sel<ItemRow>(supabase.from("items").select("*").eq("cycle_id", cycleId)),
     sel<ParticipantRow>(supabase.from("participants").select("*").eq("cycle_id", cycleId)),
     sel<ResponseRow>(supabase.from("responses").select("*").eq("cycle_id", cycleId)),
+    // The authoritative ingest roster (migration 0026). Every ingest-stage
+    // participant count reads from this, not the MCQ `responses` matrix.
+    sel<SittingRow>(supabase.from("sittings").select("*").eq("cycle_id", cycleId)),
   ]);
 
   const itemIds = items.map((i) => i.id);
@@ -304,6 +309,19 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       );
     studentIdSeen.add(sid);
   }
+
+  // The authoritative ingest roster (migration 0026 `sittings`): one row per
+  // participant × subject, STAFF INCLUDED. Carried into the seed so every
+  // ingest-stage participant count reads `count(distinct participant_email)` from
+  // here, not the MCQ response matrix. Only rows that resolve to a live participant
+  // + subject are kept (the FK targets always do post-0026).
+  const seedSittings: SeedSitting[] = sittingRows
+    .filter((s) => s.participant_id && s.assessment_id)
+    .map((s) => ({
+      assessmentId: s.assessment_id!,
+      participantId: s.participant_id!,
+      participantEmail: (s.participant_email ?? "").toLowerCase(),
+    }));
 
   const respByAssessment = new Map<string, ResponseRow[]>();
   for (const r of responses) {
@@ -494,6 +512,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
       participants: seedParticipants,
       assessments: seedAssessments.map(({ _order, ...a }) => { void _order; return a; }),
       diagnostics: diagnostics.map(({ _order, ...d }) => { void _order; return d; }),
+      sittings: seedSittings,
     },
     priorCycles,
   };
