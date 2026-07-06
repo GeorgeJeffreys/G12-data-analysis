@@ -235,6 +235,19 @@ export async function ingestCleanResponses(
   // (0007) — same display name at different TopicIds within one result is preserved.
   const sittingRows: Record<string, unknown>[] = [];
   const topicRows: Record<string, unknown>[] = [];
+  // A topic rollup is one row per SITTING × TOPIC, where a topic is the QM
+  // `TopicId` (migration 0007/0028) — never the display name. QM's tree contains
+  // DISTINCT topics (different TopicId + TopicPath) that share a leaf name within
+  // one result (the documented 24-collision case in the 700435 fixture:
+  // "Evaluating meaning" / "Understanding meaning" appear under both the Reading
+  // and Listening comprehension paths). Those are genuinely different curriculum
+  // elements and must both survive — keying (or aggregating) on the name would
+  // merge Reading into Listening and corrupt element analysis, so the grain is
+  // (qm_result_id, qm_topic_id), matching the unique key restored in 0028.
+  // We still aggregate GENUINE duplicates — the SAME (result, TopicId) appearing
+  // more than once — summing score / max / question_count so a single sitting can
+  // never carry two rows at the topic grain (belt-and-braces for the unique key).
+  const topicByKey = new Map<string, Record<string, unknown>>();
   if (canonical) {
     for (const res of canonical.results) {
       const aId = assessmentId.get(res.subject);
@@ -258,7 +271,22 @@ export async function ingestCleanResponses(
         reconciled,
       });
       for (const t of res.topics) {
-        topicRows.push({
+        // Grain key: the topic's natural id (0007). Fall back to the name only for
+        // the degenerate no-TopicId case, so two distinct-named id-less topics are
+        // still kept apart rather than merged under an empty key.
+        const key = `${res.resultId}|${t.topicId ?? `name:${t.name}`}`;
+        const existing = topicByKey.get(key);
+        if (existing) {
+          // Genuine duplicate source rows for one (result, topic): aggregate.
+          const score = (existing.score as number) + t.score;
+          const max = (existing.maximum_score as number) + t.maximumScore;
+          existing.score = score;
+          existing.maximum_score = max;
+          existing.question_count = (existing.question_count as number) + t.questionCount;
+          existing.percentage_score = max > 0 ? Math.round((score / max) * 1000) / 10 : null;
+          continue;
+        }
+        const row: Record<string, unknown> = {
           cycle_id: cycleId,
           assessment_id: aId,
           participant_id: pId,
@@ -270,7 +298,9 @@ export async function ingestCleanResponses(
           maximum_score: t.maximumScore,
           percentage_score: t.percentageScore,
           question_count: t.questionCount,
-        });
+        };
+        topicByKey.set(key, row);
+        topicRows.push(row);
       }
     }
   }

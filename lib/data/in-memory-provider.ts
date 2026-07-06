@@ -326,7 +326,10 @@ export class InMemoryDataProvider implements DataProvider {
   /** The cycle data this provider serves. Defaults to the bundled demo seed;
    *  the SupabaseDataProvider injects one hydrated from the database, and the
    *  seed:supabase script runs it over freshly-ingested data. */
-  private readonly seed: Seed = DEFAULT_SEED;
+  // Not `readonly`: a clear/delete replaces `liveCycle` with an emptied clone
+  // (resetCycleToEmpty). The default is the SHARED module-level DEFAULT_SEED, so we
+  // must never mutate it in place — reassign a fresh seed object instead.
+  private seed: Seed = DEFAULT_SEED;
 
   // mutable decision state
   private exclusions = new Map<string, Set<string>>(); // cycle:assessment -> itemIds
@@ -4481,21 +4484,85 @@ export class InMemoryDataProvider implements DataProvider {
     return Promise.resolve();
   }
 
-  // Destructive sitting controls (0007). The demo has a single seeded live
-  // cycle with no database, so — like createCycle / resolveDuplicates — these
-  // record the audited intent and resolve; the real cycle-scoped delete runs in
-  // the Supabase provider via the SECURITY DEFINER RPCs. Kept async to match the
-  // interface (and the live provider, which awaits the DB).
+  // Destructive sitting controls (0007). The demo has a single seeded live cycle
+  // with no database, so the real cycle-scoped delete runs in the Supabase provider
+  // via the SECURITY DEFINER RPCs (which clear the fact tables and re-hydrate).
+  // Here we EMPTY the seeded cycle to the Upload baseline so the cached summary the
+  // Year/cycle card reads (participants / assessments, derived from the seed) also
+  // resets to 0/0 — otherwise the card kept showing the stale ingested counts after
+  // a clear/delete. Kept async to match the interface (and the live provider, which
+  // awaits the DB). A re-ingest repopulates the seed and the counts recompute.
   clearSittingData(cycleId: string): Promise<void> {
+    this.resetCycleToEmpty(cycleId);
     this.audit("upload", "Cleared sitting data", "Emptied ingested data — sitting returned to the Upload state", cycleId);
     this.bump();
     return Promise.resolve();
   }
   deleteSitting(cycleId: string): Promise<void> {
     const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
+    this.resetCycleToEmpty(cycleId);
     this.audit("cycle", "Deleted sitting", `Removed sitting "${name}" and all its ingested data`, null);
     this.bump();
     return Promise.resolve();
+  }
+
+  /**
+   * Empty a sitting's ingested data + per-cycle decision state back to the fresh
+   * Upload baseline. The demo holds one live cycle in memory (no DB), so a
+   * clear/delete must reset the seed itself: the summary card + every derived read
+   * (cohortParticipantCount / assessmentRefs / years rollup) count off
+   * `seed.liveCycle`, so leaving it populated is exactly what left the card showing
+   * a stale "N Participants · M Assessments" after the fact tables were emptied.
+   */
+  private resetCycleToEmpty(cycleId: string): void {
+    if (cycleId === this.seed.liveCycle.id) {
+      // Reassign a fresh seed with an emptied liveCycle CLONE — never mutate the
+      // shared DEFAULT_SEED in place (that would leak the reset into every other
+      // provider instance built from the same default).
+      this.seed = {
+        ...this.seed,
+        liveCycle: {
+          ...this.seed.liveCycle,
+          participants: [],
+          assessments: [],
+          diagnostics: [],
+          stageIndex: 0, // back to the Upload step
+          duplicates: 0,
+          preview: { headers: [], rows: [] },
+          validation: {
+            passed: true,
+            checks: [],
+            stats: { rawRows: 0, mcqRows: 0, droppedSurveyRows: 0, droppedNonMcqRows: 0, assessments: 0, participants: 0, items: 0 },
+          },
+        },
+      };
+    }
+    // Drop every cycle-scoped decision so nothing dangles onto the emptied cycle.
+    const forCycle = (k: string): boolean => k === cycleId || k.startsWith(`${cycleId}:`);
+    const dropPrefixed = (m: Map<string, unknown>): void => {
+      for (const k of [...m.keys()]) if (forCycle(k)) m.delete(k);
+    };
+    // cycle:assessment / cycle:scope keyed.
+    dropPrefixed(this.exclusions as unknown as Map<string, unknown>);
+    dropPrefixed(this.reasons as unknown as Map<string, unknown>);
+    dropPrefixed(this.cleanRows as unknown as Map<string, unknown>);
+    dropPrefixed(this.cleanCols as unknown as Map<string, unknown>);
+    dropPrefixed(this.boundaries as unknown as Map<string, unknown>);
+    // cycle keyed.
+    this.participantExclusions.delete(cycleId);
+    this.docSettingsByCycle.delete(cycleId);
+    this.technicalErrors.delete(cycleId);
+    this.essayMarksByCycle.delete(cycleId);
+    this.alterationsByCycle.delete(cycleId);
+    this.manualAdjustmentsByCycle.delete(cycleId);
+    this.incidentLogByCycle.delete(cycleId);
+    this.cgjByCycle.delete(cycleId);
+    this.distinctionOverrides.delete(cycleId);
+    this.incidentRows.delete(cycleId);
+    this.incidentSource.delete(cycleId);
+    this.incidentApplied.delete(cycleId);
+    this.distinctionConfirmed.delete(cycleId);
+    this.locked.delete(cycleId);
   }
   // The demo has no database, so there is never any schema drift to report.
   getSchemaHealth(): Promise<SchemaHealth> {
