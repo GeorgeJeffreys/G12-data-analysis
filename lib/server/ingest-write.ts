@@ -200,12 +200,23 @@ export async function ingestCleanResponses(
   // retained as denormalised join surrogates for the (untouched) engine feed.
   const respRows: Record<string, unknown>[] = [];
   const seenResp = new Set<string>();
+  // A response with no ResultId cannot be sitting-qualified: its dedup key would be
+  // `|<question>`, so EVERY such row across DIFFERENT sittings collapses to one and
+  // whole sittings vanish silently (the intermittent 15→6 collapse). Surface it as a
+  // hard error instead — never a silent drop. (The subject's roster comes from the
+  // Assessments export, which keeps the ResultId, so `sittings` stays correct while
+  // `responses` would otherwise drop the un-keyed ones.)
+  const unqualified = new Set<string>();
   for (const r of recs) {
     const pId = participantId.get(r.qmParticipantId);
     const iId = itemId.get(`${r.assessmentName}|${r.qmQuestionId}`);
     if (!pId || !iId) continue;
+    if (!r.qmResultId) {
+      unqualified.add(`${r.assessmentName}/${r.qmParticipantId}`);
+      continue;
+    }
     const key = `${r.qmResultId}|${r.qmQuestionId}`;
-    if (seenResp.has(key)) continue; // first response wins (duplicates flagged in validation)
+    if (seenResp.has(key)) continue; // first response wins (genuine duplicate sitting×question)
     seenResp.add(key);
     const ci = canonItem.get(`${r.assessmentName}|${r.qmQuestionId}`);
     respRows.push({
@@ -224,6 +235,14 @@ export async function ingestCleanResponses(
       question_type: ci?.questionType ?? null,
       question_status: ci?.status ?? null,
     });
+  }
+  if (unqualified.size > 0) {
+    const sample = [...unqualified].slice(0, 8).join(", ");
+    throw new Error(
+      `ingest: ${unqualified.size} sitting(s) have response rows with no ResultId — they cannot be ` +
+        `attached to a sitting and would silently collapse into one another. Fix the source ResultId ` +
+        `(Items export) and re-upload. Affected: ${sample}`,
+    );
   }
 
   // ── 5. The sitting spine (migration 0026) + per-topic rollups ─────────────
