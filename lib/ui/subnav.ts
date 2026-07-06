@@ -9,7 +9,7 @@ import type { SubnavItem } from "@/components/shell/Shell";
 // individual sitting. The `documents` area is retained in the type only for back-compat.
 export function cyclesSubnav(
   cycleId: string,
-  active: "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow",
+  active: "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow" | "settings",
   /** Append the admin-only "Data flow" developer tab (task 15). */
   opts?: { dataFlow?: boolean },
 ): SubnavItem[] {
@@ -26,6 +26,9 @@ export function cyclesSubnav(
     // Developer "Data flow" pipeline inspector — admin-only, so it appears only when
     // the shell says the signed-in user is a top admin.
     ...(opts?.dataFlow ? [{ label: "Data flow", href: `/cycles/${cycleId}/data-flow`, on: active === "dataflow" }] : []),
+    // Cycle Settings — home of the cycle-level danger surface (delete cycle). The
+    // destructive action inside is admin-gated; the tab itself is always reachable.
+    { label: "Settings", href: `/cycles/${cycleId}/settings`, on: active === "settings" },
   ];
 }
 

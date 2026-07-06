@@ -29,7 +29,7 @@ import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-d
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import { InMemoryDataProvider } from "./in-memory-provider";
-import { hydrate, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
+import { hydrate, fetchSeedTestCentres, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
 import { catalogNamesFor } from "./subject-catalog";
 import type { Seed } from "./seed-types";
 import type { GradingConfig } from "./grading";
@@ -207,7 +207,13 @@ export class SupabaseDataProvider implements DataProvider {
     const h = await hydrate(this.supabase);
     if (!h) {
       this.status = "no-cycle";
-      this.inner = new InMemoryDataProvider(EMPTY_SEED, this.user);
+      // No cycle yet, but the workspace may already have real test centres. Carry
+      // them so the "Start a sitting" picker offers real centre UUIDs instead of a
+      // mock slug id (`tc-shatila-1`) that fails the create insert with
+      // `invalid input syntax for type uuid`. When there are none, the empty list
+      // flows through and the picker prompts to create a centre first.
+      const testCentres = await fetchSeedTestCentres(this.supabase).catch(() => []);
+      this.inner = new InMemoryDataProvider({ ...EMPTY_SEED, testCentres }, this.user);
       await this.fetchMembers();
       this.bump();
       return;
@@ -527,6 +533,15 @@ export class SupabaseDataProvider implements DataProvider {
   }
   async deleteSitting(cycleId: string): Promise<void> {
     const { data, error } = await this.rpcData<number>("delete_sitting", { p_cycle: cycleId });
+    if (error) throw new Error(this.driftHint(error.message));
+    this.assertDeleted(data, "delete");
+    await this.rehydrate();
+  }
+  // 0032 — full-cascade cycle delete with a server-side last-cycle guard. Same
+  // count-check + rehydrate contract as deleteSitting; the guard surfaces as a
+  // plain (non-drift) message from the RPC when the final cycle is targeted.
+  async deleteCycle(cycleId: string): Promise<void> {
+    const { data, error } = await this.rpcData<number>("delete_cycle", { p_cycle: cycleId });
     if (error) throw new Error(this.driftHint(error.message));
     this.assertDeleted(data, "delete");
     await this.rehydrate();
@@ -1023,6 +1038,9 @@ export class SupabaseDataProvider implements DataProvider {
       p_assessments,
       // 0010 — create the sitting (and find-or-create its year) under the centre.
       p_test_centre_id: input.testCentreId || null,
+      // 0031 — the chosen exam date. The picker emits an ISO `yyyy-mm-dd`; pass a
+      // non-ISO/empty value as null so the `date` column never rejects the insert.
+      p_sitting_date: /^\d{4}-\d{2}-\d{2}$/.test(input.sittingDate ?? "") ? input.sittingDate : null,
     });
     if (error || !data) {
       // eslint-disable-next-line no-console

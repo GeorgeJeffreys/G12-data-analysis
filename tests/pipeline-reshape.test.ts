@@ -70,15 +70,17 @@ describe("stepper order + labels", () => {
 });
 
 describe("top cycle tab bar", () => {
-  it("carries Critical Path, Audit log and the Diagnostics tab (no per-sitting Certificates tab)", () => {
+  it("carries Critical Path, Audit log, Diagnostics and Settings (no per-sitting Certificates tab)", () => {
     const tabs = cyclesSubnav("c", "pipeline");
     const labels = tabs.map((t) => t.label);
-    expect(labels).toEqual(["Critical Path", "Audit log", "Diagnostics"]);
+    expect(labels).toEqual(["Critical Path", "Audit log", "Diagnostics", "Settings"]);
     // The sitting-level "Diagnostics" reference tab routes to its own hub, distinct
     // from the whole-assessment "Assessment Health" step at /cycles/c/diagnostics.
     // Only one user-facing "Diagnostics" (the tab) — the in-path step is
     // "Assessment Health", so there is no double-naming.
     expect(tabs.find((t) => t.label === "Diagnostics")?.href).toBe("/cycles/c/diagnostics-hub");
+    // Settings hosts the cycle-level danger surface (delete cycle).
+    expect(tabs.find((t) => t.label === "Settings")?.href).toBe("/cycles/c/settings");
     // "Pipeline" was renamed to "Critical Path".
     expect(labels).not.toContain("Pipeline");
     // Document generation moved to the cycle/overall level — no per-sitting tab.

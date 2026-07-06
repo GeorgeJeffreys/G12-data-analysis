@@ -41,7 +41,7 @@ import type {
   ImportBatchRow,
   MemberRole,
 } from "@/lib/types/database";
-import type { CurrentUser, Role } from "./types";
+import type { CurrentUser, Role, TestCentreSummary } from "./types";
 import type { ElementLabelsConfig } from "./element-labels";
 import type {
   Seed,
@@ -229,6 +229,21 @@ const EMPTY_VALIDATION: ValidationReport = {
   stats: { rawRows: 0, mcqRows: 0, droppedSurveyRows: 0, droppedNonMcqRows: 0, assessments: 0, participants: 0, items: 0 },
 };
 const ZERO_UUID = "00000000-0000-0000-0000-000000000000";
+
+/**
+ * The real `test_centres`, mapped to the seed shape — the SINGLE source for the
+ * centre dropdowns (each option value is the row's real UUID `id`, never a slug or
+ * mock). Read independently of whether any cycle exists so the "Start a sitting"
+ * picker surfaces real centres on a fresh database too (before this, a no-cycle DB
+ * fell back to a hard-coded mock centre whose non-UUID id broke the create insert
+ * with `invalid input syntax for type uuid`).
+ */
+export async function fetchSeedTestCentres(supabase: DB): Promise<TestCentreSummary[]> {
+  const rows = await sel<TestCentreRow>(
+    supabase.from("test_centres").select("*").order("created_at", { ascending: true }),
+  );
+  return rows.map((t) => ({ id: t.id, name: t.name, code: t.code, slug: t.slug, active: t.active }));
+}
 
 export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const cycles = await sel<ExamCycleRow>(

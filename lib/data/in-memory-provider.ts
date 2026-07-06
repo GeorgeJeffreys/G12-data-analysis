@@ -493,8 +493,13 @@ export class InMemoryDataProvider implements DataProvider {
     // 0010 — bind the test-centre list now that `seed` is final. Live runs carry
     // the hydrated centres; the demo falls back to a single active centre so the
     // home/year screens always have a centre to label and the picker is non-empty.
+    // A DEFINED `testCentres` (even an empty array) is live/hydrated data — use it
+    // verbatim so the picker only ever offers real centre UUIDs, and an empty live
+    // workspace correctly shows "create a centre first" rather than a mock. Only the
+    // demo seed (field absent → undefined) falls back to a single labelling centre so
+    // the home/year screens always have a centre to display.
     this.testCentres =
-      this.seed.testCentres && this.seed.testCentres.length > 0
+      this.seed.testCentres !== undefined
         ? this.seed.testCentres.map((c) => ({ ...c }))
         : [{ id: "tc-shatila-1", name: "Shatila 1", code: "SHA1", slug: "shatila-1", active: true }];
   }
@@ -1018,7 +1023,16 @@ export class InMemoryDataProvider implements DataProvider {
     }
     return order.map((key) => {
       const slot = byKey.get(key)!;
-      const id = slot.centre.id === primaryId ? this.yearId(slot.year) : `${this.yearId(slot.year)}--${slot.centre.slug}`;
+      // ROUTE ON THE STABLE DB id. When a real `exam_years` row exists (live data)
+      // its UUID IS the year's canonical id — carried unchanged, never derived from
+      // a display label. A year whose NAME is null/"Unknown" therefore still routes
+      // and loads (the id is the UUID, the name is display-only), and clearing a
+      // sitting's data can never shift the year's identity. Only the demo seed —
+      // which has no database year row — falls back to the derived label-key, which
+      // stays stable for tests.
+      const derived =
+        slot.centre.id === primaryId ? this.yearId(slot.year) : `${this.yearId(slot.year)}--${slot.centre.slug}`;
+      const id = slot.examYearId ?? derived;
       return {
         id,
         name: slot.year,
@@ -1061,7 +1075,9 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   getYear(yearId: string): YearDetail | null {
-    const y = this.buildYears().find((yr) => yr.id === yearId);
+    // Resolve on the canonical id (the real exam_years.id for live data), also
+    // accepting the legacy derived label-key so any older link still opens.
+    const y = this.buildYears().find((yr) => yr.id === yearId || yr.examYearId === yearId);
     if (!y) return null;
     // Overall is the best-of-two-by-award-level rollup — implemented next prompt.
     const ready = y.february.started && y.february.locked && y.may.started && y.may.locked;
@@ -4547,6 +4563,20 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
     return Promise.resolve();
   }
+  // Delete a whole cycle (Settings danger surface). Mirrors deleteSitting's full
+  // removal, with the last-cycle guard: refuse when this is the only cycle left, so
+  // the workspace is never emptied to an unopenable state. (The demo holds a single
+  // cycle, so this guard fires there — the UI disables the control accordingly.)
+  deleteCycle(cycleId: string): Promise<void> {
+    if (this.listCycles().length <= 1) {
+      return Promise.reject(new Error("Can’t delete the last remaining cycle — a workspace must keep at least one."));
+    }
+    const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
+    this.resetCycleToEmpty(cycleId);
+    this.audit("cycle", "Deleted cycle", `Removed cycle "${name}" and every row keyed to it`, null);
+    this.bump();
+    return Promise.resolve();
+  }
 
   /**
    * Empty a sitting's ingested data + per-cycle decision state back to the fresh
@@ -5516,7 +5546,9 @@ export class InMemoryDataProvider implements DataProvider {
     const active = this.testCentres.filter((c) => c.active);
     return {
       defaultName: "May 2026",
-      sittingDate: "14 May 2026",
+      // ISO date (yyyy-mm-dd) so it drops straight into the native date picker and
+      // the `exam_cycles.sitting_date` column without reformatting.
+      sittingDate: "2026-05-14",
       assessments: SUBJECT_CATALOG.map((s) => ({
         id: s.id,
         name: s.name,

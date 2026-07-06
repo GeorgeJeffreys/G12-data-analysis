@@ -379,6 +379,14 @@ export interface DataProvider {
    */
   deleteSitting(cycleId: string): Promise<void>;
   /**
+   * Delete a whole cycle AND every row keyed to that cycle_id across all tables
+   * (the full cascade), from the cycle's Settings danger surface. Same guarantees
+   * as deleteSitting (admin-only, audited, resolves only once the DB removed rows)
+   * PLUS a last-cycle guard: deleting the final remaining cycle is refused so the
+   * workspace is never left with nothing to open. Returns to Years on success.
+   */
+  deleteCycle(cycleId: string): Promise<void>;
+  /**
    * Probe the live DB for schema drift — the columns/functions the code needs
    * versus what's installed. Lets the app flag "the DB is behind — run migration
    * NNNN" proactively instead of failing at ingest. The demo has no DB (always ok).

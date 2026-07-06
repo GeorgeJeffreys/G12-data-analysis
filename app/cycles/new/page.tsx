@@ -13,7 +13,6 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Check } from "@/components/ui/primitives";
-import { Icon } from "@/components/ui/icons";
 
 export default function NewCyclePage() {
   const router = useRouter();
@@ -104,13 +103,17 @@ export default function NewCyclePage() {
             </label>
             <label style={{ display: "flex", flexDirection: "column", gap: 7, width: 220 }}>
               <span className="hf-lbl">Sitting date</span>
+              {/* Native date input — its built-in calendar is the picker trigger, so
+                  the date can be changed and is submitted with the sitting (it flows
+                  through createCycle → create_cycle_with_assessments → sitting_date). */}
               <span className="hf-field" style={{ justifyContent: "space-between" }}>
                 <input
+                  type="date"
                   value={sittingDate}
                   onChange={(e) => setSittingDate(e.target.value)}
-                  style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 12.5, fontFamily: "inherit", color: H.ink }}
+                  aria-label="Sitting date"
+                  style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 12.5, fontFamily: "inherit", color: H.ink, colorScheme: "dark" }}
                 />
-                <Icon name="cal" color={H.ink3} />
               </span>
             </label>
           </div>
