@@ -26,6 +26,8 @@ import { useRouter } from "next/navigation";
 import { useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
+import { readCycleStep } from "@/lib/ui/last-step";
+import { stageRoute } from "@/lib/data/pipeline-route";
 
 /** How long we wait for a real cycle to resolve before showing an error. */
 const RESOLVE_TIMEOUT_MS = 8000;
@@ -46,8 +48,25 @@ export default function CycleEntry({ params }: { params: { cycleId: string } }) 
   // decision runs only after mount, as a client-side effect. A self-referential
   // target (no further step) is treated as "no redirect", so we fall through to
   // a small overview instead of spinning forever.
+  //
+  // Bug 3: prefer the step the user last had open for THIS cycle (persisted by the
+  // shell), so "Critical Path" returns them to where they were — not the first
+  // incomplete step (Clean). Every pipeline step is freely navigable in this app, so
+  // a remembered step is honoured as-is; an out-of-range value maps back to the base
+  // path (`stageRoute` default) and is treated as "no memory", falling through to the
+  // cycle's `doNext`. localStorage is read only post-mount, so the SSR / first-client
+  // render stays a stable placeholder and hydration is clean.
   const selfPath = `/cycles/${cycleId}`;
-  const redirectTo = mounted && cycle && !cycle.mock && cycle.doNext.href !== selfPath ? cycle.doNext.href : null;
+  const target = (() => {
+    if (!mounted || !cycle || cycle.mock) return null;
+    const remembered = readCycleStep(cycleId);
+    if (remembered != null) {
+      const href = stageRoute(cycleId, remembered);
+      if (href !== selfPath) return href;
+    }
+    return cycle.doNext.href;
+  })();
+  const redirectTo = target && target !== selfPath ? target : null;
   useEffect(() => {
     if (redirectTo) router.replace(redirectTo);
   }, [redirectTo, router]);

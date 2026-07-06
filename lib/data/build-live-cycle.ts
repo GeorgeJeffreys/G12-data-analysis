@@ -16,7 +16,6 @@
 
 import { getEngine, type ItemMeta, type QualityRating, type ResponseRecord } from "@/lib/engine";
 import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "@/lib/diagnostics";
-import { isStaffTestEmail } from "./staff-exclusions";
 import type {
   SeedAssessment,
   SeedAssessmentDiagnostics,
@@ -70,7 +69,16 @@ export interface LiveCycleData {
  * Subjects keep first-appearance order; the subject's raw assessmentName is used
  * as its stable id (so boundary scopes / exclusions key off it consistently).
  */
-export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleData {
+export function buildLiveCycleData(
+  clean: readonly CleanResponse[],
+  /**
+   * Participant pseudonyms excluded cohort-wide (staff/test), so the build-time
+   * diagnostics run on the corrected cohort. This is DATA supplied by the caller
+   * (from the per-cohort `cohort_exclusions` list) — never an email/name matched
+   * against a constant baked into this module. Defaults to none.
+   */
+  opts?: { excludedPseudonyms?: ReadonlySet<string> },
+): LiveCycleData {
   const engine = getEngine();
 
   // Group cleaned responses by raw assessment name (first-appearance order).
@@ -110,12 +118,10 @@ export function buildLiveCycleData(clean: readonly CleanResponse[]): LiveCycleDa
         `${realIdByPseudonym.size} output participant(s) — participant identity collapse.`,
     );
   }
-  // Cohort-excluded (staff / test) accounts, keyed on the same stable email the
-  // scores path excludes on — so speededness/timing run on the identical corrected
-  // cohort as item stats, never on staff-inflated rows.
-  const cohortExcludedPseudonyms = new Set(
-    [...realIdByPseudonym.entries()].filter(([, realId]) => isStaffTestEmail(realId)).map(([pseudo]) => pseudo),
-  );
+  // Cohort-excluded (staff / test) accounts, supplied by the caller as data — so
+  // speededness/timing run on the identical corrected cohort as the scores path,
+  // never on staff-inflated rows, and never keyed on a value hard-coded here.
+  const cohortExcludedPseudonyms = opts?.excludedPseudonyms ?? new Set<string>();
   const partOrder = [...realIdByPseudonym.keys()].sort();
   const participants: SeedParticipant[] = partOrder.map((id, i) => ({
     id,

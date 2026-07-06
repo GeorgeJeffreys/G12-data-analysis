@@ -15,7 +15,7 @@ import "server-only";
 import type { SupabaseAdminClient } from "@/lib/supabase/admin";
 
 /** The migration that brings a drifted DB current (see supabase/migrations). */
-export const BRING_CURRENT_MIGRATION = "0032_delete_cycle.sql";
+export const BRING_CURRENT_MIGRATION = "0033_cohort_exclusions.sql";
 
 export interface SchemaHealth {
   ok: boolean;
@@ -24,7 +24,7 @@ export interface SchemaHealth {
   missingFunctions: string[];
 }
 
-const HEALTHY: SchemaHealth = { ok: true, migration: "0032", missingColumns: [], missingFunctions: [] };
+const HEALTHY: SchemaHealth = { ok: true, migration: "0033", missingColumns: [], missingFunctions: [] };
 
 /**
  * Probe the live schema for the columns/functions the code requires. Returns a
@@ -50,12 +50,16 @@ export async function checkSchemaHealth(admin: SupabaseAdminClient): Promise<Sch
     ok?: boolean;
     migration?: string;
     missing_columns?: string[];
+    missing_tables?: string[];
     missing_functions?: string[];
   };
+  // A missing TABLE is drift too (cohort_exclusions, migration 0033). Fold it into
+  // the columns list so the "Missing: …" message surfaces it without a schema change.
+  const missingColumns = [...(d.missing_columns ?? []), ...(d.missing_tables ?? [])];
   return {
     ok: d.ok ?? true,
-    migration: d.migration ?? "0032",
-    missingColumns: d.missing_columns ?? [],
+    migration: d.migration ?? "0033",
+    missingColumns,
     missingFunctions: d.missing_functions ?? [],
   };
 }

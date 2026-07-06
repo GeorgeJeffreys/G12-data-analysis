@@ -11,7 +11,6 @@
 import { readFileSync } from "node:fs";
 import { parseExport, ingestAndClean } from "../lib/ingest/index";
 import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "../lib/diagnostics";
-import { isStaffTestEmail } from "../lib/data/staff-exclusions";
 import type { CleanResponse } from "../lib/ingest/types";
 
 const TARGET = process.argv[2] ?? "Applicable";
@@ -25,9 +24,11 @@ const name = [...byName.keys()].find((n) => n.includes(TARGET));
 if (!name) throw new Error(`no assessment matching "${TARGET}"`);
 const recs = byName.get(name)!;
 
-const realIdByPseudonym = new Map<string, string>();
-for (const r of recs) if (!realIdByPseudonym.has(r.participantPseudonym)) realIdByPseudonym.set(r.participantPseudonym, r.qmParticipantId);
-const excluded = new Set([...realIdByPseudonym.entries()].filter(([, e]) => isStaffTestEmail(e)).map(([p]) => p));
+// Cohort exclusions are DATA (the per-cohort `cohort_exclusions` table), not a code
+// list; the redacted sample export carries no staff/test accounts, so this oracle
+// runs on the full sample cohort. Point `excluded` at real ids only if reproducing a
+// live cohort's figures locally.
+const excluded = new Set<string>();
 const itemOrder = new Map<string, number>();
 for (const r of recs) if (!itemOrder.has(r.qmQuestionId)) itemOrder.set(r.qmQuestionId, itemOrder.size);
 const records: DiagResponse[] = cleanDiagResponses(

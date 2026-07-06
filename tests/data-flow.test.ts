@@ -12,7 +12,6 @@ import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import type { DataProvider } from "@/lib/data/provider";
 import { buildDataFlow, DF_STAGES } from "@/lib/data/data-flow";
-import { isStaffTestEmail } from "@/lib/data/staff-exclusions";
 
 const liveId = (p: DataProvider) => p.listCycles().find((c) => c.live)!.id;
 
@@ -44,18 +43,27 @@ describe("developer data-flow model", () => {
     }
   });
 
-  it("never counts a staff/test account as a participant, and only ever surfaces staff in the struck list", () => {
+  it("surfaces a cohort-excluded account in the struck list, never as a counted participant", () => {
     const p = new InMemoryDataProvider();
-    const m = buildDataFlow(p, liveId(p))!;
-    // Invariant (holds whether or not the de-identified demo carries staff rows):
-    // no counted participant is a staff/test email, and every struck row is one.
+    const cid = liveId(p);
+    // The demo sample carries no staff, so seed one cohort exclusion (data, not a
+    // hard-coded email) and prove it lands in the struck `staff` list, out of `people`.
+    const base = buildDataFlow(p, cid)!;
+    const subj = base.subjects.find((s) => s.people.some((pp) => pp.last === 3))!;
+    const victim = subj.people.find((pp) => pp.last === 3)!;
+    p.excludeParticipantFromCohort(cid, victim.id, true, "Staff / test account");
+
+    const m = buildDataFlow(p, cid)!;
     for (const s of m.subjects) {
-      expect(s.people.some((pp) => isStaffTestEmail(pp.email))).toBe(false);
-      for (const st of s.staff) {
-        expect(st.staff).toBe(true);
-        expect(isStaffTestEmail(st.email)).toBe(true);
-      }
+      // No struck cohort row is ever also a counted participant.
+      const struck = new Set(s.staff.map((x) => x.id));
+      expect(s.people.some((pp) => struck.has(pp.id))).toBe(false);
+      for (const st of s.staff) expect(st.staff).toBe(true);
     }
+    // The excluded participant is struck wherever they sat, never in `people`.
+    const here = m.subjects.find((x) => x.key === subj.key)!;
+    expect(here.staff.some((st) => st.id === victim.id)).toBe(true);
+    expect(here.people.some((pp) => pp.id === victim.id)).toBe(false);
   });
 
   it("reports the healthy state for the fixed live cycle (no collapse)", () => {
@@ -87,9 +95,33 @@ describe("developer data-flow model", () => {
 
     const s = after.subjects.find((x) => x.key === subj.key)!;
     expect(s.counts[1]).toBe(subj.counts[1]! - 1); // dropped at Cleaned in this subject
-    // The victim is still ingested (raw is untouched) but now dropped at Cleaned.
-    const traced = s.people.find((pp) => pp.id === victim.id)!;
-    expect(traced.last).toBe(0); // present only at Ingested now
+    // A cohort-wide exclusion is struck (raw untouched), not a counted participant.
+    expect(s.staff.some((st) => st.id === victim.id)).toBe(true);
+  });
+
+  it("a PER-SUBJECT removal drops the sitter from that subject only, not the cohort", () => {
+    const p = new InMemoryDataProvider();
+    const cid = liveId(p);
+    const before = buildDataFlow(p, cid)!;
+    // A participant who sits ≥2 subjects, computed in each.
+    const subjectsOf = (id: string) => before.subjects.filter((s) => s.people.some((pp) => pp.id === id && pp.last === 3));
+    const victimId = before.subjects.flatMap((s) => s.people).find((pp) => pp.last === 3 && subjectsOf(pp.id).length >= 2)!.id;
+    const [subjA, subjB] = subjectsOf(victimId);
+
+    // Remove from ONE subject via the per-subject clean removal.
+    p.setCleanRemoval(cid, subjA!.key, { rows: [victimId] }, true);
+
+    const after = buildDataFlow(p, cid)!;
+    // Dropped at Cleaned in subject A (stays a person, last=0), untouched in subject B.
+    const a = after.subjects.find((x) => x.key === subjA!.key)!;
+    const b = after.subjects.find((x) => x.key === subjB!.key)!;
+    expect(a.people.find((pp) => pp.id === victimId)!.last).toBe(0);
+    expect(a.counts[1]).toBe(subjA!.counts[1]! - 1);
+    expect(b.people.find((pp) => pp.id === victimId)!.last).toBe(3); // untouched elsewhere
+    expect(b.counts[1]).toBe(subjB!.counts[1]);
+    // Still in the cohort (present in ≥1 subject) — not a cohort removal.
+    expect(after.state).toBe("healthy");
+    expect(after.cleaned).toBe(before.cleaned); // distinct cohort unchanged
   });
 
   it("reads Score-matrix membership from the real pivot (getNaiveScores), so a pivot drop stays visible", () => {

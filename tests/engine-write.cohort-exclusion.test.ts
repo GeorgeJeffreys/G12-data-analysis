@@ -1,22 +1,25 @@
 /**
- * Prompt-09 part 3 — the SERVER `recomputeAndWrite` honours cohort/participant
- * exclusions, so the materialized `participant_scores` (the Candidate Scores
- * page's source) reflects the CLEANED cohort.
+ * The SERVER `recomputeAndWrite` honours cohort/participant exclusions, so the
+ * materialized `participant_scores` (the Candidate Scores page's source) reflects
+ * the CLEANED cohort.
  *
  * Before the fix, `recomputeAndWrite` read participants/responses raw and applied
  * only ITEM exclusions — it had no concept of a participant/cohort exclusion, so a
  * staff/test account (or a Clean-stage row removal) still materialised a score.
  * This test drives the real function through a read+write mock admin and asserts:
- *   - a staff/test EMAIL-list account never reaches participant_scores;
- *   - a Clean-stage row removal (keyed on the stable qm_participant_id) is honoured
- *     and drops that participant from the persisted scores.
+ *   - a COHORT-WIDE exclusion (cohort_exclusions DATA, keyed on the stable
+ *     qm_participant_id — never a hard-coded email) never reaches participant_scores;
+ *   - a Clean-stage PER-SUBJECT row removal (keyed on the stable qm_participant_id)
+ *     is honoured and drops that participant from the persisted scores.
  */
 import { describe, it, expect, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
 const CYCLE = "cyc";
-const LAVINIA = "lavinia.cavalet@alsamaproject.com";
+// A staff/test account is now DATA (a cohort_exclusions row), not a code constant.
+// Its email is just an ordinary participant key here.
+const STAFF = "some.staff@school.edu";
 
 type Rows = Record<string, Record<string, unknown>[]>;
 
@@ -56,7 +59,11 @@ function makeAdmin(tables: Rows) {
 }
 
 /** Seed a two-item Math subject sat by the given participants (all score i1=1,i2=0). */
-function baseTables(participants: { id: string; qm: string; email: string | null }[], cleanExclusions: Record<string, unknown>[] = []): Rows {
+function baseTables(
+  participants: { id: string; qm: string; email: string | null }[],
+  cleanExclusions: Record<string, unknown>[] = [],
+  cohortExclusions: Record<string, unknown>[] = [],
+): Rows {
   return {
     assessments: [{ id: "a1", cycle_id: CYCLE, name: "Math" }],
     items: [
@@ -71,26 +78,33 @@ function baseTables(participants: { id: string; qm: string; email: string | null
     essay_marks: [],
     alterations: [],
     clean_exclusions: cleanExclusions,
+    cohort_exclusions: cohortExclusions,
   };
 }
 
 const scoredIds = (writes: Rows) => new Set((writes.participant_scores ?? []).map((r) => r.participant_id as string));
 
 describe("recomputeAndWrite honours cohort/participant exclusions (part 3)", () => {
-  it("drops a staff/test EMAIL-list account from participant_scores", async () => {
+  it("drops a cohort-excluded (data) account from participant_scores", async () => {
     const { recomputeAndWrite } = await import("@/lib/server/engine-write");
-    const { admin, writes } = makeAdmin(baseTables([
-      { id: "u-real1", qm: "real1@s.edu", email: "real1@s.edu" },
-      { id: "u-real2", qm: "real2@s.edu", email: "real2@s.edu" },
-      { id: "u-staff", qm: LAVINIA, email: LAVINIA },
-    ]));
+    const { admin, writes } = makeAdmin(baseTables(
+      [
+        { id: "u-real1", qm: "real1@s.edu", email: "real1@s.edu" },
+        { id: "u-real2", qm: "real2@s.edu", email: "real2@s.edu" },
+        { id: "u-staff", qm: STAFF, email: STAFF },
+      ],
+      [],
+      // Staff/test status is DATA: a cohort_exclusions row keyed on the stable
+      // qm_participant_id. No email is matched against a constant in code.
+      [{ id: "ce-cohort", cycle_id: CYCLE, participant_key: STAFF, reason: "Staff account" }],
+    ));
 
     await recomputeAndWrite(admin, CYCLE);
 
     const ids = scoredIds(writes);
     expect(ids.has("u-real1")).toBe(true);
     expect(ids.has("u-real2")).toBe(true);
-    expect(ids.has("u-staff")).toBe(false); // excluded by the email list
+    expect(ids.has("u-staff")).toBe(false); // excluded by the cohort_exclusions data
   });
 
   it("honours a Clean-stage row removal keyed on the stable qm_participant_id", async () => {
