@@ -105,7 +105,7 @@ select distinct p.cycle_id, p.qm_participant_id,
       then 'Staff account (G12 Lead) — seeded default, editable'
     else 'Test / re-sit account — seeded default, editable'
   end,
-  null
+  null::uuid  -- seeded default has no human decider; explicit cast (bare null is text)
 from participants p
 where lower(trim(p.qm_participant_id)) in (
   'lavinia.cavalet@alsamaproject.com',
