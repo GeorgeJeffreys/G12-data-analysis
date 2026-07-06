@@ -60,37 +60,19 @@ export function defaultMatrix(): Record<string, Record<string, boolean>> {
   return { [ROLE_LEAD]: lead, [ROLE_DS]: ds };
 }
 
+/**
+ * No mock/seed members. The real Users & access roster comes from
+ * `auth.users ⋈ memberships` via the `list_members` RPC (see supabase-provider);
+ * the in-memory demo/test provider simply starts with an empty roster.
+ */
 export function defaultMembers(): Member[] {
-  return [
-    { id: "m-rana", name: "Rana Mansour", email: "rana.mansour@alsamaproject.com", roleId: ROLE_LEAD, roleName: "G12 Lead", status: "active", lastActive: "2h ago", isCurrent: true },
-    { id: "m-sami", name: "Sami Haddad", email: "s.haddad@alsamaproject.com", roleId: ROLE_DS, roleName: "Data Scientist", status: "active", lastActive: "Yesterday", isCurrent: false },
-    { id: "m-karim", name: "Karim Osman", email: "k.osman@alsamaproject.com", roleId: ROLE_DS, roleName: "Data Scientist", status: "invited", lastActive: "Invite sent 3d ago", isCurrent: false },
-  ];
+  return [];
 }
 
-/** A few illustrative audit entries so the log isn't empty before any action. */
-export function seedAuditEntries(cycleId: string): AuditEntry[] {
-  const now = Date.now();
-  const mins = (m: number) => new Date(now - m * 60000).toISOString();
-  const e = (
-    id: string,
-    tsMin: number,
-    actorName: string,
-    actorRole: string,
-    type: AuditEntry["type"],
-    action: string,
-    detail: string,
-  ): AuditEntry => ({
-    id, ts: mins(tsMin), actorId: actorName === "Rana Mansour" ? "m-rana" : "m-sami",
-    actorName, actorRole, type, action, detail, cycleId, seeded: true,
-  });
-  return [
-    e("a1", 200, "Sami Haddad", "Data Scientist", "exclude", "Excluded item", "Q23 — reason: negative discrimination"),
-    e("a2", 215, "Sami Haddad", "Data Scientist", "exclude", "Excluded item", "Q31 — reason: ambiguous wording"),
-    e("a3", 320, "Sami Haddad", "Data Scientist", "export", "Exported data", "Cleaned response matrix (English 2nd Lang)"),
-    e("a4", 1700, "Rana Mansour", "G12 Lead", "upload", "Re-uploaded export", "Arabic 1st Lang — corrected duplicate submissions"),
-    e("a5", 1760, "Rana Mansour", "G12 Lead", "boundary", "Changed boundary", "Meets cut 40% → 42% (English 2nd Lang)"),
-  ];
+/** No seeded audit actors (the previous fixtures were mock accounts). The audit
+ *  log starts empty and fills from real actions. */
+export function seedAuditEntries(_cycleId: string): AuditEntry[] {
+  return [];
 }
 
 /** The engine's REAL active rating thresholds (see lib/engine/stats.ts) — display-only. */

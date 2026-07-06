@@ -18,10 +18,10 @@ import type { CurrentUser } from "@/lib/data/types";
 
 const CYCLE = "may-2026";
 
-const TEAM: CurrentUser = { id: "m-sami", name: "Sami Haddad", initials: "SH", role: "reviewer" };
+const TEAM: CurrentUser = { id: "m-sami", name: "Omar Reviewer", initials: "SH", role: "reviewer" };
 const ANALYST: CurrentUser = { id: "m-dana", name: "Dana Aziz", initials: "DA", role: "analyst" };
 const ANALYST_2: CurrentUser = { id: "m-omar", name: "Omar Fadel", initials: "OF", role: "analyst" };
-const ADMIN: CurrentUser = { id: "m-rana", name: "Rana Mansour", initials: "RM", role: "lead_admin" };
+const ADMIN: CurrentUser = { id: "m-rana", name: "Nadia Admin", initials: "RM", role: "lead_admin" };
 const ADMIN_2: CurrentUser = { id: "m-lina", name: "Lina Saad", initials: "LS", role: "lead_admin" };
 
 function pickItem(p: InMemoryDataProvider) {
@@ -53,7 +53,7 @@ describe("data analyst overrides a team member (strictly higher)", () => {
     expect(e.type).toBe("override");
     expect(e.isOverride).toBe(true);
     expect(e.actorName).toBe("Dana Aziz");
-    expect(e.priorActor).toBe("Sami Haddad");
+    expect(e.priorActor).toBe("Omar Reviewer");
     expect(e.reason).toBe("Re-included by analyst review");
   });
 });

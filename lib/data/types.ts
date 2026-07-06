@@ -1274,8 +1274,10 @@ export interface Member {
   roleName: string;
   status: MemberStatus;
   lastActive: string;
-  /** True for the mocked signed-in user. */
+  /** True when this row IS the authenticated user (matched on the session id). */
   isCurrent: boolean;
+  /** Membership scope: workspace-wide vs a specific cycle (real memberships). */
+  scope?: string;
 }
 
 export interface MembersModel {

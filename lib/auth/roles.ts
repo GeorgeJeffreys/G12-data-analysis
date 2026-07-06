@@ -90,6 +90,21 @@ export function tierOfRole(role: AnyRole): RoleTier {
   return tierOf(role);
 }
 
+/**
+ * A representative STORAGE (`member_role`) value for each canonical tier — the
+ * inverse of `tierOf`, used when the UI assigns a tier and we must persist a
+ * concrete `member_role`. admin → lead_admin, analyst → analyst, team_member →
+ * reviewer (the write-capable team-member flavour).
+ */
+const TIER_STORAGE_ROLE: Record<RoleTier, MemberRole> = {
+  team_member: "reviewer",
+  analyst: "analyst",
+  admin: "lead_admin",
+};
+export function storageRoleForTier(tier: RoleTier): MemberRole {
+  return TIER_STORAGE_ROLE[tier];
+}
+
 /** Human tier label for a role expression (e.g. `reviewer` → "G12 team member"). */
 export function roleTierLabel(role: AnyRole): string {
   return ROLE_TIER_LABEL[tierOf(role)];

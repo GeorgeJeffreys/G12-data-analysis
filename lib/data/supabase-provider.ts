@@ -24,6 +24,8 @@
  * sign-in / access-denied states for the invite-only model.
  */
 import type { Database } from "@/lib/types/database";
+import { storageRoleForTier, type RoleTier } from "@/lib/auth/roles";
+import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-directory";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import { InMemoryDataProvider } from "./in-memory-provider";
@@ -105,6 +107,7 @@ export type AccessStatus = "loading" | "ok" | "no-session" | "not-member" | "no-
 
 const LOADING_USER: CurrentUser = { id: "loading", name: "…", initials: "…", role: "viewer" };
 
+
 const EMPTY_SEED: Seed = {
   generatedAt: new Date(0).toISOString(),
   engineVersion: "loading",
@@ -136,6 +139,9 @@ export class SupabaseDataProvider implements DataProvider {
   private uuidToQm = new Map<string, string>(); // participant row UUID → stable qm_participant_id
   private subjectToAssessment = new Map<string, string>();
   private incIdMap = new Map<string, string>(); // inner inc-N → DB incident uuid
+  /** The REAL member roster (auth.users ⋈ memberships), via the list_members RPC.
+   *  Replaces the mock member list entirely in the live app. */
+  private realMembers: MemberDirRow[] = [];
 
   constructor(private supabase: DB) {
     this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER);
@@ -201,12 +207,14 @@ export class SupabaseDataProvider implements DataProvider {
     if (!h) {
       this.status = "no-cycle";
       this.inner = new InMemoryDataProvider(EMPTY_SEED, this.user);
+      await this.fetchMembers();
       this.bump();
       return;
     }
     const next = new InMemoryDataProvider(h.seed, this.user);
     this.replay(next, h.seed.liveCycle.id, h.decisions);
     this.inner = next;
+    await this.fetchMembers();
     this.cycleId = h.seed.liveCycle.id;
     this.qmToUuid = h.lookups.qmToUuid;
     this.uuidToQm = new Map([...h.lookups.qmToUuid].map(([qm, uuid]) => [uuid, qm]));
@@ -326,7 +334,24 @@ export class SupabaseDataProvider implements DataProvider {
   getDocuments(cycleId: string): DocumentsModel | null { return this.inner.getDocuments(cycleId); }
   getScoreAnalysisData(cycleId: string, preExclusion?: boolean) { return this.inner.getScoreAnalysisData(cycleId, preExclusion); }
   getItemAnalysisData(cycleId: string) { return this.inner.getItemAnalysisData(cycleId); }
-  getMembers(): MembersModel { return this.inner.getMembers(); }
+  /** The REAL Users & access roster — auth.users ⋈ memberships, mapped through the
+   *  one canonical role vocabulary (lib/auth/roles.ts). The signed-in account is
+   *  flagged `isCurrent` by the session id, so displayed identity = authenticated
+   *  identity. NOT the mock member list. */
+  getMembers(): MembersModel {
+    return buildMembersModel(this.realMembers, this.user.id);
+  }
+
+  /** Load the real roster via the SECURITY DEFINER list_members RPC. */
+  private async fetchMembers(): Promise<void> {
+    const { data, error } = await this.rpcData<MemberDirRow[]>("list_members", {});
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error("list_members failed:", error.message);
+      return;
+    }
+    this.realMembers = data ?? [];
+  }
   getRoles(): RolesModel { return this.inner.getRoles(); }
   listTestCentres(): TestCentreSummary[] { return this.inner.listTestCentres(); }
   getConfig(): ConfigModel { return this.inner.getConfig(); }
@@ -584,25 +609,39 @@ export class SupabaseDataProvider implements DataProvider {
     this.rpc("unlock_grades", { p_cycle: cycleId, p_reason: "Re-opened for editing" });
   }
 
-  // members & roles — persisted as workspace blobs (auth membership management
-  // is out of scope for v1; access control lives in `memberships`).
+  // members — the REAL memberships table (via SECURITY DEFINER RPCs, admin-gated
+  // by the C1 authorization primitive). No mock state, no workspace blob.
+  //
+  // The UI passes a canonical TIER (team_member | analyst | admin) as roleId; we
+  // persist a concrete member_role via storageRoleForTier. The member id encodes
+  // (user_id, cycle_id) so the write targets the exact membership scope.
   inviteMember(email: string, roleId: string): void {
-    this.inner.inviteMember(email, roleId);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "members", p_value: this.inner.getMembers() });
+    const role = storageRoleForTier(roleId as RoleTier);
+    void this.mutateMembers("invite_member", { p_email: email.trim(), p_role: role, p_cycle: null });
   }
   setMemberRole(memberId: string, roleId: string): void {
-    this.inner.setMemberRole(memberId, roleId);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "members", p_value: this.inner.getMembers() });
+    const { userId, cycleId } = parseMemberKey(memberId);
+    const role = storageRoleForTier(roleId as RoleTier);
+    void this.mutateMembers("set_member_role", { p_user: userId, p_cycle: cycleId, p_role: role });
   }
   removeMember(memberId: string): void {
-    this.inner.removeMember(memberId);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "members", p_value: this.inner.getMembers() });
+    const { userId, cycleId } = parseMemberKey(memberId);
+    void this.mutateMembers("remove_member", { p_user: userId, p_cycle: cycleId });
   }
-  resendInvite(memberId: string): void {
-    this.inner.resendInvite(memberId);
+  resendInvite(_memberId: string): void {
+    // Real accounts are already active; re-sending an auth invite is a Supabase
+    // auth (admin API) action, not a membership mutation. No-op here.
+  }
+
+  /** Run a member-directory write RPC, surface any error, then refresh the roster. */
+  private async mutateMembers(name: string, args: unknown): Promise<void> {
+    const { error } = await this.rpcData<unknown>(name, args);
+    if (error) {
+      // eslint-disable-next-line no-console
+      console.error(`${name} failed:`, error.message);
+      return;
+    }
+    await this.fetchMembers();
     this.bump();
   }
   createRole(name: string): void {

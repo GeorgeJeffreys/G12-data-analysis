@@ -1,8 +1,11 @@
 "use client";
 
 /**
- * Settings › Users & access. Invite by Microsoft email, assign a role, remove,
- * resend invites. MOCK — no real directory; lives in the in-memory provider.
+ * Settings › Users & access. The REAL roster — auth.users ⋈ memberships via the
+ * provider's getMembers() (list_members RPC) — with roles in the one canonical
+ * vocabulary (lib/auth/roles.ts). Invite / role-change / remove write to the real
+ * memberships table (admin-gated by the C1 authorization). The signed-in account
+ * is flagged "(you)" from the session, so displayed identity = authenticated user.
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
@@ -87,7 +90,7 @@ export default function UsersPage() {
                 <th className="hf-th">Person</th>
                 <th className="hf-th" style={{ width: 210 }}>Role</th>
                 <th className="hf-th" style={{ width: 150 }}>Status</th>
-                <th className="hf-th" style={{ width: 180 }}>Last active</th>
+                <th className="hf-th" style={{ width: 180 }}>Scope</th>
                 <th className="hf-th" style={{ width: 120 }} />
               </tr>
             </thead>
@@ -113,7 +116,7 @@ export default function UsersPage() {
                     </select>
                   </td>
                   <td className="hf-td">{u.status === "active" ? <Badge tone="good"><Mark kind="pass" size={11} />Active</Badge> : <Badge tone="warn">Invited</Badge>}</td>
-                  <td className="hf-td hf-sub" style={{ fontSize: 12 }}>{u.lastActive}</td>
+                  <td className="hf-td hf-sub" style={{ fontSize: 12 }}>{u.scope ?? u.lastActive}</td>
                   <td className="hf-td" style={{ textAlign: "right" }}>
                     {u.status === "invited" ? (
                       <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.resendInvite(u.id)}>Resend</Button>

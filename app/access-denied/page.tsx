@@ -1,9 +1,11 @@
 "use client";
 
 /**
- * Access-denied state for an authenticated-but-unprovisioned account. MOCK — no
- * real auth; reachable for preview from the sign-in screen.
+ * Access-denied state for an authenticated-but-unprovisioned account. Shows the
+ * REAL signed-in email (from the Supabase session) — the account that isn't yet
+ * a member — not a mock person.
  */
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { H } from "@/lib/ui/tokens";
 import { EntryFrame } from "@/components/entry/EntryFrame";
@@ -15,6 +17,18 @@ const SUPABASE = process.env.NEXT_PUBLIC_DATA_PROVIDER === "supabase";
 
 export default function AccessDeniedPage() {
   const router = useRouter();
+  const [email, setEmail] = useState<string | null>(null);
+  useEffect(() => {
+    if (!SUPABASE) return;
+    let alive = true;
+    (async () => {
+      try {
+        const { data } = await createClient().auth.getUser();
+        if (alive) setEmail(data.user?.email ?? null);
+      } catch { /* no session */ }
+    })();
+    return () => { alive = false; };
+  }, []);
   const switchAccount = async () => {
     if (SUPABASE) {
       try { await createClient().auth.signOut(); } catch { /* ignore */ }
@@ -33,17 +47,18 @@ export default function AccessDeniedPage() {
           Your Microsoft account is authenticated, but it hasn’t been granted access to G12++ yet. Only people a G12 lead has invited can enter.
         </div>
 
-        <div className="hf-card" style={{ padding: "13px 15px", marginTop: 20, display: "flex", alignItems: "center", gap: 11 }}>
-          <Avatar name="Karim Osman" size={36} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600 }}>Karim Osman</div>
-            <div className="hf-mono hf-sub" style={{ fontSize: 11.5 }}>k.osman@alsamaproject.com</div>
+        {email && (
+          <div className="hf-card" style={{ padding: "13px 15px", marginTop: 20, display: "flex", alignItems: "center", gap: 11 }}>
+            <Avatar name={email} size={36} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="hf-mono hf-sub" style={{ fontSize: 12 }}>{email}</div>
+            </div>
+            <Badge tone="bad">No access</Badge>
           </div>
-          <Badge tone="bad">No access</Badge>
-        </div>
+        )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 9, marginTop: 22 }}>
-          <a href="mailto:rana.mansour@alsamaproject.com?subject=G12%2B%2B%20access%20request" style={{ textDecoration: "none" }}>
+          <a href="mailto:?subject=G12%2B%2B%20access%20request" style={{ textDecoration: "none" }}>
             <Button variant="pri" style={{ width: "100%", justifyContent: "center", padding: 12 }}>
               <Icon name="mail" color="#fff" />
               Email a G12 lead to request access

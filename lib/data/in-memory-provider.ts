@@ -460,12 +460,12 @@ export class InMemoryDataProvider implements DataProvider {
   private cycleCentreOverride = new Map<string, string>();
 
   private user: CurrentUser = {
-    id: "m-rana",
-    // Default MOCK user (a Lead) for the in-memory demo so role-gated controls
+    id: "demo-admin",
+    // Neutral demo user (an admin) for the in-memory demo so role-gated controls
     // (Lock, admin) are exercised. The SupabaseDataProvider injects the real
-    // session-derived user via the constructor.
-    name: "Rana Mansour",
-    initials: "RM",
+    // session-derived user via the constructor — this is never the live identity.
+    name: "Workspace Admin",
+    initials: "WA",
     role: "lead_admin",
   };
 
@@ -3065,10 +3065,10 @@ export class InMemoryDataProvider implements DataProvider {
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const label = (i: number) => this.seed.liveCycle.participants[i]?.label ?? `Student ${i}`;
     const rows: IncidentInput[] = [
-      { source: "incident_log", studentName: label(0), exam: "AM", issueType: "Calculator tool froze", actionTaken: "Allowed 4 extra minutes", questionsAffected: "Q12", staff: "R. Mansour" },
-      { source: "incident_log", studentName: label(3), exam: "ESL", issueType: "Audio clip would not play", actionTaken: "Replayed on staff device", questionsAffected: "n/a", staff: "T. Haddad" },
+      { source: "incident_log", studentName: label(0), exam: "AM", issueType: "Calculator tool froze", actionTaken: "Allowed 4 extra minutes", questionsAffected: "Q12", staff: "Invigilator A" },
+      { source: "incident_log", studentName: label(3), exam: "ESL", issueType: "Audio clip would not play", actionTaken: "Replayed on staff device", questionsAffected: "n/a", staff: "Invigilator B" },
       { source: "incident_log", studentName: "All students", exam: "ST", issueType: "Projector flicker for 2 minutes", actionTaken: "Paused the room", questionsAffected: "n/a", staff: "Invigilation team" },
-      { source: "incident_log", studentName: label(8), exam: "AFL", issueType: "النص لم يظهر بشكل صحيح", actionTaken: "Reloaded the item", questionsAffected: "Q5, Q6", staff: "S. Khoury" },
+      { source: "incident_log", studentName: label(8), exam: "AFL", issueType: "النص لم يظهر بشكل صحيح", actionTaken: "Reloaded the item", questionsAffected: "Q5, Q6", staff: "Invigilator C" },
       { source: "complaint", studentName: label(5), email: "student5@example.org", school: "Alsama Shatila 1", description: "Felt the maths paper started late and was rushed at the end." },
     ];
     const incidents = rows.map((r) => this.buildTriageIncident(r));
