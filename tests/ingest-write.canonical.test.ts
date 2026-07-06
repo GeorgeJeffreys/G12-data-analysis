@@ -59,14 +59,14 @@ describe("ingestCleanResponses — richer canonical persistence (single rpc)", (
     const resitNames = new Set(canonical.resitForms.map((f) => f.name));
     const gradedResults = canonical.results.filter((r) => !resitNames.has(r.subject));
     expect(gradedResults.length).toBe(canonical.results.length - 1); // one "Applicable Maths" re-sit held out
-    expect(p.result_totals.length).toBe(gradedResults.length);
-    expect(p.result_totals.every((r) => typeof r.maximum_score === "number")).toBe(true);
+    expect(p.sittings.length).toBe(gradedResults.length);
+    expect(p.sittings.every((r) => typeof r.maximum_score === "number")).toBe(true);
     // The only attempt-2 sitting is the "Applicable Maths" re-sit, held out of the
     // graded set (surfaced via resitForms + the validation report instead).
     expect(canonical.results.some((r) => r.attemptNumber === 2)).toBe(true);
-    expect(p.result_totals.some((r) => r.attempt_number === 2)).toBe(false);
-    expect(p.result_totals.every((r) => r.sitting === "MAY2026")).toBe(true);
-    expect(p.result_totals.every((r) => r.reconciled === true)).toBe(true);
+    expect(p.sittings.some((r) => r.attempt_number === 2)).toBe(false);
+    expect(p.sittings.every((r) => r.sitting === "MAY2026")).toBe(true);
+    expect(p.sittings.every((r) => r.reconciled === true)).toBe(true);
 
     // topic_rollups: QM per-topic scores carried through, each with its topic id.
     expect(p.topic_rollups.length).toBeGreaterThan(0);
@@ -88,7 +88,7 @@ describe("ingestCleanResponses — richer canonical persistence (single rpc)", (
       createdBy: "user-1",
     });
     const p = calls[0]!.args.p_payload;
-    expect(p.result_totals).toHaveLength(0);
+    expect(p.sittings).toHaveLength(0);
     expect(p.topic_rollups).toHaveLength(0);
     // The engine matrix (assessments/items/participants/responses) is still written.
     expect(p.responses.length).toBeGreaterThan(0);

@@ -14,6 +14,32 @@ NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_h
 and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
 then `0020`.
 
+> **`0026_pipeline_natural_key_spine.sql` — REBUILD data processing to natural keys +
+> a clean fact-table baseline (run AFTER 0025).**
+> Run AFTER `0001`–`0025`, in the Supabase SQL editor (EU). Establishes the clean
+> natural-key model for the per-sitting fact tables: a first-class **`sittings`** table
+> keyed by the QM `ResultId` (`primary key (cycle_id, qm_result_id)`), **`responses`**
+> UNIQUE `(cycle_id, qm_result_id, question_id)` (one row per sitting × question — the
+> key that makes identical-profile sittings impossible to collide), and a **real delete
+> cascade** `responses → sittings → exam_cycles`. It DROPS + recreates only the three
+> leaf fact tables (`responses`, `result_totals` → renamed `sittings`, `topic_rollups`
+> — nothing has an inbound FK to them), so the metadata tables, the scoring-engine feed
+> (`engine-write.ts` reads `responses.item_id`/`participant_id`, retained as join
+> surrogates) and every unrelated feature are untouched. `ingest_persist` is rewritten
+> to filter → clear-then-write at the new grain (inserting the `sittings` spine before
+> its children); the delete/clear lifecycle references `sittings`. **This DROPS the
+> fact tables (test-only data — no backup); re-ingest the CSVs after running it.**
+> `schema_health()` now also asserts the `sittings` table, the
+> `(cycle_id, qm_result_id, question_id)` unique, and the responses→sittings cascade,
+> and reports `'0026'` (all 0025 auth probes retained). Verify with
+> `select public.schema_health();` (expect `ok=true`, `migration='0026'`), then on the
+> live app delete + re-ingest the `700435` CSVs into a fresh cycle → per-subject counts
+> **15 / 11 / 12 / 9 / 10**, Dalal Hasan present, no `ResultId` spanning >1 subject,
+> sitting-records ≫ participants; delete clears to the empty Upload state; re-uploading
+> keeps the counts; `reconcile.py` base scores reconcile 1:1. Engine parity 183/183
+> unchanged. Roll back with `0026_pipeline_natural_key_spine.rollback.sql` (restores the
+> pre-0026 fact tables + the 0025 probe).
+
 > **`0025_authorization_rebuild.sql` — REBUILD authorization to one simple, consistent
 > model (SUPERSEDES 0024; run this to reset auth cleanly and unblock admins).**
 > Run AFTER `0001`–`0024`, in the Supabase SQL editor (EU). Idempotent (`create or

@@ -16,8 +16,9 @@ export interface IngestPayload {
   assessments: Record<string, unknown>[];
   items: Record<string, unknown>[];
   participants: Record<string, unknown>[];
+  /** The sitting spine — natural key qm_result_id (migration 0026). */
+  sittings: Record<string, unknown>[];
   responses: Record<string, unknown>[];
-  result_totals: Record<string, unknown>[];
   topic_rollups: Record<string, unknown>[];
   import_batch: Record<string, unknown>;
 }

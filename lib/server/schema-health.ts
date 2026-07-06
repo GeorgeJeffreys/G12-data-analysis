@@ -15,7 +15,7 @@ import "server-only";
 import type { SupabaseAdminClient } from "@/lib/supabase/admin";
 
 /** The migration that brings a drifted DB current (see supabase/migrations). */
-export const BRING_CURRENT_MIGRATION = "0025_authorization_rebuild.sql";
+export const BRING_CURRENT_MIGRATION = "0026_pipeline_natural_key_spine.sql";
 
 export interface SchemaHealth {
   ok: boolean;
@@ -24,7 +24,7 @@ export interface SchemaHealth {
   missingFunctions: string[];
 }
 
-const HEALTHY: SchemaHealth = { ok: true, migration: "0025", missingColumns: [], missingFunctions: [] };
+const HEALTHY: SchemaHealth = { ok: true, migration: "0026", missingColumns: [], missingFunctions: [] };
 
 /**
  * Probe the live schema for the columns/functions the code requires. Returns a
@@ -54,7 +54,7 @@ export async function checkSchemaHealth(admin: SupabaseAdminClient): Promise<Sch
   };
   return {
     ok: d.ok ?? true,
-    migration: d.migration ?? "0025",
+    migration: d.migration ?? "0026",
     missingColumns: d.missing_columns ?? [],
     missingFunctions: d.missing_functions ?? [],
   };
