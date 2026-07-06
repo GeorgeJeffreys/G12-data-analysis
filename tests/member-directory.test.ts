@@ -58,12 +58,12 @@ describe("member directory — displayed identity = authenticated identity", () 
     }
   });
 
-  it("renders roles in the ONE canonical vocabulary (not 'G12 Lead'/'Data Scientist')", () => {
+  it("renders the WORKSPACE role in the ONE canonical vocabulary (not 'G12 Lead'/'Data Scientist')", () => {
     const byEmail = Object.fromEntries(buildMembersModel(ROWS, LAVINIA).members.map((m) => [m.email, m]));
     expect(byEmail["emailgeorgej@gmail.com"]!.roleName).toBe("Admin"); // lead_admin → admin
     expect(byEmail["george.jeffreys@alsamaproject.com"]!.roleName).toBe("Data analyst"); // analyst
-    expect(byEmail["lavinia.cavalet@alsamaproject.com"]!.roleName).toBe("G12 team member"); // reviewer → team
-    // roleId is the canonical tier (drives the dropdown + the write).
+    // Lavinia has NO workspace membership (only a cycle grant) → headline is "—".
+    expect(byEmail["lavinia.cavalet@alsamaproject.com"]!.roleName).toBe("—");
     expect(byEmail["emailgeorgej@gmail.com"]!.roleId).toBe("admin");
     // The role options are the three canonical tiers, never the mock role names.
     expect(buildMembersModel(ROWS, LAVINIA).roles.map((r) => r.name)).toEqual([
@@ -73,10 +73,10 @@ describe("member directory — displayed identity = authenticated identity", () 
     ]);
   });
 
-  it("shows the real membership scope (workspace-wide vs cycle-specific)", () => {
+  it("summarises the real scope (workspace-wide vs cycle-only)", () => {
     const byEmail = Object.fromEntries(buildMembersModel(ROWS, LAVINIA).members.map((m) => [m.email, m]));
     expect(byEmail["emailgeorgej@gmail.com"]!.scope).toBe("Workspace-wide");
-    expect(byEmail["lavinia.cavalet@alsamaproject.com"]!.scope).toBe("Cycle-specific");
+    expect(byEmail["lavinia.cavalet@alsamaproject.com"]!.scope).toBe("1 cycle grant");
   });
 
   it("encodes (user_id, cycle_id) in the row id so a write targets the exact scope", () => {
@@ -92,6 +92,41 @@ describe("member directory — displayed identity = authenticated identity", () 
 
   it("derives a display name from the email (auth.users has none)", () => {
     expect(nameFromEmail("lavinia.cavalet@alsamaproject.com")).toBe("Lavinia Cavalet");
+  });
+});
+
+describe("one row per person — grouping & exceptions", () => {
+  const CYCLE_B = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
+  const label = (id: string) => (id === CYCLE ? "May 2026" : id === CYCLE_B ? "Feb 2026" : id.slice(0, 4));
+
+  it("collapses a person's many memberships into ONE row (no duplicate people)", () => {
+    // George: workspace analyst + an Admin grant on one cycle + reviewer on another.
+    const rows: MemberDirRow[] = [
+      { user_id: GEORGE_G, email: "emailgeorgej@gmail.com", role: "analyst", cycle_id: null },
+      { user_id: GEORGE_G, email: "emailgeorgej@gmail.com", role: "lead_admin", cycle_id: CYCLE },
+      { user_id: GEORGE_G, email: "emailgeorgej@gmail.com", role: "reviewer", cycle_id: CYCLE_B },
+    ];
+    const model = buildMembersModel(rows, GEORGE_G, label);
+    expect(model.members).toHaveLength(1); // ONE row, not three
+    const p = model.members[0]!;
+    expect(p.roleName).toBe("Data analyst"); // workspace headline
+    // Both differing cycle grants are exceptions, sorted by label.
+    expect(p.exceptions).toEqual([
+      { cycleId: CYCLE_B, cycleLabel: "Feb 2026", roleId: "team_member", roleName: "G12 team member" },
+      { cycleId: CYCLE, cycleLabel: "May 2026", roleId: "admin", roleName: "Admin" },
+    ]);
+    expect(p.scope).toBe("Workspace-wide · 2 exceptions");
+  });
+
+  it("hides a cycle grant that MATCHES the workspace tier (not a real exception)", () => {
+    const rows: MemberDirRow[] = [
+      { user_id: GEORGE_G, email: "emailgeorgej@gmail.com", role: "lead_admin", cycle_id: null },
+      { user_id: GEORGE_G, email: "emailgeorgej@gmail.com", role: "lead_admin", cycle_id: CYCLE },
+    ];
+    const p = buildMembersModel(rows, GEORGE_G, label).members[0]!;
+    expect(p.exceptions).toEqual([]);
+    expect(p.scope).toBe("Workspace-wide");
+    expect(p.isWorkspaceAdmin).toBe(true);
   });
 });
 

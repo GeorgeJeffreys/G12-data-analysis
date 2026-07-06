@@ -1266,18 +1266,33 @@ export interface DocumentsModel {
 // --- Users & access (Settings) ----------------------------------------------
 export type MemberStatus = "active" | "invited";
 
+/** A cycle-specific grant that differs from a person's workspace role. */
+export interface MemberException {
+  cycleId: string;
+  cycleLabel: string;
+  roleId: string; // canonical tier
+  roleName: string; // canonical label
+}
+
 export interface Member {
+  /** The person's auth.users id — ONE row per person (not per membership). */
   id: string;
   name: string;
   email: string;
+  /** The workspace-wide role (canonical tier / label); "" / "—" when they hold
+   *  only cycle-specific grants. */
   roleId: string;
   roleName: string;
   status: MemberStatus;
   lastActive: string;
   /** True when this row IS the authenticated user (matched on the session id). */
   isCurrent: boolean;
-  /** Membership scope: workspace-wide vs a specific cycle (real memberships). */
+  /** Human scope summary (workspace-wide, N exceptions, cycle-only …). */
   scope?: string;
+  /** Cycle-specific grants that differ from the workspace role (else empty). */
+  exceptions?: MemberException[];
+  /** True when the person holds a workspace-wide admin (lead_admin) grant. */
+  isWorkspaceAdmin?: boolean;
 }
 
 export interface MembersModel {

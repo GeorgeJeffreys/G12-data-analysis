@@ -404,10 +404,13 @@ export interface DataProvider {
   unlockCycle(cycleId: string): void;
 
   // members & roles mutations
-  inviteMember(email: string, roleId: string): void;
+  inviteMember(email: string, roleId: string, cycleId?: string | null): void;
   setMemberRole(memberId: string, roleId: string): void;
   removeMember(memberId: string): void;
   resendInvite(memberId: string): void;
+  /** Last member-management error (last-admin guard, auth failure, …), or null. */
+  getMemberActionError?(): string | null;
+  clearMemberActionError?(): void;
   createRole(name: string): void;
   renameRole(roleId: string, name: string): void;
   deleteRole(roleId: string): void;

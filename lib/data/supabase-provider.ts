@@ -142,6 +142,8 @@ export class SupabaseDataProvider implements DataProvider {
   /** The REAL member roster (auth.users ⋈ memberships), via the list_members RPC.
    *  Replaces the mock member list entirely in the live app. */
   private realMembers: MemberDirRow[] = [];
+  /** Last member-management error, surfaced on the Users & access page. */
+  private memberError: string | null = null;
 
   constructor(private supabase: DB) {
     this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER);
@@ -339,7 +341,19 @@ export class SupabaseDataProvider implements DataProvider {
    *  flagged `isCurrent` by the session id, so displayed identity = authenticated
    *  identity. NOT the mock member list. */
   getMembers(): MembersModel {
-    return buildMembersModel(this.realMembers, this.user.id);
+    const cycleName = new Map(this.inner.listCycles().map((c) => [c.id, c.name]));
+    return buildMembersModel(this.realMembers, this.user.id, (id) => cycleName.get(id) ?? `Cycle ${id.slice(0, 8)}`);
+  }
+
+  /** Last member-management error (last-admin guard, auth failure, …) for the UI. */
+  getMemberActionError(): string | null {
+    return this.memberError;
+  }
+  clearMemberActionError(): void {
+    if (this.memberError !== null) {
+      this.memberError = null;
+      this.bump();
+    }
   }
 
   /** Load the real roster via the SECURITY DEFINER list_members RPC. */
@@ -615,30 +629,65 @@ export class SupabaseDataProvider implements DataProvider {
   // The UI passes a canonical TIER (team_member | analyst | admin) as roleId; we
   // persist a concrete member_role via storageRoleForTier. The member id encodes
   // (user_id, cycle_id) so the write targets the exact membership scope.
-  inviteMember(email: string, roleId: string): void {
-    const role = storageRoleForTier(roleId as RoleTier);
-    void this.mutateMembers("invite_member", { p_email: email.trim(), p_role: role, p_cycle: null });
+  // Invite → the Supabase invite flow + the initial membership grant (server route,
+  // service role). `roleId` is a canonical tier; cycleId null = workspace-wide.
+  inviteMember(email: string, roleId: string, cycleId?: string | null): void {
+    void (async () => {
+      this.memberError = null;
+      try {
+        const res = await fetch("/api/members/invite", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ email: email.trim(), role: roleId, cycleId: cycleId ?? null }),
+        });
+        if (!res.ok) {
+          const j = (await res.json().catch(() => ({}))) as { error?: string };
+          this.memberError = j.error ?? `Invite failed (${res.status})`;
+          this.bump();
+          return;
+        }
+      } catch (e) {
+        this.memberError = `Invite failed: ${(e as Error).message}`;
+        this.bump();
+        return;
+      }
+      await this.fetchMembers();
+      this.bump();
+    })();
   }
+
+  // Role change — bare memberId = the PERSON's workspace role (cycle_id NULL);
+  // `${userId}|${cycleId}` = a cycle-specific exception. Upserts either way, so a
+  // person with no workspace row gets one created (no duplicate rows).
   setMemberRole(memberId: string, roleId: string): void {
     const { userId, cycleId } = parseMemberKey(memberId);
     const role = storageRoleForTier(roleId as RoleTier);
-    void this.mutateMembers("set_member_role", { p_user: userId, p_cycle: cycleId, p_role: role });
+    void this.mutateMembers("upsert_member_role", { p_user: userId, p_cycle: cycleId, p_role: role });
   }
+  // Remove — a piped id removes ONE cycle exception; a bare person id removes the
+  // whole person (every membership row → access revoked).
   removeMember(memberId: string): void {
-    const { userId, cycleId } = parseMemberKey(memberId);
-    void this.mutateMembers("remove_member", { p_user: userId, p_cycle: cycleId });
+    if (memberId.includes("|")) {
+      const { userId, cycleId } = parseMemberKey(memberId);
+      void this.mutateMembers("remove_member", { p_user: userId, p_cycle: cycleId });
+    } else {
+      void this.mutateMembers("remove_person", { p_user: memberId });
+    }
   }
   resendInvite(_memberId: string): void {
     // Real accounts are already active; re-sending an auth invite is a Supabase
-    // auth (admin API) action, not a membership mutation. No-op here.
+    // auth (admin API) action handled by the invite route. No-op here.
   }
 
-  /** Run a member-directory write RPC, surface any error, then refresh the roster. */
+  /** Run a member-directory write RPC, surface any error to the UI, refresh roster. */
   private async mutateMembers(name: string, args: unknown): Promise<void> {
+    this.memberError = null;
     const { error } = await this.rpcData<unknown>(name, args);
     if (error) {
       // eslint-disable-next-line no-console
       console.error(`${name} failed:`, error.message);
+      this.memberError = error.message;
+      this.bump();
       return;
     }
     await this.fetchMembers();
