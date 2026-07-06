@@ -100,8 +100,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
       <div style={{ display: "flex", flexDirection: "column", padding: "16px 28px", gap: 12, flex: 1, minHeight: 0, minWidth: 0 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="hf-h2" style={{ fontSize: 16 }}>Raw scores — {model.assessment.shortName}</div>
-            <div className="hf-sub" style={{ fontSize: 12, marginTop: 2 }}>
+            <div className="hf-sub" style={{ fontSize: 12 }}>
               Straight from the answers, no items removed{model.mcqItems !== model.totalItems ? ` (showing ${model.mcqItems} scored MCQ items of ${model.totalItems})` : ""}.
             </div>
           </div>

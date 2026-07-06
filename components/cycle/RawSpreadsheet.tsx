@@ -24,6 +24,7 @@ export function RawSpreadsheet({
   scrollRef,
   zoomWrapStyle,
   maxHeight = 460,
+  fill = false,
   rtl = false,
   selectable = false,
   selCols,
@@ -36,6 +37,13 @@ export function RawSpreadsheet({
   scrollRef?: RefObject<HTMLDivElement>;
   zoomWrapStyle?: CSSProperties;
   maxHeight?: number;
+  /**
+   * Fill mode: instead of a fixed `maxHeight`, the scroll container flex-grows to
+   * consume the leftover vertical space of its parent (which must be a flex column
+   * with `minHeight: 0`). The sticky header row keeps working while rows scroll
+   * inside. Used by the Clean surface so the table owns the majority of the page.
+   */
+  fill?: boolean;
   rtl?: boolean;
   selectable?: boolean;
   selCols?: Set<string>;
@@ -83,7 +91,11 @@ export function RawSpreadsheet({
     <div
       ref={scrollRef}
       className="hf-card"
-      style={{ overflow: "auto", maxHeight, padding: 0, direction: rtl ? "rtl" : "ltr" }}
+      style={
+        fill
+          ? { overflow: "auto", flex: 1, minHeight: 0, padding: 0, direction: rtl ? "rtl" : "ltr" }
+          : { overflow: "auto", maxHeight, padding: 0, direction: rtl ? "rtl" : "ltr" }
+      }
     >
       <div style={zoomWrapStyle}>
         <table style={{ borderCollapse: "separate", borderSpacing: 0, fontSize: 12.5, width: "max-content", direction: "ltr" }}>
