@@ -14,6 +14,23 @@ NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_h
 and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
 then `0020`.
 
+> **`0028_members_manage.sql` — manage access entirely from the Users & access UI
+> (run AFTER 0027).**
+> Run AFTER `0001`–`0027`, in the Supabase SQL editor (EU). Additive SECURITY DEFINER
+> RPCs so an admin grants real permissions from the page with no SQL:
+> `upsert_member_role(user, cycle, role)` (create-or-update a membership; workspace =
+> `cycle = NULL`), `remove_member(user, cycle)` (one scope), `remove_person(user)`
+> (all memberships → revoke). Every write is admin-gated by `app.has_role`, and a
+> **last-workspace-admin guard** refuses a demote/remove that would drop the final
+> admin (no self-lockout). **No change to the C1 memberships schema, `member_role`
+> enum, `app.has_role`, or RLS.** `schema_health()` now asserts `upsert_member_role`
+> and reports `'0028'`. The "Invite person" button uses the Supabase invite flow via
+> the `/api/members/invite` server route (service role) — no migration needed for it.
+> Verify with `select public.schema_health();` (expect `ok=true`, `migration='0028'`),
+> then in the UI as an admin: change a person's workspace role to Admin → they can
+> delete/replace immediately (no SQL); the last-admin guard blocks self-lockout.
+> Engine parity 183/183 unchanged. Roll back with `0028_members_manage.rollback.sql`.
+
 > **`0026_pipeline_natural_key_spine.sql` — REBUILD data processing to natural keys +
 > a clean fact-table baseline (run AFTER 0025).**
 > Run AFTER `0001`–`0025`, in the Supabase SQL editor (EU). Establishes the clean
