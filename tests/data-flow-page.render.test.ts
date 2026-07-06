@@ -32,7 +32,7 @@ async function render(cycleId: string): Promise<string> {
 const liveId = (p: DataProvider) => p.listCycles().find((c) => c.live)!.id;
 
 describe("Data flow — within-cycle pipeline inspector", () => {
-  it("renders the healthy state for the fixed live cycle (flow strip, no loss)", async () => {
+  it("renders the healthy state for the fixed live cycle (flow strip + per-stage tables, no loss)", async () => {
     const p = new InMemoryDataProvider();
     activeProvider = p;
     const cid = liveId(p);
@@ -45,9 +45,18 @@ describe("Data flow — within-cycle pipeline inspector", () => {
     for (const s of ["Ingested", "Cleaned cohort", "Score matrix", "Computed scores"]) expect(html).toContain(s);
     // Every subject appears in the strip.
     for (const s of buildDataFlow(p, cid)!.subjects) expect(html).toContain(s.subj);
-    // Healthy layout omits the collapse-only sections.
+    // A healthy cycle is NOT flagged as a collapse.
     expect(html).not.toContain("Collapse detected");
-    expect(html).not.toContain("Drill by participant");
+    // The full per-stage data tables + participant drill are always shown, so a user
+    // can inspect the real rows at each step even when nothing was lost. The default
+    // stage is the source (Ingested), whose input is the raw response matrix.
+    expect(html).toContain("Inside a stage");
+    expect(html).toContain("Drill by participant");
+    // The raw response matrix renders real per-question columns (Q1, Q2, …).
+    expect(html).toContain(">Q1<");
+    // Real participant identity (email / student id) appears in the table rows.
+    const someSubject = buildDataFlow(p, cid)!.subjects.find((s) => s.people.length > 0)!;
+    expect(html).toContain(someSubject.people[0]!.email);
   });
 
   it("renders the collapse layout (strip + stage detail + drill) when a real post-Clean drop exists", async () => {
