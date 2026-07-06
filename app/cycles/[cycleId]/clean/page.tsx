@@ -32,11 +32,11 @@ import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
 import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
 import { StepIntro } from "@/components/ui/StepIntro";
+import { MetricStrip, type MetricDatum } from "@/components/ui/MetricStrip";
 import { downloadWorkbook, fileStem } from "@/lib/ui/export";
 import type {
   RawDataModel,
   CleaningImpactModel,
-  CleaningImpactStat,
   CleaningImpactSubject,
   CleaningSummaryModel,
   CleaningSummarySubject,
@@ -82,6 +82,10 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
   // in the provider and persists; the stack only lets us reverse the last action).
   const [selRows, setSelRows] = useState<Set<string>>(new Set());
   const [undoStack, setUndoStack] = useState<CleanAction[]>([]);
+  // Collapsible detail panels folded into the merged metrics strip: the subject's
+  // per-element / per-status breakdown, and the raw-data items breakdown.
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   const excludedRows = useMemo(() => new Set(model?.excludedRows ?? []), [model]);
   const toggleRow = (id: string) =>
@@ -184,7 +188,8 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
         <StepIntro>
           This step defines who and what counts. We remove staff, test and invalid results and correct
           data-quality issues, because every score, cut point, grade and award downstream is only as trustworthy
-          as the cohort and data it is built on. Removals here are reversible and logged.
+          as the cohort and data it is built on. Click a participant row to select it; removed rows are struck
+          through (not deleted), stay reversible and logged, and your raw file is never touched.
         </StepIntro>
       }
     >
@@ -192,37 +197,41 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
         {isOverall ? (
           /* ── Overall tab: the cross-subject, global view ──────────────────── */
           <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            {impact && <ImpactPanel model={impact} />}
+            {impact && <OverallMetrics model={impact} />}
             <div style={{ flex: 1, padding: "16px 24px", overflow: "auto", minHeight: 0 }}>
               {summary && <SummaryTab model={summary} />}
             </div>
           </div>
         ) : (
-          /* ── Subject tab: this subject's impact + stats + cleaning surface ── */
+          /* ── Subject tab: one merged metrics strip + the cleaning surface ── */
           <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-            {impact && (
-              <SubjectImpactPanel
-                subject={impact.bySubject.find((s) => s.assessmentId === assessmentId)}
+            <SubjectMetrics
+              subject={impact?.bySubject.find((s) => s.assessmentId === assessmentId)}
+              summary={summary?.subjects.find((s) => s.assessmentId === assessmentId)}
+              raw={raw}
+              detailOpen={detailOpen}
+              onToggleDetail={() => setDetailOpen((v) => !v)}
+              breakdownOpen={breakdownOpen}
+              onToggleBreakdown={() => setBreakdownOpen((v) => !v)}
+            />
+            {detailOpen && (
+              <SubjectDetail
+                subject={impact?.bySubject.find((s) => s.assessmentId === assessmentId)}
                 summary={summary?.subjects.find((s) => s.assessmentId === assessmentId)}
-                fallbackName={model.assessment.shortName}
               />
             )}
+            {breakdownOpen && raw && <RawBreakdown model={raw} />}
             <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
-              <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "16px 24px", gap: 12, minWidth: 0 }}>
-              {raw && <RawOverview model={raw} />}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div className="hf-h2" style={{ fontSize: 16 }}>Clean data — {model.assessment.shortName}</div>
-                <div className="hf-sub" style={{ fontSize: 12, marginTop: 2 }}>
-                  Select participant rows and remove staff / test / invalid results. Removed rows are struck through (not deleted) and stay reversible; your raw file is never touched.
-                </div>
-              </div>
-
-              {/* selection + soft-delete action bar */}
-              <div style={{ display: "flex", gap: 10, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "12px 24px 16px", gap: 10, minWidth: 0, minHeight: 0 }}>
+              {/* selection + soft-delete action bar — attached directly above the table */}
+              <div style={{ display: "flex", gap: 10, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center", flexWrap: "wrap", flex: "0 0 auto" }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: "#fff" }}>
                   {selRows.size === 0 ? "Click a participant row to select it" : `${selRows.size} row${selRows.size === 1 ? "" : "s"} selected`}
                 </span>
                 {excludedRows.size > 0 && <Badge tone="bad">{excludedRows.size} removed</Badge>}
+                {excludedRows.size > 0 && (
+                  <button type="button" onClick={restoreAll} className="hf-btn ghost" style={{ fontSize: 11, color: H.cream, borderColor: H.slate2 }}>Restore all</button>
+                )}
                 <div style={{ flex: 1 }} />
                 <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selRows.size === 0} onClick={clearSel}>Clear</Button>
                 <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={undoStack.length === 0} onClick={undo} title="Undo the last remove / restore">
@@ -236,20 +245,11 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
                 </Button>
               </div>
 
-              <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                <span className="hf-lbl">Participants / results</span>
-                {excludedRows.size > 0 && (
-                  <button type="button" onClick={restoreAll} className="hf-btn ghost" style={{ fontSize: 11 }}>Restore all removed</button>
-                )}
-                <div style={{ flex: 1 }} />
-                <span className="hf-sub" style={{ fontSize: 11, fontStyle: "italic" }}>struck-through = removed (excluded from scores) · click a row to select</span>
-              </div>
-
               <RawSpreadsheet
                 model={model}
                 scrollRef={scrollRef}
                 zoomWrapStyle={zoomWrapStyle}
-                maxHeight={440}
+                fill
                 rtl={model.assessment.rtl}
                 selectable
                 selRows={selRows}
@@ -292,135 +292,139 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
   );
 }
 
-/** before → after with the delta highlighted. `suffix` (e.g. "%") is appended to
- *  each figure; when set, the delta line is suppressed (a %-point delta is noise). */
-function StatPair({ label, stat, big, suffix }: { label: string; stat: CleaningImpactStat; big?: boolean; suffix?: string }) {
-  const delta = stat.after - stat.before;
-  const changed = delta !== 0;
+/** A quiet inline strip toggle (chevron + label), matching the "Show breakdown"
+ *  affordance used across the step pages. Label is text (not colour) so the
+ *  open/closed state is legible without the accent. */
+function StripToggle({ open, onClick, closedLabel, openLabel }: { open: boolean; onClick: () => void; closedLabel: string; openLabel: string }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
-      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
-      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 600, color: H.ink3 }}>{stat.before.toLocaleString()}{suffix}</span>
-        <Icon name="arrow" size={big ? 15 : 12} color={H.ink3} />
-        <span className="hf-mono" style={{ fontSize: big ? 20 : 15, fontWeight: 700, color: changed ? H.pink : H.ink }}>{stat.after.toLocaleString()}{suffix}</span>
-      </div>
-      {changed && !suffix && <span className="hf-mono" style={{ fontSize: 10.5, fontWeight: 700, color: H.pink }}>{delta > 0 ? "+" : ""}{delta.toLocaleString()}</span>}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-expanded={open}
+      className="hf-btn ghost"
+      style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
+    >
+      {open ? openLabel : closedLabel}
+      <span style={{ display: "inline-flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+        <Icon name="chev" size={12} color={H.ink3} />
+      </span>
+    </button>
   );
 }
 
 /**
- * The subject-scoped counterpart to ImpactPanel, shown at the top of each subject
- * tab. Every figure is THAT subject's own: its records + participants before →
- * after, its records excluded, and (expandable) its per-major-element breakdown,
- * alongside its own summary stats — mean / median / std % and completion by
- * ResultStatus (before → after). No global figures appear here.
+ * The single merged metrics strip for a subject tab — replaces the old stacked
+ * "cleaning impact" + raw-overview stat blocks. One row of single live values,
+ * with a delta token ("was 251") appearing only on the metrics a removal actually
+ * changed (Records / Participants / Mean / Median / Std dev); the structural
+ * counts (Items / Major elements / Sub-elements / D1·D2·D3) never carry a delta.
+ * Participants appears once. "Records excluded" is a quiet inline state, not a
+ * card. The two detail toggles ("By element & status", "Show breakdown") sit
+ * inline on the right.
  */
-function SubjectImpactPanel({
+function SubjectMetrics({
   subject,
   summary,
-  fallbackName,
+  raw,
+  detailOpen,
+  onToggleDetail,
+  breakdownOpen,
+  onToggleBreakdown,
 }: {
   subject: CleaningImpactSubject | undefined;
   summary: CleaningSummarySubject | undefined;
-  fallbackName: string;
+  raw: RawDataModel | null;
+  detailOpen: boolean;
+  onToggleDetail: () => void;
+  breakdownOpen: boolean;
+  onToggleBreakdown: () => void;
 }) {
-  const [open, setOpen] = useState(false);
-  if (!subject) {
+  const metrics: MetricDatum[] = [];
+  if (subject) {
+    metrics.push({ label: "Records", value: subject.records.after, was: subject.records.before, big: true });
+    metrics.push({ label: "Participants", value: subject.participants.after, was: subject.participants.before, big: true });
+  }
+  if (raw) {
+    metrics.push({ label: "Items", value: raw.items });
+    metrics.push({ label: "Major elements", value: raw.elementsCount });
+    metrics.push({ label: "Sub-elements", value: raw.subElementsCount });
+    metrics.push({ label: "D1·D2·D3", value: `${raw.demand.D1}·${raw.demand.D2}·${raw.demand.D3}` });
+  }
+  if (summary) {
+    metrics.push({ label: "Mean %", value: summary.after.mean, was: summary.before.mean, suffix: "%" });
+    metrics.push({ label: "Median %", value: summary.after.median, was: summary.before.median, suffix: "%" });
+    metrics.push({ label: "Std dev %", value: summary.after.sd, was: summary.before.sd, suffix: "%" });
+  }
+  const excludedRecords = subject ? subject.records.before - subject.records.after : 0;
+  const excludedParticipants = subject ? subject.participants.before - subject.participants.after : 0;
+  const hasDetail = (subject?.byElement.length ?? 0) > 0 || (summary?.statusCounts.length ?? 0) > 0;
+  const hasBreakdown = !!raw && raw.byElement.length > 0;
+
+  if (metrics.length === 0) {
     return (
       <div style={{ borderBottom: `1px solid ${H.line2}`, background: H.canvas, padding: "12px 24px" }}>
-        <span className="hf-h2" style={{ fontSize: 14 }}>Cleaning impact — {fallbackName}</span>
-        <div className="hf-sub" style={{ fontSize: 11 }}>No scored records for this subject.</div>
+        <span className="hf-sub" style={{ fontSize: 12 }}>No scored records for this subject.</span>
       </div>
     );
   }
-  const excludedRecords = subject.records.before - subject.records.after;
-  const excludedParticipants = subject.participants.before - subject.participants.after;
-  const meanStat = summary && { before: summary.before.mean, after: summary.after.mean };
-  const medianStat = summary && { before: summary.before.median, after: summary.after.median };
-  const sdStat = summary && { before: summary.before.sd, after: summary.after.sd };
-  const hasDetail = subject.byElement.length > 0 || (summary?.statusCounts.length ?? 0) > 0;
-  return (
-    <div style={{ borderBottom: `1px solid ${H.line2}`, background: H.canvas, padding: "12px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexDirection: "column", paddingRight: 4 }}>
-          <span className="hf-h2" style={{ fontSize: 14 }}>Cleaning impact — {subject.shortName}</span>
-          <span className="hf-sub" style={{ fontSize: 10.5 }}>this subject · before → after · live</span>
-        </div>
-        <StatPair label="Records" stat={subject.records} big />
-        <StatPair label="Participants" stat={subject.participants} big />
-        <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
-          <span className="hf-lbl" style={{ fontSize: 9.5 }}>Records excluded</span>
-          <span className="hf-mono" style={{ fontSize: 20, fontWeight: 700, color: excludedRecords ? H.bad : H.ink }}>
-            {excludedRecords.toLocaleString()}
-          </span>
-          <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{excludedParticipants} participant{excludedParticipants === 1 ? "" : "s"}</span>
-        </div>
-        {meanStat && <StatPair label="Mean %" stat={meanStat} suffix="%" />}
-        {medianStat && <StatPair label="Median %" stat={medianStat} suffix="%" />}
-        {sdStat && <StatPair label="Std dev %" stat={sdStat} suffix="%" />}
-        <div style={{ flex: 1, minWidth: 12 }} />
-        {hasDetail && (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="hf-btn ghost"
-            style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
-          >
-            {open ? "Hide detail" : "By element & status"}
-            <span style={{ display: "inline-flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
-              <Icon name="chev" size={12} color={H.ink3} />
-            </span>
-          </button>
-        )}
-      </div>
 
-      {open && hasDetail && (
-        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", paddingTop: 4 }}>
-          {subject.byElement.length > 0 && (
-            <div style={{ flex: 1, minWidth: 280 }}>
-              <span className="hf-lbl">Records per major element (before → after)</span>
-              <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
-                <tbody>
-                  {subject.byElement.map((e) => {
-                    const d = e.records.after - e.records.before;
-                    return (
-                      <tr key={e.major}>
-                        <td style={{ padding: "3px 8px 3px 0", color: H.ink, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.label}>{e.label}</td>
-                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{e.records.before.toLocaleString()}</td>
-                        <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
-                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{e.records.after.toLocaleString()}</td>
-                        <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          {summary && summary.statusCounts.length > 0 && (
-            <div style={{ flex: 1, minWidth: 260 }}>
-              <span className="hf-lbl">Completion by result status (before → after)</span>
-              <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
-                <tbody>
-                  {summary.statusCounts.map((r) => {
-                    const d = r.after - r.before;
-                    return (
-                      <tr key={r.status}>
-                        <td style={{ padding: "3px 8px 3px 0", color: H.ink }}>{r.status}</td>
-                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{r.before.toLocaleString()}</td>
-                        <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
-                        <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{r.after.toLocaleString()}</td>
-                        <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
+  return (
+    <MetricStrip
+      metrics={metrics}
+      note={
+        <span style={{ color: excludedRecords ? H.bad : H.ink3, fontWeight: excludedRecords ? 700 : 400 }}>
+          {excludedRecords.toLocaleString()} excluded{excludedParticipants ? ` · ${excludedParticipants} participant${excludedParticipants === 1 ? "" : "s"}` : ""}
+        </span>
+      }
+      right={
+        <>
+          {hasDetail && <StripToggle open={detailOpen} onClick={onToggleDetail} closedLabel="By element & status" openLabel="Hide detail" />}
+          {hasBreakdown && <StripToggle open={breakdownOpen} onClick={onToggleBreakdown} closedLabel="Show breakdown" openLabel="Hide breakdown" />}
+        </>
+      }
+    />
+  );
+}
+
+/**
+ * The Overall (cross-subject) metrics strip — cohort participants + total records
+ * as single live values with delta-on-change, and a quiet "records excluded"
+ * state. The "By subject & element" detail (per-subject / per-element record
+ * tables) folds out below on toggle.
+ */
+function OverallMetrics({ model }: { model: CleaningImpactModel }) {
+  const [open, setOpen] = useState(false);
+  const metrics: MetricDatum[] = [
+    { label: "Participants", value: model.participants.after, was: model.participants.before, big: true },
+    { label: "Records (all exams)", value: model.records.after, was: model.records.before, big: true },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column" }}>
+      <MetricStrip
+        metrics={metrics}
+        lead={
+          <div style={{ display: "flex", flexDirection: "column", paddingRight: 4 }}>
+            <span className="hf-h2" style={{ fontSize: 13 }}>Cleaning impact</span>
+            <span className="hf-sub" style={{ fontSize: 10 }}>live · single value, delta on change</span>
+          </div>
+        }
+        note={
+          <span style={{ color: model.excludedRecords ? H.bad : H.ink3, fontWeight: model.excludedRecords ? 700 : 400 }}>
+            {model.excludedRecords.toLocaleString()} excluded{model.excludedParticipants ? ` · ${model.excludedParticipants} participant${model.excludedParticipants === 1 ? "" : "s"}` : ""}
+          </span>
+        }
+        right={<StripToggle open={open} onClick={() => setOpen((v) => !v)} closedLabel="By subject & element" openLabel="Hide detail" />}
+      />
+      {open && (
+        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "12px 24px", borderBottom: `1px solid ${H.line2}`, background: H.paper }}>
+          <div style={{ flex: 1, minWidth: 320 }}>
+            <span className="hf-lbl">Records per subject</span>
+            <DeltaTable rows={model.bySubject.map((s) => ({ key: s.assessmentId, label: s.shortName, before: s.records.before, after: s.records.after }))} />
+          </div>
+          <div style={{ flex: 1, minWidth: 280 }}>
+            <span className="hf-lbl">Records per major element</span>
+            <DeltaTable rows={model.byElement.map((e) => ({ key: e.major, label: e.label, before: e.records.before, after: e.records.after }))} />
+          </div>
         </div>
       )}
     </div>
@@ -428,83 +432,58 @@ function SubjectImpactPanel({
 }
 
 /**
- * The prominent, always-visible cleaning-impact panel pinned at the top of Clean.
- * "Before" is the full ingested set; "after" is the set minus currently-excluded
- * rows — both recompute live on every soft-delete / restore / undo.
+ * A compact "live value, delta on change" table used inside the collapsible detail
+ * panels: one row per item showing the current value and, only when a removal
+ * moved it, a muted "was N" token. Never renders the full `before → after` pair.
  */
-function ImpactPanel({ model }: { model: CleaningImpactModel }) {
-  const [open, setOpen] = useState(false);
+function DeltaTable({ rows }: { rows: { key: string; label: string; before: number; after: number }[] }) {
   return (
-    <div style={{ borderBottom: `1px solid ${H.line2}`, background: H.canvas, padding: "12px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexDirection: "column", paddingRight: 4 }}>
-          <span className="hf-h2" style={{ fontSize: 14 }}>Cleaning impact</span>
-          <span className="hf-sub" style={{ fontSize: 10.5 }}>before → after · live</span>
-        </div>
-        <StatPair label="Participants" stat={model.participants} big />
-        <StatPair label="Records (all exams)" stat={model.records} big />
-        <div style={{ display: "flex", flexDirection: "column", gap: 3, padding: "0 18px", borderLeft: `1px solid ${H.line}` }}>
-          <span className="hf-lbl" style={{ fontSize: 9.5 }}>Records excluded</span>
-          <span className="hf-mono" style={{ fontSize: 20, fontWeight: 700, color: model.excludedRecords ? H.bad : H.ink }}>
-            {model.excludedRecords.toLocaleString()}
-          </span>
-          <span className="hf-mono" style={{ fontSize: 10.5, color: H.ink3 }}>{model.excludedParticipants} participant{model.excludedParticipants === 1 ? "" : "s"}</span>
-        </div>
-        <div style={{ flex: 1, minWidth: 12 }} />
-        <button
-          type="button"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
-          className="hf-btn ghost"
-          style={{ fontSize: 11.5, display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
-        >
-          {open ? "Hide detail" : "By subject & element"}
-          <span style={{ display: "inline-flex", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
-            <Icon name="chev" size={12} color={H.ink3} />
-          </span>
-        </button>
-      </div>
+    <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
+      <tbody>
+        {rows.map((r) => {
+          const d = r.after - r.before;
+          return (
+            <tr key={r.key}>
+              <td style={{ padding: "3px 8px 3px 0", color: H.ink, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={r.label}>{r.label}</td>
+              <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{r.after.toLocaleString()}</td>
+              <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: H.ink3, fontSize: 11, whiteSpace: "nowrap" }}>{d ? `was ${r.before.toLocaleString()}` : "·"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
 
-      {open && (
-        <div style={{ display: "flex", gap: 22, flexWrap: "wrap", paddingTop: 4 }}>
-          <div style={{ flex: 1, minWidth: 320 }}>
-            <span className="hf-lbl">Records per subject (before → after)</span>
-            <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
-              <tbody>
-                {model.bySubject.map((s) => {
-                  const d = s.records.after - s.records.before;
-                  return (
-                    <tr key={s.assessmentId}>
-                      <td style={{ padding: "3px 8px 3px 0", color: H.ink }}>{s.shortName}</td>
-                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{s.records.before.toLocaleString()}</td>
-                      <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
-                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{s.records.after.toLocaleString()}</td>
-                      <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ flex: 1, minWidth: 280 }}>
-            <span className="hf-lbl">Records per major element (before → after)</span>
-            <table style={{ borderCollapse: "collapse", width: "100%", marginTop: 6, fontSize: 12 }}>
-              <tbody>
-                {model.byElement.map((e) => {
-                  const d = e.records.after - e.records.before;
-                  return (
-                    <tr key={e.major}>
-                      <td style={{ padding: "3px 8px 3px 0", color: H.ink, maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={e.label}>{e.label}</td>
-                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: H.ink3 }}>{e.records.before.toLocaleString()}</td>
-                      <td style={{ padding: "3px 2px", color: H.ink3 }}>→</td>
-                      <td className="hf-mono" style={{ padding: "3px 6px", textAlign: "right", color: d ? H.pink : H.ink, fontWeight: 600 }}>{e.records.after.toLocaleString()}</td>
-                      <td className="hf-mono" style={{ padding: "3px 0 3px 8px", textAlign: "right", color: d ? H.bad : H.ink3, fontSize: 11 }}>{d ? d.toLocaleString() : "·"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+/**
+ * The subject tab's collapsible detail panel (folds out from the "By element &
+ * status" toggle on the merged metrics strip): this subject's records per major
+ * element and completion by result status, each as a live value with a muted
+ * "was N" token only when a removal changed it — never the full before → after
+ * pair.
+ */
+function SubjectDetail({
+  subject,
+  summary,
+}: {
+  subject: CleaningImpactSubject | undefined;
+  summary: CleaningSummarySubject | undefined;
+}) {
+  const hasElement = (subject?.byElement.length ?? 0) > 0;
+  const hasStatus = (summary?.statusCounts.length ?? 0) > 0;
+  if (!hasElement && !hasStatus) return null;
+  return (
+    <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "12px 24px", borderBottom: `1px solid ${H.line2}`, background: H.paper }}>
+      {hasElement && (
+        <div style={{ flex: 1, minWidth: 280 }}>
+          <span className="hf-lbl">Records per major element</span>
+          <DeltaTable rows={subject!.byElement.map((e) => ({ key: e.major, label: e.label, before: e.records.before, after: e.records.after }))} />
+        </div>
+      )}
+      {hasStatus && (
+        <div style={{ flex: 1, minWidth: 260 }}>
+          <span className="hf-lbl">Completion by result status</span>
+          <DeltaTable rows={summary!.statusCounts.map((r) => ({ key: r.status, label: r.status, before: r.before, after: r.after }))} />
         </div>
       )}
     </div>
@@ -517,13 +496,14 @@ function ImpactPanel({ model }: { model: CleaningImpactModel }) {
  * denominator) and completion counts by ResultStatus.
  */
 function SummaryTab({ model }: { model: CleaningSummaryModel }) {
+  // One live value; a muted "was N" token only when cleaning moved it — never the
+  // full before → after pair.
   const distCell = (before: number, after: number, suffix = "") => {
     const changed = Math.abs(after - before) > 1e-9;
     return (
-      <span>
-        <span className="hf-mono" style={{ color: H.ink3 }}>{before}{suffix}</span>
-        <span style={{ color: H.ink3 }}> → </span>
+      <span style={{ display: "inline-flex", alignItems: "baseline", gap: 6, justifyContent: "flex-end" }}>
         <span className="hf-mono" style={{ color: changed ? H.pink : H.ink, fontWeight: 600 }}>{after}{suffix}</span>
+        {changed && <span className="hf-mono" style={{ color: H.ink3, fontSize: 11 }}>was {before}{suffix}</span>}
       </span>
     );
   };
@@ -535,7 +515,7 @@ function SummaryTab({ model }: { model: CleaningSummaryModel }) {
       </div>
 
       <div>
-        <span className="hf-lbl">Score distribution by subject (before → after cleaning)</span>
+        <span className="hf-lbl">Score distribution by subject</span>
         <div className="hf-card" style={{ padding: 0, marginTop: 8, overflow: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
             <thead>
@@ -564,12 +544,12 @@ function SummaryTab({ model }: { model: CleaningSummaryModel }) {
       </div>
 
       <div>
-        <span className="hf-lbl">Completion by result status (before → after cleaning)</span>
+        <span className="hf-lbl">Completion by result status</span>
         <div className="hf-card" style={{ padding: 0, marginTop: 8, overflow: "auto" }}>
           <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 12.5 }}>
             <thead>
               <tr style={{ background: H.canvas }}>
-                {["Result status", "Sittings (before → after)"].map((h, i) => (
+                {["Result status", "Sittings"].map((h, i) => (
                   <th key={h} style={{ textAlign: i === 0 ? "left" : "right", padding: "8px 12px", borderBottom: `1px solid ${H.line2}`, fontWeight: 700, color: H.ink2 }}>{h}</th>
                 ))}
               </tr>
@@ -590,46 +570,15 @@ function SummaryTab({ model }: { model: CleaningSummaryModel }) {
 }
 
 /**
- * Read-only raw-data overview, folded in from the old standalone Raw data step:
- * exactly what was uploaded, before any cleaning — a compact summary band plus the
- * by-element and by-demand breakdowns (collapsed by default).
+ * The raw-data breakdown panel — folds out from the "Show breakdown" toggle on the
+ * merged metrics strip. The summary counts (participants / items / elements /
+ * demand split) now live in that strip, so this panel is just the detail: items by
+ * major element & sub-element, and items by demand level. Read-only; exactly what
+ * was uploaded, before any cleaning.
  */
-function RawOverview({ model }: { model: RawDataModel }) {
-  const [showBreakdown, setShowBreakdown] = useState(false);
-  const stat = (n: string | number, label: string, accent?: boolean) => (
-    <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 16px", borderLeft: `1px solid ${H.line}` }}>
-      <span className="hf-mono" style={{ fontSize: String(n).length > 6 ? 15 : 18, fontWeight: 600, color: accent ? H.pink : H.ink }}>{n}</span>
-      <span className="hf-lbl" style={{ fontSize: 9.5 }}>{label}</span>
-    </div>
-  );
+function RawBreakdown({ model }: { model: RawDataModel }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      <div style={{ display: "flex", alignItems: "center", border: `1px solid ${H.line2}`, borderRadius: 10, background: H.paper, padding: "9px 0", flexWrap: "wrap" }}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "0 16px" }}>
-          <span className="hf-mono" style={{ fontSize: 18, fontWeight: 600 }}>{model.participants}</span>
-          <span className="hf-lbl" style={{ fontSize: 9.5 }}>Participants</span>
-        </div>
-        {stat(model.items, "Items", true)}
-        {stat(model.elementsCount, "Major elements")}
-        {stat(model.subElementsCount, "Sub-elements")}
-        {stat(`${model.demand.D1}·${model.demand.D2}·${model.demand.D3}`, "D1·D2·D3")}
-        <div style={{ flex: 1, minWidth: 12 }} />
-        <button
-          type="button"
-          onClick={() => setShowBreakdown((v) => !v)}
-          aria-expanded={showBreakdown}
-          className="hf-btn ghost"
-          style={{ fontSize: 11.5, margin: "0 14px", display: "inline-flex", alignItems: "center", gap: 5, whiteSpace: "nowrap" }}
-        >
-          {showBreakdown ? "Hide breakdown" : "Show breakdown"}
-          <span style={{ display: "inline-flex", transform: showBreakdown ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
-            <Icon name="chev" size={12} color={H.ink3} />
-          </span>
-        </button>
-      </div>
-
-      {showBreakdown && (
-      <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "14px 18px", border: `1px solid ${H.line}`, borderRadius: 10, background: H.paper }}>
+      <div style={{ display: "flex", gap: 22, flexWrap: "wrap", padding: "12px 24px", borderBottom: `1px solid ${H.line2}`, background: H.paper }}>
         <div style={{ flex: 2, minWidth: 280, display: "flex", flexDirection: "column", gap: 9 }}>
           <span className="hf-lbl">Items by major element &amp; sub-element</span>
           {model.byElement.map((el, i) => {
@@ -663,7 +612,5 @@ function RawOverview({ model }: { model: RawDataModel }) {
           })}
         </div>
       </div>
-      )}
-    </div>
   );
 }

@@ -87,11 +87,8 @@ export default function AssessmentHealthPage({ params }: { params: { cycleId: st
       }
     >
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        <div className="hf-pad" style={{ padding: "22px 28px 0" }}>
-          <div style={{ display: "flex", gap: 11, alignItems: "center", flexWrap: "wrap" }}>
-            <div className="hf-h1">Assessment Health</div>
-          </div>
-          <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>
+        <div className="hf-pad" style={{ padding: "14px 28px 0" }}>
+          <div className="hf-sub" style={{ maxWidth: 720 }}>
             A whole-assessment health check — was the paper timed right, and is it internally consistent — before results
             are confirmed. Demand-level and item
             breakdowns live on the <Link href={`/cycles/${cycleId}/diagnostics-hub`} style={{ color: H.pink, fontWeight: 600 }}>Diagnostics</Link> tab.
