@@ -69,11 +69,13 @@ const SUBJECTS = {
 describe("pipeline count assertion — 700435 natural-key spine", () => {
   let sittings: Row[];
   let responses: Row[];
+  let topicRollups: Row[];
 
   beforeAll(async () => {
     const payload = await ingest();
     sittings = payload.sittings as Row[];
     responses = payload.responses as Row[];
+    topicRollups = payload.topic_rollups as Row[];
   });
 
   it("persists sittings keyed by qm_result_id, well above the participant count", () => {
@@ -130,5 +132,27 @@ describe("pipeline count assertion — 700435 natural-key spine", () => {
   it("responses are unique at the natural (qm_result_id, question_id) grain", () => {
     const key = new Set(responses.map((r) => `${r.qm_result_id}|${r.question_id}`));
     expect(key.size).toBe(responses.length);
+  });
+
+  // Topic rollups persist WITHOUT a duplicate-key error (the 0026 regression): the
+  // grain is one row per (cycle_id, qm_result_id, qm_topic_id), which 0028 restores
+  // as the unique key. Distinct topics that share a leaf display name within one
+  // sitting (different TopicId/TopicPath — the documented English-comprehension case)
+  // must BOTH survive; the constraint on the name would have collided on them.
+  it("topic rollups hold one row per (qm_result_id, qm_topic_id) — the 0028 grain, collision-free", () => {
+    expect(topicRollups.length).toBeGreaterThan(0);
+
+    // The persisted grain (== the 0028 unique key) has no duplicates → a real DB
+    // insert cannot violate the constraint.
+    const idKey = new Set(topicRollups.map((t) => `${t.qm_result_id}|${t.qm_topic_id}`));
+    expect(idKey.size).toBe(topicRollups.length);
+
+    // The OLD 0026 name key WOULD have collided — proving the constraint was on the
+    // wrong column and the distinct-topic rows are genuinely preserved, not merged.
+    const nameKeys = topicRollups.map((t) => `${t.qm_result_id}|${t.topic_name}`);
+    expect(new Set(nameKeys).size).toBeLessThan(nameKeys.length);
+
+    // Every rollup carries its TopicId (the grain column).
+    expect(topicRollups.every((t) => !!t.qm_topic_id)).toBe(true);
   });
 });
