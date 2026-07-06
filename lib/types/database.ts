@@ -82,6 +82,9 @@ export interface ExamCycleRow {
   year_id: string | null;
   /** 0005 — which sitting of the year this pipeline run is. */
   sitting: SittingPeriod | null;
+  /** 0031 — the exam date the human picked when creating the sitting (ISO date,
+   *  NULL when not set). Display/reference only — not a key. */
+  sitting_date: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -537,7 +540,8 @@ export interface Database {
     Functions: {
       // 0001
       create_cycle: { Args: { p_name: string; p_region?: string }; Returns: ExamCycleRow };
-      // 0004 (extended in 0005 with year_id / sitting; in 0010 with test_centre_id)
+      // 0004 (extended in 0005 with year_id / sitting; in 0010 with test_centre_id;
+      // in 0031 with sitting_date)
       create_cycle_with_assessments: {
         Args: {
           p_name: string;
@@ -546,6 +550,7 @@ export interface Database {
           p_year_id?: string | null;
           p_sitting?: SittingPeriod;
           p_test_centre_id?: string | null;
+          p_sitting_date?: string | null;
         };
         Returns: string;
       };

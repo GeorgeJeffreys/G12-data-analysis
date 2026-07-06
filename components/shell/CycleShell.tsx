@@ -31,7 +31,7 @@ import { useProviderData } from "@/lib/data/context";
 import { hasRole } from "@/lib/auth/roles";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 
-export type CycleArea = "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow";
+export type CycleArea = "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow" | "settings";
 
 export function CycleShell({
   cycleId,

@@ -34,10 +34,14 @@ export default function GradesPage({ params }: { params: { cycleId: string } }) 
   const borderlineBand = useProviderData((p) => p.getConfig().borderline.bandPct);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   // A sitting's year-Overall surface, where certificates/reports are generated from
-  // the best-of-two award. The year id mirrors the provider's `year-${YYYY}` scheme
-  // (derived from the cycle name); fall back to the years home if no year is present.
-  const yearMatch = cycleName.match(/(19|20)\d{2}/);
-  const overallHref = yearMatch ? `/years/year-${yearMatch[0]}/overall` : "/";
+  // the best-of-two award. Route on the OWNING year's canonical id (resolved by the
+  // sitting's cycle id, never re-derived from the cycle name): this is correct for a
+  // non-primary centre, and a null/"Unknown"-named year still resolves and links.
+  const overallYearId = useProviderData(
+    (p) => p.listYears().find((y) => y.february.cycleId === cycleId || y.may.cycleId === cycleId)?.id ?? null,
+    [cycleId],
+  );
+  const overallHref = overallYearId ? `/years/${overallYearId}/overall` : "/";
   const provisional = useProvisionalNotice(cycleId);
   const [confirming, setConfirming] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
