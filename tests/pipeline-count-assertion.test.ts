@@ -134,6 +134,29 @@ describe("pipeline count assertion — 700435 natural-key spine", () => {
     expect(key.size).toBe(responses.length);
   });
 
+  // The whole-sitting collapse guard: responses distinct sittings per subject MUST
+  // equal sittings per subject — no sitting persists zero response rows (the 15→6
+  // score-matrix collapse). Also asserted per subject at the ingest grain.
+  it("responses distinct sittings per subject == sittings per subject (no whole-sitting drop)", () => {
+    const perSubject = (rows: Row[]) => {
+      const m = new Map<string, Set<string>>();
+      for (const r of rows) {
+        const a = String(r.assessment_id);
+        (m.get(a) ?? m.set(a, new Set()).get(a)!).add(String(r.qm_result_id));
+      }
+      return m;
+    };
+    const sit = perSubject(sittings);
+    const resp = perSubject(responses);
+    for (const [assessmentId, sitters] of sit) {
+      expect(resp.get(assessmentId)?.size ?? 0, `subject ${assessmentId}: responses sittings != sittings`).toBe(sitters.size);
+    }
+    // Math specifically: 15 sittings in both (the reported collapse subject).
+    const mathId = String(sittings.find((s) => SUBJECTS.math.test(String(s.subject_name)))!.assessment_id);
+    expect(sit.get(mathId)!.size).toBe(15);
+    expect(resp.get(mathId)!.size).toBe(15);
+  });
+
   // Topic rollups persist WITHOUT a duplicate-key error (the 0026 regression): the
   // grain is one row per (cycle_id, qm_result_id, qm_topic_id), which 0028 restores
   // as the unique key. Distinct topics that share a leaf display name within one
