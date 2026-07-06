@@ -40,7 +40,7 @@ function counts(p: RpcCall["args"]["p_payload"]) {
     items: p.items.length,
     participants: p.participants.length,
     responses: p.responses.length,
-    result_totals: p.result_totals.length,
+    sittings: p.sittings.length,
     topic_rollups: p.topic_rollups.length,
   };
 }

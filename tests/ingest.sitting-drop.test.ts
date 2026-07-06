@@ -98,7 +98,7 @@ async function hydrateFrom(files: NamedInput[]) {
     incidents: [], alterations: [], distinction_overrides: [], workspace_settings: [],
     element_labels: [], clean_exclusions: [], distinction_state: [], document_settings: [],
     import_batches: [{ cycle_id: CYCLE, created_at: "2026-05-01", report_json: validationReport, file_ref: "qm", items_file: "Items.csv", assessments_file: "Assessments.csv", topics_file: "Topics.csv", file_size_mb: 1 }],
-    test_centres: [], exam_years: [], result_totals: payload.result_totals, topic_rollups: payload.topic_rollups,
+    test_centres: [], exam_years: [], sittings: payload.sittings, topic_rollups: payload.topic_rollups,
   };
   const hydrated = await hydrate(makeSupabaseReadClient(db) as never);
   if (!hydrated) throw new Error("hydrate returned null");
@@ -154,10 +154,10 @@ describe("whole-sitting drop at persist — ResultId representation skew (700435
     expect(resolved.detectedTotal).toBe(18);
   });
 
-  it("persisted responses and result_totals agree at the SITTING grain (no orphan either side)", async () => {
+  it("persisted responses and sittings agree at the SITTING grain (no orphan either side)", async () => {
     const { payload } = await hydrateFrom(skewedFiles());
     const respSittings = new Set((payload.responses as { qm_result_id: string }[]).map((r) => r.qm_result_id));
-    const rtSittings = new Set((payload.result_totals as { qm_result_id: string }[]).map((r) => r.qm_result_id));
+    const rtSittings = new Set((payload.sittings as { qm_result_id: string }[]).map((r) => r.qm_result_id));
     // Every persisted response sitting has a parent record and vice versa (the DB
     // 0023 guard asserts exactly this; here we prove the payload already satisfies it).
     for (const id of respSittings) expect(rtSittings.has(id), `resp sitting ${id} has a result_total`).toBe(true);

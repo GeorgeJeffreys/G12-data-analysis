@@ -87,7 +87,7 @@ async function buildHydratedProvider() {
     incidents: [], alterations: [], distinction_overrides: [], workspace_settings: [],
     element_labels: [], clean_exclusions: [], distinction_state: [], document_settings: [],
     import_batches: [{ cycle_id: CYCLE, created_at: "2026-05-01", report_json: validationReport, file_ref: "qm", items_file: "Items.csv", assessments_file: "Assessments.csv", topics_file: "Topics.csv", file_size_mb: 1 }],
-    test_centres: [], exam_years: [], result_totals: payload.result_totals, topic_rollups: payload.topic_rollups,
+    test_centres: [], exam_years: [], sittings: payload.sittings, topic_rollups: payload.topic_rollups,
   };
   const hydrated = await hydrate(makeSupabaseReadClient(db) as never);
   if (!hydrated) throw new Error("hydrate returned null");

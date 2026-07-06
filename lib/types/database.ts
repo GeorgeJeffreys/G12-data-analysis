@@ -151,17 +151,24 @@ export interface ParticipantRow {
 export interface ResponseRow {
   id: string;
   cycle_id: string;
+  /** The QM `ResultId` (sitting natural key) — one per participant × subject. The
+   *  authoritative uniqueness is (cycle_id, qm_result_id, question_id) and the row
+   *  FK-cascades from `sittings` (migration 0026). */
+  qm_result_id: string;
+  /** The QM `QuestionId` (question natural key). */
+  question_id: string;
+  /** Participant email (natural key). */
+  participant_email: string | null;
+  /** Engine-feed join surrogates (the scoring feed reads these). */
   participant_id: string;
   item_id: string;
-  /** The QM `ResultId` (sitting key) — one per participant × subject. Distinct
-   *  from `participant_id` (the email-keyed participant). The uniqueness lives at
-   *  the sitting × question grain (item_id, qm_result_id); migration 0021. Null on
-   *  pre-0021 rows until a re-ingest repopulates them. */
-  qm_result_id: string | null;
+  assessment_id: string | null;
   answer_given: string | null;
   answer_score: number;
   response_time: number | null;
   result_status: string | null;
+  question_type: string | null;
+  question_status: string | null;
   created_at: string;
 }
 

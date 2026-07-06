@@ -191,27 +191,31 @@ export async function ingestCleanResponses(
   }
 
   // ── 4. Responses (long-format facts; ONE record per SITTING × question) ───────
-  // Keyed at the sitting grain: the QM `ResultId` (`qm_result_id`) is the sitting
-  // key — one per participant × subject — and the DB uniqueness is
-  // (item_id, qm_result_id) (migration 0021). Participant identity (`participant_id`,
-  // the email-keyed participant) is a SEPARATE column used for cross-subject
-  // grouping; it is NEVER the sitting key. Deduping on (qmResultId, item) therefore
-  // never folds a participant's separate subject-sittings into one record.
+  // Natural-key grain (migration 0026): the authoritative uniqueness is
+  // (cycle_id, qm_result_id, question_id) — the QM ResultId (the sitting, one per
+  // participant × subject) × the QM QuestionId. Deduping on (qmResultId, questionId)
+  // is what makes identical-profile sittings impossible to collide, and never folds
+  // a participant's separate subject-sittings into one record (a sitting is one
+  // subject, so questionId is unique within it). `participant_id`/`item_id` are
+  // retained as denormalised join surrogates for the (untouched) engine feed.
   const respRows: Record<string, unknown>[] = [];
   const seenResp = new Set<string>();
   for (const r of recs) {
     const pId = participantId.get(r.qmParticipantId);
     const iId = itemId.get(`${r.assessmentName}|${r.qmQuestionId}`);
     if (!pId || !iId) continue;
-    const key = `${r.qmResultId}|${iId}`;
+    const key = `${r.qmResultId}|${r.qmQuestionId}`;
     if (seenResp.has(key)) continue; // first response wins (duplicates flagged in validation)
     seenResp.add(key);
     const ci = canonItem.get(`${r.assessmentName}|${r.qmQuestionId}`);
     respRows.push({
       cycle_id: cycleId,
-      participant_id: pId,
-      item_id: iId,
-      qm_result_id: r.qmResultId,
+      qm_result_id: r.qmResultId, // sitting natural key
+      question_id: r.qmQuestionId, // QuestionId natural key
+      participant_email: r.qmParticipantId, // email natural key
+      participant_id: pId, // engine-feed surrogate
+      item_id: iId, // engine-feed surrogate
+      assessment_id: assessmentId.get(r.assessmentName),
       answer_given: r.answerGiven,
       answer_score: r.answerScore,
       response_time: r.responseTime,
@@ -222,13 +226,14 @@ export async function ingestCleanResponses(
     });
   }
 
-  // ── 5. Richer intake (0006): per-result QM totals + per-topic rollups ─────
-  // These hold QM's TRUSTED totals across EVERY question type (essays/Likert/…),
-  // not just the MCQ engine matrix above. Built only when a canonical model is
-  // supplied; results whose participant/subject didn't map are skipped silently.
-  // topic_rollups are keyed on the topic's ID (0007) — same display name at
-  // different TopicIds within one result is preserved, not collapsed.
-  const resultRows: Record<string, unknown>[] = [];
+  // ── 5. The sitting spine (migration 0026) + per-topic rollups ─────────────
+  // `sittings` — one row per QM ResultId (participant × subject), keyed on the
+  // natural (cycle_id, qm_result_id). Holds QM's TRUSTED totals across EVERY
+  // question type (essays/Likert/…), not just the MCQ engine matrix above. Built
+  // only when a canonical model is supplied; results whose participant/subject
+  // didn't map are skipped silently. topic_rollups are keyed on the topic's ID
+  // (0007) — same display name at different TopicIds within one result is preserved.
+  const sittingRows: Record<string, unknown>[] = [];
   const topicRows: Record<string, unknown>[] = [];
   if (canonical) {
     for (const res of canonical.results) {
@@ -236,11 +241,13 @@ export async function ingestCleanResponses(
       const pId = emailToParticipantId.get(res.participantEmail);
       if (!aId || !pId) continue;
       const reconciled = !canonical.integrity.issues.some((i) => i.resultId === res.resultId);
-      resultRows.push({
+      sittingRows.push({
         cycle_id: cycleId,
+        qm_result_id: res.resultId, // sitting natural key
+        participant_email: res.participantEmail, // participant natural key
+        participant_id: pId, // join surrogate
         assessment_id: aId,
-        participant_id: pId,
-        qm_result_id: res.resultId,
+        subject_name: res.subject,
         total_score: res.totalScore,
         maximum_score: res.maximumScore,
         percentage_score: res.percentageScore,
@@ -289,8 +296,8 @@ export async function ingestCleanResponses(
     assessments: assessmentRows,
     items: itemRows,
     participants: partRows,
+    sittings: sittingRows,
     responses: respRows,
-    result_totals: resultRows,
     topic_rollups: topicRows,
     import_batch: importBatch,
   };

@@ -67,7 +67,7 @@ async function buildProvider() {
     incidents: [], alterations: [], distinction_overrides: [], workspace_settings: [],
     element_labels: [], clean_exclusions: [], distinction_state: [], document_settings: [],
     import_batches: [{ cycle_id: CYCLE, created_at: "2026-05-01", file_ref: "qm", items_file: "Items.csv", assessments_file: "Assessments.csv", topics_file: "Topics.csv", file_size_mb: 1 }],
-    test_centres: [], exam_years: [], result_totals: payload.result_totals, topic_rollups: payload.topic_rollups,
+    test_centres: [], exam_years: [], sittings: payload.sittings, topic_rollups: payload.topic_rollups,
   };
   const hydrated = await hydrate(makeSupabaseReadClient(db) as never);
   if (!hydrated) throw new Error("hydrate returned null");
@@ -75,22 +75,21 @@ async function buildProvider() {
 }
 
 describe("sitting-grain persistence", () => {
-  it("every persisted response carries a sitting key; uniqueness is (item_id, qm_result_id)", async () => {
+  it("every persisted response carries a sitting key; uniqueness is (qm_result_id, question_id)", async () => {
     const { payload } = await ingestPayload();
     const responses = payload.responses as Record<string, unknown>[];
     expect(responses.length).toBeGreaterThan(0);
 
-    // Every response has its sitting key, and it is NOT the participant id.
+    // Every response has its sitting key + question key, and it is NOT the participant id.
     for (const r of responses) {
       expect(r.qm_result_id, "response missing qm_result_id").toBeTruthy();
+      expect(r.question_id, "response missing question_id").toBeTruthy();
       expect(r.qm_result_id).not.toBe(r.participant_id);
     }
 
-    // Uniqueness at the sitting × question grain — no collision, and the OLD
-    // participant × question grain would NOT be unique (a re-sit would collide);
-    // here the graded set has one sitting per participant × subject so both hold,
-    // but the persisted key is the sitting one.
-    const sittingKey = new Set(responses.map((r) => `${r.item_id}|${r.qm_result_id}`));
+    // Uniqueness at the natural sitting × question grain (migration 0026) — no
+    // collision. This is the authoritative key that prevents whole-sitting collapse.
+    const sittingKey = new Set(responses.map((r) => `${r.qm_result_id}|${r.question_id}`));
     expect(sittingKey.size).toBe(responses.length);
 
     // Distinct sitting-records ≫ distinct participants (NOT 15 = 15).
