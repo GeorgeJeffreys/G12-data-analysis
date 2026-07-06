@@ -237,6 +237,10 @@ export class SupabaseDataProvider implements DataProvider {
       if (c.rows.length) p.setCleanRemoval(cid, c.assessmentId, { rows: c.rows }, true);
       if (c.cols.length) p.setCleanRemoval(cid, c.assessmentId, { cols: c.cols }, true);
     }
+    // Cohort-wide exclusions (0033) — replayed as one whole-cohort action each, the
+    // same mutator the "Remove from all subjects" control drives. Seeded staff/test
+    // accounts arrive here as data, not a hard-coded email.
+    for (const ce of d.cohortExclusions) p.excludeParticipantFromCohort(cid, ce.participantId, true, ce.reason);
     for (const s of d.schemes) {
       const cuts = s.bands.slice(0, -1).map((b) => b.min);
       p.setBoundary(cid, s.scope, { mode: s.method === "fixed_pct" ? "pct" : "cuts", cuts });
@@ -416,28 +420,18 @@ export class SupabaseDataProvider implements DataProvider {
   ): void {
     this.inner.excludeParticipantFromCohort(cycleId, participantId, excluded, reason);
     this.bump();
-    // Persist durably by recording the removal on every subject the participant
-    // sat. This reuses the clean_exclusions store + RPC (no new migration); on
-    // reload hydrate replays the per-subject rows and `cohortRemovedParticipants`
-    // re-derives the cohort-wide exclusion. getRawData reads the untouched raw
-    // matrix, so presence is computed before the exclusion takes effect.
-    const cyc = this.inner.getCycle(cycleId);
-    // Key the durable record on P-A's stable natural key (qm_participant_id) so the
-    // exclusion re-resolves after a re-import instead of dangling on the old UUID.
+    // Persist durably in the dedicated `cohort_exclusions` store (migration 0033),
+    // keyed on P-A's stable natural key (qm_participant_id) so the exclusion
+    // re-resolves after a re-import instead of dangling on the volatile row UUID.
+    // This is a SEPARATE scope from the per-subject clean_exclusions, so "remove from
+    // all subjects" and "remove from one subject" never conflate on reload.
     const stableKey = this.uuidToQm.get(participantId) ?? participantId;
-    for (const a of cyc?.assessments ?? []) {
-      const raw = this.inner.getRawData(cycleId, a.id);
-      if (raw?.rows.some((r) => r.id === participantId)) {
-        this.rpc("set_clean_removal", {
-          p_cycle: cycleId,
-          p_assessment: a.id,
-          p_kind: "row",
-          p_targets: [participantId],
-          p_keys: [stableKey],
-          p_remove: excluded,
-        });
-      }
-    }
+    this.rpc("set_cohort_exclusion", {
+      p_cycle: cycleId,
+      p_key: stableKey,
+      p_reason: reason ?? null,
+      p_remove: excluded,
+    });
   }
 
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void {

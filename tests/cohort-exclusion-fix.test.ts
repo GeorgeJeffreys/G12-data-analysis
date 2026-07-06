@@ -1,77 +1,69 @@
 /**
- * Prompt-09 — cohort exclusion fix. Three seams the fix adds on top of P-A's
- * stable email-keyed identity:
+ * Cohort exclusion — the fix, on top of P-A's stable email-keyed identity. Two seams:
  *
- *   1. STAFF/TEST EMAIL LIST (primary, robust) — a configured list keyed on the
- *      participant's stable email, applied at the cohort boundary so listed
- *      accounts (Lavinia, Muamina) drop from EVERY subject + Candidate Scores with
- *      no stored decision, so it survives re-import. Excluding by email also drops
- *      Muamina's typo `Applicable Maths` row (same account).
+ *   1. STAFF/TEST STATUS IS DATA — a per-cohort `cohort_exclusions` list (migration
+ *      0033), keyed on the participant's STABLE natural key (qm_participant_id), NOT
+ *      an email hard-coded in source. Listed accounts drop from EVERY subject +
+ *      Candidate Scores, and — because the key is data — the exclusion survives a
+ *      re-import. On hydrate a row resolves through the stable key to the current row
+ *      UUID and is replayed cohort-wide.
  *
- *   2. MANUAL EXCLUSIONS SURVIVE RE-IMPORT — clean_exclusions row targets now carry
- *      the participant's stable natural key (qm_participant_id, migration 0016), so
- *      an exclusion recorded before an ingest re-resolves to the freshly-minted row
+ *   2. MANUAL PER-SUBJECT EXCLUSIONS SURVIVE RE-IMPORT — clean_exclusions row targets
+ *      carry the participant's stable natural key (qm_participant_id, migration 0016),
+ *      so an exclusion recorded before an ingest re-resolves to the freshly-minted row
  *      UUID on hydrate instead of dangling on the old (randomUUID) id.
  *
- * (Part 3 — the server `recomputeAndWrite` honouring these exclusions — is exercised
- * by dropping the same participants' responses before the engine runs; its logic
- * mirrors the cohort boundary asserted here and in engine-write.ts.)
+ * (The server `recomputeAndWrite` honouring these exclusions is covered in
+ * engine-write.cohort-exclusion.test.ts.)
  */
 import { describe, it, expect, vi } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { isStaffTestEmail, STAFF_TEST_EMAILS } from "@/lib/data/staff-exclusions";
 import { hydrate } from "@/lib/data/supabase-hydrate";
 import { makeSupabaseReadClient, type MockDb } from "@/tests/helpers/mock-supabase-read";
-import seedJson from "@/lib/data/seed.generated.json";
-import type { Seed } from "@/lib/data/seed-types";
 
 // The hydrate module is client-safe, but its sibling write path is server-only;
 // neutralise `server-only` so the test bundle imports cleanly.
 vi.mock("server-only", () => ({}));
 
-const LAVINIA = "lavinia.cavalet@alsamaproject.com";
-const MUAMINA = "muamina.mlisho@alsamaproject.com";
+// ── Part 1: cohort exclusion is editable DATA, not a hard-coded email list ────
+describe("cohort exclusion is data (part 1)", () => {
+  it("drops a cohort-excluded participant from grades + the headline count, reversibly", () => {
+    const p = new InMemoryDataProvider();
+    const cycleId = p.listCycles()[0]!.id;
+    const cyc = p.getCycle(cycleId)!;
+    // Pick a participant present in every subject so a cohort exclusion drops them
+    // from the whole cohort (not just one subject).
+    const present = cyc.assessments.map((a) => new Set(p.getNaiveScores(cycleId, a.id)!.students.map((s) => s.id)));
+    const victim = [...present[0]!].find((id) => present.every((set) => set.has(id)))!;
+    const before = p.getGrades(cycleId)!;
+    expect(before.rows.some((r) => r.id === victim)).toBe(true);
 
-// ── Part 1: the email list ──────────────────────────────────────────────────
-describe("staff/test email exclusion list (part 1)", () => {
-  it("lists Lavinia + Muamina and matches them stably (case/space-insensitive)", () => {
-    expect(STAFF_TEST_EMAILS).toContain(LAVINIA);
-    expect(STAFF_TEST_EMAILS).toContain(MUAMINA);
-    expect(isStaffTestEmail(LAVINIA)).toBe(true);
-    expect(isStaffTestEmail(MUAMINA)).toBe(true);
-    // The same injective normalisation P-A mints the internal id with — so the
-    // export's casing/whitespace never lets the account slip through.
-    expect(isStaffTestEmail("  LAVINIA.Cavalet@AlsamaProject.com ")).toBe(true);
+    // No email hard-coded in code — the caller supplies the participant id.
+    p.excludeParticipantFromCohort(cycleId, victim, true, "Staff / test account");
+    const after = p.getGrades(cycleId)!;
+    expect(after.rows.some((r) => r.id === victim)).toBe(false);
+    expect(after.rows).toHaveLength(before.rows.length - 1);
+    expect(p.getCycle(cycleId)!.participants).toBe(cyc.participants - 1);
+
+    // Editable: restoring brings them back everywhere.
+    p.excludeParticipantFromCohort(cycleId, victim, false);
+    expect(p.getGrades(cycleId)!.rows.some((r) => r.id === victim)).toBe(true);
+    expect(p.getCycle(cycleId)!.participants).toBe(cyc.participants);
   });
 
-  it("does not match real students, blanks or nulls", () => {
-    expect(isStaffTestEmail("student01@alsamaproject.com")).toBe(false);
-    expect(isStaffTestEmail("")).toBe(false);
-    expect(isStaffTestEmail(null)).toBe(false);
-    expect(isStaffTestEmail(undefined)).toBe(false);
+  it("hydrate resolves a cohort_exclusions row through the stable key and replays it", async () => {
+    // A cohort_exclusions row keyed on the stable qm_participant_id (email) — the
+    // stored UUID is irrelevant; only the key bridges to the current participant row.
+    const h = await hydrate(makeSupabaseReadClient(makeCohortDb("alpha@school.edu")) as any);
+    expect(h).not.toBeNull();
+    const cohort = h!.decisions.cohortExclusions;
+    expect(cohort.map((c) => c.participantId)).toContain("new-uuid-alpha");
+    expect(cohort.map((c) => c.participantId)).not.toContain("beta@school.edu");
   });
 
-  it("excludes a listed account at the cohort boundary with NO stored decision", () => {
-    // Baseline: a real participant appears in the grades cohort.
-    const base = new InMemoryDataProvider();
-    const cycleId = base.listCycles()[0]!.id;
-    const baseGrades = base.getGrades(cycleId)!;
-    const victim = baseGrades.rows[0]!;
-    expect(baseGrades.rows.some((r) => r.id === victim.id)).toBe(true);
-
-    // Rebuild the same seed but stamp that participant's stable id (studentId =
-    // qm_participant_id = email) as a listed staff account. No exclusion is
-    // recorded — the email list alone must drop them everywhere.
-    const seed = structuredClone(seedJson) as unknown as Seed;
-    const target = seed.liveCycle.participants.find((p) => p.id === victim.id)!;
-    target.studentId = LAVINIA;
-    const p = new InMemoryDataProvider(seed);
-
-    const grades = p.getGrades(cycleId)!;
-    expect(grades.rows.some((r) => r.id === victim.id)).toBe(false);
-    expect(grades.rows).toHaveLength(baseGrades.rows.length - 1);
-    // headline cohort count drops too
-    expect(p.getCycle(cycleId)!.participants).toBe(base.getCycle(cycleId)!.participants - 1);
+  it("ignores a cohort_exclusions row whose key matches no current participant", async () => {
+    const h = await hydrate(makeSupabaseReadClient(makeCohortDb("ghost@nowhere.edu")) as any);
+    expect(h!.decisions.cohortExclusions).toHaveLength(0);
   });
 });
 
@@ -100,6 +92,17 @@ function makeDb(cleanExclusion: Record<string, unknown>): MockDb {
     incidents: [], alterations: [], distinction_overrides: [], workspace_settings: [],
     element_labels: [], distinction_state: [], document_settings: [], import_batches: [],
   };
+}
+
+/** Same hydratable DB, but with a COHORT-WIDE exclusion (migration 0033) keyed on a
+ *  stable participant key instead of a per-subject clean removal. */
+function makeCohortDb(participantKey: string): MockDb {
+  const db = makeDb({ target_id: "unused", target_key: null });
+  db.clean_exclusions = [];
+  db.cohort_exclusions = [
+    { id: "co1", cycle_id: CYCLE, participant_key: participantKey, reason: "Staff / test account", decided_by: null, decided_at: "2026-05-01T00:00:06Z" },
+  ];
+  return db;
 }
 
 describe("manual clean exclusions survive re-import via the stable key (part 2)", () => {

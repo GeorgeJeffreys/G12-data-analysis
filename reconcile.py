@@ -17,9 +17,11 @@ and checks, for Applicable Math (the grade-bearing subject this task fixes):
   2. that TOTAL == the roster raw_total for the same result_id (the two oracles,
      built independently from raw, agree).
   3. the cohort is exactly the 15 real Math sitters after the staff/test exclusion
-     (lavinia.cavalet@… / muamina.mlisho@… — neither sat Math, so Math is 15 in
-     both the raw and the excluded roster; the exclusion is mirrored here so the
-     script validates the SAME cohort boundary the app applies, not the raw 18).
+     (the two accounts flagged `is_staff_test` in the roster DATA — neither sat Math,
+     so Math is 15 in both the raw and the excluded roster; the exclusion is derived
+     from that data flag, mirroring the app's editable per-cohort exclusion list — not
+     a hard-coded email set — so the script validates the SAME cohort boundary the app
+     applies, not the raw 18).
 
 It validates underlying scores, NOT award bands. Exit 0 = green.
 
@@ -37,14 +39,6 @@ ORACLE_DIR = os.path.join(HERE, "tests", "fixtures", "oracles")
 ROSTERS = os.path.join(ORACLE_DIR, "oracle_rosters.csv")
 MATRIX = os.path.join(ORACLE_DIR, "oracle_applicable_math_matrix.csv")
 
-# The staff / test accounts excluded at the cohort boundary. Keep aligned with
-# lib/data/staff-exclusions.ts (the app's single source of truth). The raw oracle
-# roster INCLUDES these two (is_staff_test = True); the app drops them at Clean.
-STAFF_TEST_EMAILS = {
-    "lavinia.cavalet@alsamaproject.com",  # G12 Lead — sat English only
-    "muamina.mlisho@alsamaproject.com",   # re-sit / test — Applicable Maths typo + Life
-}
-
 MATH_SUBJECT = "Applicable Math"
 MATH_SITTERS = 15
 
@@ -53,9 +47,21 @@ def _norm(email: str) -> str:
     return (email or "").strip().lower()
 
 
+def _is_staff_test(row: dict) -> bool:
+    """Staff/test status is DATA — the roster's own `is_staff_test` flag, mirroring
+    the app's editable per-cohort `cohort_exclusions` list. No email is hard-coded
+    here; excluding a different cohort's staff is a data change, not a code change."""
+    return str(row.get("is_staff_test", "")).strip().lower() in ("true", "1", "yes")
+
+
 def load_rosters() -> list[dict]:
     with open(ROSTERS, newline="", encoding="utf-8") as fh:
         return list(csv.DictReader(fh))
+
+
+def staff_test_emails(rosters: list[dict]) -> set[str]:
+    """The excluded set, derived from the roster's `is_staff_test` data flag."""
+    return {_norm(r["email"]) for r in rosters if _is_staff_test(r)}
 
 
 def load_matrix() -> list[dict]:
@@ -68,6 +74,7 @@ def reconcile_math() -> list[str]:
     errors: list[str] = []
     rosters = load_rosters()
     matrix = load_matrix()
+    staff = staff_test_emails(rosters)
 
     # Roster raw_total per result_id, Math only, staff/test excluded.
     roster_total: dict[str, int] = {}
@@ -75,7 +82,7 @@ def reconcile_math() -> list[str]:
     for r in rosters:
         if r["subject"] != "Applicable Math":
             continue
-        if _norm(r["email"]) in STAFF_TEST_EMAILS:
+        if _norm(r["email"]) in staff:
             continue
         roster_total[r["result_id"]] = int(r["raw_total"])
         math_cohort.add(r["result_id"])
@@ -90,7 +97,7 @@ def reconcile_math() -> list[str]:
     seen: set[str] = set()
     for row in matrix:
         email = _norm(row["email"])
-        if email in STAFF_TEST_EMAILS:
+        if email in staff:
             # The matrix should not carry a staff/test sitter for Math (none did).
             errors.append(f"matrix: staff/test account {email} present in Math matrix")
             continue

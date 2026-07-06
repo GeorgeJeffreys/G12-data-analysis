@@ -34,7 +34,12 @@ describe("Clean-stage removals", () => {
     const after = p.getDataCleaning(cycleId, assessmentId)!;
     expect(after.rowsBefore).toBe(before.rowsBefore); // original total unchanged
     expect(after.rowsAfter).toBe(before.rowsAfter - 1);
-    expect(after.rows.some((r) => r.id === victim)).toBe(false);
+    // A per-subject removal keeps the row VISIBLE and struck (reversible in place),
+    // scoped to THIS subject only — not dropped from the view, not cohort-wide.
+    expect(after.rows.some((r) => r.id === victim)).toBe(true);
+    expect(after.excludedRows).toContain(victim);
+    expect(after.subjectExcludedRows).toContain(victim);
+    expect(after.cohortExcludedRows).not.toContain(victim);
 
     // Raw overview is the untouched upload.
     const rawAfter = p.getRawData(cycleId, assessmentId)!;

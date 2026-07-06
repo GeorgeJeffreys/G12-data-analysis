@@ -220,6 +220,18 @@ export interface CleanExclusionRow {
   decided_at: string;
 }
 
+/** Cohort-wide participant exclusion (migration 0033) — staff/test/withdrawn,
+ *  keyed on the participant's STABLE natural key so it survives a re-import.
+ *  Distinct from the per-subject `clean_exclusions`. */
+export interface CohortExclusionRow {
+  id: string;
+  cycle_id: string;
+  participant_key: string;
+  reason: string;
+  decided_by: string | null;
+  decided_at: string;
+}
+
 export interface ScoreRunRow {
   id: string;
   cycle_id: string;
@@ -495,6 +507,8 @@ export interface Database {
       >;
       // 0008 — clean-stage removals. All writes flow through SECURITY DEFINER RPCs.
       clean_exclusions: TableDef<CleanExclusionRow, never, never>;
+      // 0033 — cohort-wide exclusions. Writes flow through set_cohort_exclusion.
+      cohort_exclusions: TableDef<CohortExclusionRow, never, never>;
       score_runs: TableDef<
         ScoreRunRow,
         Pick<ScoreRunRow, "cycle_id" | "assessment_id" | "engine_version"> &
@@ -582,6 +596,7 @@ export interface Database {
       decide_item_exclusion: { Args: { p_item: string; p_exclude: boolean; p_reason: string | null; p_notes?: string | null }; Returns: undefined };
       set_clean_removal: { Args: { p_cycle: string; p_assessment: string; p_kind: string; p_targets: string[]; p_keys: string[]; p_remove: boolean }; Returns: undefined };
       clear_clean_removals: { Args: { p_cycle: string; p_assessment: string }; Returns: undefined };
+      set_cohort_exclusion: { Args: { p_cycle: string; p_key: string; p_reason: string | null; p_remove: boolean }; Returns: undefined };
       write_item_stats: { Args: { p_cycle: string; p_engine_version: string; p_stats: unknown }; Returns: undefined };
       lock_grades: { Args: { p_cycle: string }; Returns: undefined };
       unlock_grades: { Args: { p_cycle: string; p_reason: string }; Returns: undefined };

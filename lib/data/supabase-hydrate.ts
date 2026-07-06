@@ -28,6 +28,7 @@ import type {
   SittingRow,
   ItemReviewRow,
   CleanExclusionRow,
+  CohortExclusionRow,
   GradeSchemeRow,
   GradeRow,
   EssayMarkRow,
@@ -57,7 +58,6 @@ import type {
 import { isTechnicalIncidentStatus } from "./result-status";
 import { ENGINE_VERSION, type QualityRating } from "@/lib/engine";
 import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "@/lib/diagnostics";
-import { isStaffTestEmail } from "./staff-exclusions";
 import type { EssayUploadRow, IncidentInput, IncidentDecisionInput } from "./provider";
 import type { ValidationReport } from "@/lib/ingest/types";
 
@@ -184,6 +184,9 @@ export interface DecisionState {
   exclusions: { assessmentId: string; itemId: string; reason: string | null }[];
   /** Clean-stage non-destructive removals, grouped per subject. */
   cleanRemovals: { assessmentId: string; rows: string[]; cols: string[] }[];
+  /** Cohort-wide participant exclusions (0033) — staff/test/withdrawn, resolved from
+   *  the stable key to the current participant UUID; replayed cohort-wide. */
+  cohortExclusions: { participantId: string; reason: string }[];
   schemes: { scope: string; method: string; bands: { label: string; min: number; max: number }[] }[];
   locked: boolean;
   essays: EssayUploadRow[];
@@ -344,6 +347,11 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const cleanExclusionRows = await sel<CleanExclusionRow>(
     supabase.from("clean_exclusions").select("*").eq("cycle_id", cycleId),
   );
+  // Cohort-wide exclusions (migration 0033). `sel` tolerates a pre-migration DB
+  // (missing table → []), so hydrate never crashes before the migration is run.
+  const cohortExclusionRows = await sel<CohortExclusionRow>(
+    supabase.from("cohort_exclusions").select("*").eq("cycle_id", cycleId),
+  );
   const distState = await selOne<DistinctionStateRow>(
     supabase.from("distinction_state").select("*").eq("cycle_id", cycleId).maybeSingle(),
   );
@@ -425,11 +433,15 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     (respByAssessment.get(aId) ?? respByAssessment.set(aId, []).get(aId)!).push(r);
   }
 
-  // Cohort-excluded (staff / test) participant row ids — the same accounts the
-  // scores path drops, keyed on the stable email so diagnostics run on the corrected
-  // cohort, not staff-inflated rows.
+  // Cohort-excluded participant row ids — staff/test/withdrawn accounts, read from
+  // the per-cohort `cohort_exclusions` DATA (migration 0033), resolved from the
+  // stable key (qm_participant_id) to the current row UUID. No email is matched
+  // against a constant in code. Diagnostics then run on the corrected cohort.
+  const qmByKey = new Map(participants.map((p) => [p.qm_participant_id, p.id]));
   const cohortExcludedIds = new Set(
-    participants.filter((p) => isStaffTestEmail(p.qm_participant_id) || isStaffTestEmail(p.email)).map((p) => p.id),
+    cohortExclusionRows
+      .map((r) => qmByKey.get(r.participant_key))
+      .filter((id): id is string => id != null),
   );
 
   const seedAssessments: (SeedAssessment & { _order: number })[] = [];
@@ -670,9 +682,20 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   }
   const cleanRemovals = [...cleanByAssessment.entries()].map(([assessmentId, g]) => ({ assessmentId, ...g }));
 
+  // Cohort-wide exclusions, resolved from the stable key to the CURRENT row UUID so
+  // they survive a re-import. Rows whose key no longer maps to a participant (e.g.
+  // an account dropped from a later import) are ignored rather than dangling.
+  const cohortExclusions = cohortExclusionRows
+    .map((r) => {
+      const participantId = qmToUuid.get(r.participant_key);
+      return participantId ? { participantId, reason: r.reason } : null;
+    })
+    .filter((x): x is { participantId: string; reason: string } => x !== null);
+
   const decisions: DecisionState = {
     exclusions,
     cleanRemovals,
+    cohortExclusions,
     schemes: schemes.map((s) => ({ scope: s.scope, method: s.method, bands: s.bands })),
     locked: grades.some((g) => g.locked),
     essays,

@@ -309,13 +309,27 @@ export interface DataCleaningModel {
   columns: RawColumnMeta[];
   rows: RawDataRow[];
   /**
-   * Participant ids (of rows still shown) that are currently EXCLUDED cohort-wide
-   * — the soft-deleted rows. The Clean table keeps them visible but strikes them
-   * through in red; the exclusion propagates to Scores/Grades via the prompt-09
-   * `excludeParticipantFromCohort` mechanism (staff/test email list + ad-hoc
-   * exclusions). Non-destructive and reversible ("Restore").
+   * Participant ids (of rows still shown) that are EXCLUDED from the cleaned set for
+   * THIS subject — the struck-through rows. Two scopes are unioned here (see the
+   * split fields below): a per-subject removal (this sitting only) and a cohort-wide
+   * exclusion (every subject). The Clean table keeps both visible but strikes them
+   * through; the exclusion propagates to Scores/Grades and is fully reversible.
    */
   excludedRows: string[];
+  /**
+   * The subset of `excludedRows` removed from THIS subject only (the per-sitting
+   * scope — `setCleanRemoval` row targets). Present in the participant's other
+   * subjects. Drives the "Remove from <subject>" vs "Remove from all subjects"
+   * distinction in the Clean UI and the correct-scope restore.
+   */
+  subjectExcludedRows: string[];
+  /**
+   * The subset of `excludedRows` excluded across the WHOLE cohort (every subject —
+   * `excludeParticipantFromCohort`). Staff/test accounts and any participant the
+   * reviewer removed from all subjects land here; they are the rows a data-flow
+   * inspector shows as struck cohort removals.
+   */
+  cohortExcludedRows: string[];
 }
 
 /**

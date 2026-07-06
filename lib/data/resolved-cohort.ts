@@ -29,7 +29,6 @@
  */
 
 import type { DataProvider } from "./provider";
-import { isStaffTestEmail } from "./staff-exclusions";
 
 /** Per-subject cohort membership, as id sets, at each pipeline stage. */
 export interface SubjectCohort {
@@ -93,29 +92,27 @@ export function resolveCohort(provider: DataProvider, cycleId: string): Resolved
     const cleaning = provider.getDataCleaning(cycleId, a.id);
     if (!raw || !cleaning) continue;
 
-    // Email lookup for staff detection: prefer the roster's own emails, fall back
-    // to the raw matrix's studentId (identical on correct data).
-    const emailById = new Map<string, string>();
-    for (const r of raw.rows) emailById.set(r.id, r.studentId);
-    const rosterForSubject = roster?.byAssessment.get(a.id);
-    if (rosterForSubject) for (const [id, email] of rosterForSubject) emailById.set(id, email);
-
     // DETECTED = the sitting roster (staff included). Fall back to the raw response
     // matrix only when the seed carries no sitting spine (legacy seeds).
+    const rosterForSubject = roster?.byAssessment.get(a.id);
     const detected = new Set<string>(rosterForSubject ? rosterForSubject.keys() : raw.rows.map((r) => r.id));
+    // Staff/test — and anyone the reviewer removed from the WHOLE cohort — are the
+    // rows struck cohort-wide (data-driven, never an email hard-coded in source).
+    // They are counted at Ingest but dropped at Clean and shown struck; a per-subject
+    // removal is NOT staff (it stays a normal participant, absent from this subject).
+    const cohortStruck = new Set(cleaning.cohortExcludedRows);
     const staff = new Set<string>();
     for (const id of detected) {
       detectedAll.add(id);
-      if (isStaffTestEmail(emailById.get(id))) staff.add(id);
+      if (cohortStruck.has(id)) staff.add(id);
     }
-    // Cleaned = detected − staff − soft-deleted (cohort-excluded) rows, keyed on the
-    // same `excludedRows` set the Clean view strikes through — so Upload, Clean and
-    // Data-flow can never diverge. Staff/test and ad-hoc soft-deletes both live in
-    // that set (the cohort exclusion the whole app reads).
+    // Cleaned = detected − every struck row (per-subject removals + cohort-wide
+    // exclusions), keyed on the SAME `excludedRows` set the Clean view strikes
+    // through — so Upload, Clean and Data-flow can never diverge.
     const excluded = new Set(cleaning.excludedRows);
     const cleaned = new Set<string>();
     for (const id of detected) {
-      if (staff.has(id) || excluded.has(id)) continue;
+      if (excluded.has(id)) continue;
       cleaned.add(id);
       cleanedAll.add(id);
     }

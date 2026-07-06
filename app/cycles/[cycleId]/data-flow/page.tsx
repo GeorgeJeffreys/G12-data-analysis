@@ -41,8 +41,8 @@ const STAGE_TX: Record<DataFlowStageKey, { op: string; key: string }> = {
     key: "email → internalParticipantId",
   },
   cleaned: {
-    op: "Exclude staff & test accounts by email (isStaffTestEmail) and any soft-deleted rows from the whole cohort.",
-    key: "email (internal id)",
+    op: "Drop cohort-wide exclusions (staff/test/withdrawn — from the editable per-cohort exclusion list) and any per-subject soft-deleted rows.",
+    key: "cohort_exclusions · clean_exclusions",
   },
   matrix: {
     op: "Pivot the cleaned cohort to students × QuestionId, dedupe (student, QuestionId) keeping the last, and fill missing cells with 0.",

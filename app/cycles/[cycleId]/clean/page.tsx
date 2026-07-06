@@ -42,8 +42,15 @@ import type {
   CleaningSummarySubject,
 } from "@/lib/data/types";
 
-/** A queued cleaning action, so the last one can be undone. */
-type CleanAction = { kind: "remove" | "restore"; ids: string[] };
+/**
+ * A cleaning write is scoped: "subject" removes a single sitting ((participant,
+ * this subject)) via the per-subject clean-removal; "cohort" removes the
+ * participant from EVERY subject. One queued action may carry ops of both scopes
+ * (e.g. "Restore selected" over a mixed selection) and is reversed as a unit.
+ */
+type CleanScope = "subject" | "cohort";
+type CleanOp = { scope: CleanScope; ids: string[]; assessmentId?: string };
+type CleanAction = { kind: "remove" | "restore"; ops: CleanOp[] };
 
 /** Sentinel tab id for the cross-subject "Overall" (global) view. */
 const OVERALL = "__overall__";
@@ -87,7 +94,12 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [breakdownOpen, setBreakdownOpen] = useState(false);
 
+  // Struck rows, split by scope. `excludedRows` is the union (what the table
+  // strikes); `subjectExcluded` are removed from THIS subject only, `cohortExcluded`
+  // from every subject. The split lets Restore reverse each row in its own scope.
   const excludedRows = useMemo(() => new Set(model?.excludedRows ?? []), [model]);
+  const subjectExcluded = useMemo(() => new Set(model?.subjectExcludedRows ?? []), [model]);
+  const cohortExcluded = useMemo(() => new Set(model?.cohortExcludedRows ?? []), [model]);
   const toggleRow = (id: string) =>
     setSelRows((s) => {
       const next = new Set(s);
@@ -99,37 +111,68 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
 
   const selectedActive = [...selRows].filter((id) => !excludedRows.has(id));
   const selectedExcluded = [...selRows].filter((id) => excludedRows.has(id));
+  const subjectShort = model?.assessment.shortName ?? "this subject";
 
-  // Soft-delete: exclude the selected participant(s) from the whole cohort via the
-  // prompt-09 mechanism (strike-through + downstream propagation). Non-destructive.
-  const removeSelected = () => {
-    if (selectedActive.length === 0) return;
-    for (const id of selectedActive) provider.excludeParticipantFromCohort(cycleId, id, true, "Removed in cleaning");
-    setUndoStack((s) => [...s, { kind: "remove", ids: selectedActive }]);
+  // Perform one op (or its reverse). "subject" scope routes through the per-subject
+  // clean-removal (keyed on this sitting); "cohort" scope through the whole-cohort
+  // exclusion. `remove=false` restores. Every write is non-destructive + reversible.
+  const applyOp = (op: CleanOp, remove: boolean) => {
+    if (op.ids.length === 0) return;
+    if (op.scope === "subject") {
+      provider.setCleanRemoval(cycleId, op.assessmentId ?? assessmentId, { rows: op.ids }, remove);
+    } else {
+      for (const id of op.ids) provider.excludeParticipantFromCohort(cycleId, id, remove, remove ? "Removed from all subjects in cleaning" : undefined);
+    }
+  };
+  const runAction = (action: CleanAction) => {
+    const ops = action.ops.filter((o) => o.ids.length > 0);
+    if (ops.length === 0) return;
+    for (const op of ops) applyOp(op, action.kind === "remove");
+    setUndoStack((s) => [...s, { kind: action.kind, ops }]);
     clearSel();
   };
-  // Restore: put the selected struck-through row(s) back into the cohort.
+
+  // Remove the selected participant(s) from THIS subject only — the default, most
+  // common scope. Their other subjects are untouched.
+  const removeFromSubject = () => {
+    if (selectedActive.length === 0) return;
+    runAction({ kind: "remove", ops: [{ scope: "subject", ids: selectedActive, assessmentId }] });
+  };
+  // Remove the selected participant(s) from EVERY subject (staff/test account or a
+  // cohort-wide withdrawal) — the explicit, distinct wider scope.
+  const removeFromCohort = () => {
+    if (selectedActive.length === 0) return;
+    runAction({ kind: "remove", ops: [{ scope: "cohort", ids: selectedActive }] });
+  };
+  // Restore the selected struck row(s), each in the scope it was removed under.
   const restoreSelected = () => {
     if (selectedExcluded.length === 0) return;
-    for (const id of selectedExcluded) provider.excludeParticipantFromCohort(cycleId, id, false);
-    setUndoStack((s) => [...s, { kind: "restore", ids: selectedExcluded }]);
-    clearSel();
+    runAction({
+      kind: "restore",
+      ops: [
+        { scope: "subject", ids: selectedExcluded.filter((id) => subjectExcluded.has(id)), assessmentId },
+        { scope: "cohort", ids: selectedExcluded.filter((id) => cohortExcluded.has(id)) },
+      ],
+    });
   };
-  // Restore every soft-deleted row currently shown for this subject.
+  // Restore every struck row currently shown for this subject, each in its own scope.
   const restoreAll = () => {
-    const ids = [...excludedRows];
-    if (ids.length === 0) return;
-    for (const id of ids) provider.excludeParticipantFromCohort(cycleId, id, false);
-    setUndoStack((s) => [...s, { kind: "restore", ids }]);
-    clearSel();
+    if (excludedRows.size === 0) return;
+    runAction({
+      kind: "restore",
+      ops: [
+        { scope: "subject", ids: [...subjectExcluded], assessmentId },
+        { scope: "cohort", ids: [...cohortExcluded] },
+      ],
+    });
   };
-  // Undo the last soft-delete / restore (reverse it exactly).
+  // Undo the last action (reverse every op in it, in its own scope).
   const undo = () => {
     setUndoStack((s) => {
       const last = s[s.length - 1];
       if (!last) return s;
-      const restore = last.kind === "remove"; // undoing a remove = restore
-      for (const id of last.ids) provider.excludeParticipantFromCohort(cycleId, id, !restore, restore ? undefined : "Removed in cleaning (redo)");
+      const reverse = last.kind === "remove" ? false : true; // undo remove = restore
+      for (const op of last.ops) applyOp(op, reverse);
       return s.slice(0, -1);
     });
     clearSel();
@@ -240,8 +283,16 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
                 <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selectedExcluded.length === 0} onClick={restoreSelected}>
                   Restore selected
                 </Button>
-                <Button variant="danger" disabled={selectedActive.length === 0} onClick={removeSelected} style={{ fontSize: 11.5, background: H.paper }}>
-                  <Icon name="trash" size={12} color={H.bad} />Remove selected
+                <Button
+                  disabled={selectedActive.length === 0}
+                  onClick={removeFromCohort}
+                  style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }}
+                  title="Remove the selected participant(s) from every subject (staff / test / withdrawn)"
+                >
+                  <Icon name="trash" size={12} color={H.cream} />Remove from all subjects
+                </Button>
+                <Button variant="danger" disabled={selectedActive.length === 0} onClick={removeFromSubject} style={{ fontSize: 11.5, background: H.paper }} title={`Remove the selected participant(s) from ${subjectShort} only — their other subjects are untouched`}>
+                  <Icon name="trash" size={12} color={H.bad} />Remove from {subjectShort}
                 </Button>
               </div>
 

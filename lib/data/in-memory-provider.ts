@@ -40,7 +40,6 @@ import type { CleanResponse } from "@/lib/ingest/types";
 import type { ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 import { SUBJECT_CATALOG, isSurveyAssessment } from "./subject-catalog";
-import { isStaffTestEmail } from "./staff-exclusions";
 import { isTechnicalIncidentStatus } from "./result-status";
 import { isEssaySubject, reservedEssayMax } from "./essays";
 import type {
@@ -593,20 +592,15 @@ export class InMemoryDataProvider implements DataProvider {
     return this.cleanRows.get(`${this.seed.liveCycle.id}:${assessmentId}`);
   }
   /**
-   * Participant ids excluded cohort-wide (staff / test accounts) for the live
-   * cycle. Two sources, unioned:
-   *   1. the configured staff/test EMAIL list (primary, robust — keyed on the
-   *      participant's stable email `studentId`/qm_participant_id, so it survives
-   *      re-import and needs no stored decision); and
-   *   2. explicit ad-hoc cohort exclusions recorded via
-   *      `excludeParticipantFromCohort` (persisted per-subject, replayed on hydrate).
+   * Participant ids excluded cohort-wide for the live cycle — staff/test accounts
+   * and anyone the reviewer removed from every subject. This is ALL data now: every
+   * id comes from `excludeParticipantFromCohort` (recorded ad hoc in the Clean UI, or
+   * seeded per cohort from the `cohort_exclusions` table on hydrate). No participant
+   * is excluded by an email/name/id hard-coded in the source — the staff/test set is
+   * an editable, per-cohort list, not a constant.
    */
   private cohortExcludedSet(): Set<string> {
-    const out = new Set<string>(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
-    for (const p of this.seed.liveCycle.participants) {
-      if (isStaffTestEmail(p.studentId ?? p.id)) out.add(p.id);
-    }
-    return out;
+    return new Set<string>(this.participantExclusions.get(this.seed.liveCycle.id)?.keys() ?? []);
   }
   /**
    * Participants removed from the COHORT entirely — those cleaned out (Clean-stage
@@ -1308,32 +1302,38 @@ export class InMemoryDataProvider implements DataProvider {
     };
     const { columns, rows } = this.rawMatrix(a);
     // Apply the non-destructive clean-stage removals: drop removed columns (and
-    // their cells) and removed rows from the CLEANED view. `rawMatrix` itself is
-    // untouched, so getRawData (the "exactly what you uploaded" overview) still
-    // shows the full raw file.
+    // their cells) from the CLEANED view. Removed ROWS stay VISIBLE and are struck
+    // through instead of vanishing, so a per-subject removal reads as "still here,
+    // just excluded from this subject" and can be reversed in place. `rawMatrix`
+    // itself is untouched, so getRawData still shows the full raw file.
     const remRows = this.cleanRows.get(`${cycleId}:${assessmentId}`);
     const remCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
     const colKeep = columns.map((c, i) => ({ c, i })).filter((x) => !remCols?.has(x.c.id));
     const cleanedColumns = colKeep.map((x) => x.c);
-    const cleanedRows = rows
-      .filter((r) => !remRows?.has(r.id))
-      .map((r) => (remCols && remCols.size ? { ...r, cells: colKeep.map((x) => r.cells[x.i] ?? null) } : r));
-    // Soft-deleted rows: participants excluded cohort-wide (staff/test email list
-    // + ad-hoc `excludeParticipantFromCohort`) are KEPT visible but flagged so the
-    // table can strike them through. Restricted to rows actually shown.
+    const cleanedRows = rows.map((r) =>
+      remCols && remCols.size ? { ...r, cells: colKeep.map((x) => r.cells[x.i] ?? null) } : r,
+    );
+    // Struck rows have two scopes, both kept visible: PER-SUBJECT removals (this
+    // sitting only — `setCleanRemoval`) and COHORT-WIDE exclusions (every subject —
+    // `excludeParticipantFromCohort`, incl. seeded staff/test accounts). The union
+    // is what the table strikes through; the split drives the scope-aware UI.
     const cohortExcluded = this.cohortExcludedSet();
-    const excludedRows = cleanedRows.filter((r) => cohortExcluded.has(r.id)).map((r) => r.id);
+    const cohortExcludedRows = cleanedRows.filter((r) => cohortExcluded.has(r.id)).map((r) => r.id);
+    const subjectExcludedRows = cleanedRows.filter((r) => remRows?.has(r.id) && !cohortExcluded.has(r.id)).map((r) => r.id);
+    const excludedRows = cleanedRows.filter((r) => cohortExcluded.has(r.id) || remRows?.has(r.id)).map((r) => r.id);
     return {
       assessment: refs.find((r) => r.id === assessmentId)!,
       assessments: refs,
       checks,
       counts,
       rowsBefore: rows.length,
-      rowsAfter: cleanedRows.length,
+      rowsAfter: cleanedRows.length - excludedRows.length,
       canProceed: counts.fail === 0,
       columns: cleanedColumns,
       rows: cleanedRows,
       excludedRows,
+      subjectExcludedRows,
+      cohortExcludedRows,
     };
   }
 

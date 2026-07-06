@@ -21,12 +21,13 @@
  * "Assessment Health" check is a critical-path step, distinct from the
  * exploratory sitting-level "Diagnostics" tab.
  */
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "./Shell";
 import { LockStatus } from "./LockBanner";
 import { StepBackButton } from "./StepBackButton";
 import { cyclesSubnav } from "@/lib/ui/subnav";
+import { recordCycleStep } from "@/lib/ui/last-step";
 import { useProviderData } from "@/lib/data/context";
 import { hasRole } from "@/lib/auth/roles";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
@@ -69,6 +70,12 @@ export function CycleShell({
   children: ReactNode;
 }) {
   const isPipeline = area === "pipeline";
+  // Remember the step the user currently has open, per cycle, so "Critical Path"
+  // returns them here rather than resetting to Clean (Bug 3). Only Critical Path
+  // steps carry a stage index; the audit/diagnostics/settings tabs do not.
+  useEffect(() => {
+    if (isPipeline && stageIndex != null) recordCycleStep(cycleId, stageIndex);
+  }, [isPipeline, stageIndex, cycleId]);
   // The admin-only "Data flow" developer tab is added to the cycle nav only for the
   // top admin role. Tolerant of partial provider stubs used in render tests.
   const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));

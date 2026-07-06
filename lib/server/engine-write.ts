@@ -24,8 +24,8 @@ import type {
   EssayMarkRow,
   AlterationRow,
   CleanExclusionRow,
+  CohortExclusionRow,
 } from "@/lib/types/database";
-import { isStaffTestEmail } from "@/lib/data/staff-exclusions";
 import {
   getEngine,
   ENGINE_VERSION,
@@ -65,7 +65,7 @@ export interface RecomputeResult {
  * Returns row counts written. Throws on any write error.
  */
 export async function recomputeAndWrite(admin: Admin, cycleId: string): Promise<RecomputeResult> {
-  const [assessments, items, participants, responses, essayRows, alterationRows, cleanExclusions] = await Promise.all([
+  const [assessments, items, participants, responses, essayRows, alterationRows, cleanExclusions, cohortExclusions] = await Promise.all([
     sel<AssessmentRow>(admin.from("assessments").select("*").eq("cycle_id", cycleId)),
     sel<ItemRow>(admin.from("items").select("*").eq("cycle_id", cycleId)),
     sel<ParticipantRow>(admin.from("participants").select("*").eq("cycle_id", cycleId)),
@@ -73,25 +73,29 @@ export async function recomputeAndWrite(admin: Admin, cycleId: string): Promise<
     sel<EssayMarkRow>(admin.from("essay_marks").select("*").eq("cycle_id", cycleId)),
     sel<AlterationRow>(admin.from("alterations").select("*").eq("cycle_id", cycleId)),
     sel<CleanExclusionRow>(admin.from("clean_exclusions").select("*").eq("cycle_id", cycleId)),
+    sel<CohortExclusionRow>(admin.from("cohort_exclusions").select("*").eq("cycle_id", cycleId)),
   ]);
 
   const engine = getEngine();
   const itemAssessment = new Map(items.map((it) => [it.id, it.assessment_id]));
   const excludedItemIds = items.filter((it) => it.status === "excluded").map((it) => it.id);
 
-  // ── participant / cohort exclusions (prompt-09) ──────────────────────────
+  // ── participant / cohort exclusions ──────────────────────────────────────
   // The materialized participant_scores MUST reflect the CLEANED cohort, so the
   // Candidate Scores page never shows excluded accounts. Two sources, matching the
   // client provider's cohort boundary:
-  //   1. the configured staff/test EMAIL list — keyed on the stable email
-  //      (qm_participant_id / email), applied to EVERY subject; and
-  //   2. Clean-stage row removals (clean_exclusions kind='row') — per subject,
+  //   1. COHORT-WIDE exclusions (cohort_exclusions, migration 0033) — staff/test/
+  //      withdrawn, keyed on the stable qm_participant_id (editable data, never an
+  //      email hard-coded in source), applied to EVERY subject; and
+  //   2. Clean-stage PER-SUBJECT row removals (clean_exclusions kind='row') —
   //      re-resolved through the participant's stable key so a removal recorded
   //      before a re-import still matches the freshly-minted row (migration 0016).
   const qmToUuid = new Map(participants.map((p) => [p.qm_participant_id, p.id]));
   const liveIds = new Set(participants.map((p) => p.id));
   const staffExcluded = new Set(
-    participants.filter((p) => isStaffTestEmail(p.email) || isStaffTestEmail(p.qm_participant_id)).map((p) => p.id),
+    cohortExclusions
+      .map((ce) => qmToUuid.get(ce.participant_key))
+      .filter((id): id is string => id != null),
   );
   const rowExcludedByAssessment = new Map<string, Set<string>>();
   for (const ce of cleanExclusions) {
