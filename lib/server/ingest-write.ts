@@ -60,6 +60,49 @@ export interface IngestWriteResult {
   responses: number;
 }
 
+/**
+ * The decisive client-side integrity guard: every subject's distinct `qm_result_id`
+ * in the `responses` payload MUST equal its distinct `qm_result_id` in `sittings`.
+ *
+ * A whole-sitting collapse — distinct sittings folded together by a string-vs-number
+ * key collision, so `responses` keeps only some of a subject's sittings — is exactly
+ * this inequality. Asserting it BEFORE the write means a collapsed payload can never
+ * even reach the database; the persist transaction (migration 0030) re-asserts the
+ * same equality server-side, so the failure mode is impossible to ship from either
+ * side. Subjects with no MCQ responses (a held-out re-sit form) have no sitting rows
+ * in the payload and never enter this check.
+ */
+export function assertResponsesCoverSittings(
+  respRows: readonly Record<string, unknown>[],
+  sittingRows: readonly Record<string, unknown>[],
+): void {
+  const distinctBySubject = (rows: readonly Record<string, unknown>[]): Map<string, Set<string>> => {
+    const m = new Map<string, Set<string>>();
+    for (const row of rows) {
+      const aId = String(row.assessment_id ?? "");
+      const rid = String(row.qm_result_id ?? "");
+      if (!aId || !rid) continue;
+      (m.get(aId) ?? m.set(aId, new Set()).get(aId)!).add(rid);
+    }
+    return m;
+  };
+  const sitBySubject = distinctBySubject(sittingRows);
+  const respBySubject = distinctBySubject(respRows);
+  const offending: string[] = [];
+  for (const [aId, sits] of sitBySubject) {
+    const resp = respBySubject.get(aId);
+    if (!resp || resp.size === 0) continue; // subject with no MCQ responses — nothing to reconcile
+    if (resp.size !== sits.size) offending.push(`subject ${aId}: responses ${resp.size} vs sittings ${sits.size}`);
+  }
+  if (offending.length > 0) {
+    throw new Error(
+      `ingest integrity: responses distinct sittings != sittings distinct sittings, per subject — a ` +
+        `whole-sitting collapse would be persisted (a string-vs-number key collision dropping distinct ` +
+        `sittings). Refusing the write. Offending: ${offending.join("; ")}`,
+    );
+  }
+}
+
 export interface IngestWriteOptions {
   /**
    * Authenticated user id recorded as `import_batches.created_by` + the audit
@@ -337,6 +380,11 @@ export async function ingestCleanResponses(
     results_total: canonical?.integrity.resultsChecked ?? null,
     results_reconciled: canonical?.integrity.reconciled ?? null,
   };
+
+  // ── 6b. Integrity gate: never send a collapsed responses set to the DB. ────
+  // Distinct sittings in `responses` must equal distinct sittings in `sittings`,
+  // per subject — a whole-sitting collapse is rejected here, before the write.
+  assertResponsesCoverSittings(respRows, sittingRows);
 
   // ── 7. Persist atomically: clear-then-insert inside ONE transaction. ──────
   // A single call — so a failure cannot leave partial rows, and a re-upload
