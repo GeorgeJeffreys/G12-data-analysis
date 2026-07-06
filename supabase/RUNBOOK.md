@@ -14,6 +14,25 @@ NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_h
 and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
 then `0020`.
 
+> **`0031_cycle_lifecycle_date_delete.sql` — carry the sitting DATE + add a cycle-level
+> DELETE (run AFTER 0001–0030).**
+> Adds a nullable `exam_cycles.sitting_date date` and re-creates
+> `create_cycle_with_assessments(...)` with a trailing `p_sitting_date date default null`
+> parameter (persisting it) — the previous 6-arg signature is dropped so the 7-arg one is
+> unambiguous, so **the app's create-sitting will 404 the RPC until this is applied**
+> (the client now sends `p_sitting_date`). Adds `public.delete_cycle(uuid) returns bigint`
+> — the cycle-level danger action that REUSES the `delete_sitting` cascade
+> (`app.cycle_row_count` → `delete from exam_cycles`), admin-gated via the C1
+> `app.has_role` primitive, audited at the workspace level, and refusing to delete the
+> LAST remaining cycle. `schema_health()` reports `'0031'` and probes the new column +
+> function (every 0025–0030 probe retained). Verify with `select public.schema_health();`
+> (expect `ok=true`, `migration='0031'`); create a sitting with a date and confirm
+> `select id, name, sitting_date from exam_cycles order by created_at desc limit 1;`;
+> dry-run a delete count with `select app.cycle_row_count('<CYCLE_UUID>');` then
+> `select public.delete_cycle('<CYCLE_UUID>');` (zero rows remain for that cycle_id in
+> every table, other cycles untouched). Engine parity 183/183 unaffected. Roll back with
+> `0031_cycle_lifecycle_date_delete.rollback.sql`.
+
 > **`0026_pipeline_natural_key_spine.sql` — REBUILD data processing to natural keys +
 > a clean fact-table baseline (run AFTER 0025).**
 > Run AFTER `0001`–`0025`, in the Supabase SQL editor (EU). Establishes the clean

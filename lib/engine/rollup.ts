@@ -66,7 +66,12 @@ export function rollUp(input: RollUpInput): RollUp {
       if (excluded.has(r.itemId)) continue;
       const key = keyOf(r.itemId);
       if (key == null || key === "") continue;
-      const mapKey = `${r.assessmentId} ${key}`;
+      // Unit-separator delimiter: an assessment id / element key can never contain
+      // it, so the two legs of this composite lookup are always unambiguously
+      // separable. A space delimiter was a latent collision (task 23); the
+      // (assessmentId, key) pair is carried separately on `e`, so `mapKey` is purely
+      // an opaque, never-parsed lookup key.
+      const mapKey = `${r.assessmentId}␟${key}`;
       let e = acc.get(mapKey);
       if (!e) {
         e = { assessmentId: r.assessmentId, key, sum: 0, n: 0, items: new Set() };

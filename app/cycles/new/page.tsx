@@ -7,7 +7,7 @@
  * DataProvider (a real Supabase write when running live), then navigates to the
  * new sitting by its real id.
  */
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
@@ -28,6 +28,7 @@ export default function NewCyclePage() {
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dateRef = useRef<HTMLInputElement>(null);
 
   const selectedCount = useMemo(() => Object.values(included).filter(Boolean).length, [included]);
 
@@ -106,11 +107,28 @@ export default function NewCyclePage() {
               <span className="hf-lbl">Sitting date</span>
               <span className="hf-field" style={{ justifyContent: "space-between" }}>
                 <input
+                  ref={dateRef}
+                  type="date"
                   value={sittingDate}
                   onChange={(e) => setSittingDate(e.target.value)}
+                  aria-label="Sitting date"
                   style={{ border: "none", outline: "none", background: "transparent", flex: 1, fontSize: 12.5, fontFamily: "inherit", color: H.ink }}
                 />
-                <Icon name="cal" color={H.ink3} />
+                {/* Wire the calendar trigger: clicking it opens the native picker
+                    (falls back to focusing the field where showPicker is unsupported). */}
+                <button
+                  type="button"
+                  aria-label="Open calendar"
+                  onClick={() => {
+                    const el = dateRef.current;
+                    if (!el) return;
+                    if (typeof el.showPicker === "function") el.showPicker();
+                    else el.focus();
+                  }}
+                  style={{ border: "none", background: "transparent", padding: 0, cursor: "pointer", display: "inline-flex" }}
+                >
+                  <Icon name="cal" color={H.ink3} />
+                </button>
               </span>
             </label>
           </div>

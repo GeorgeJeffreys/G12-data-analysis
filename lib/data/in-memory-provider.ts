@@ -486,17 +486,28 @@ export class InMemoryDataProvider implements DataProvider {
   /**
    * @param seed Optional cycle data to serve (defaults to the bundled demo seed).
    * @param user Optional signed-in user (defaults to the MOCK Lead).
+   * @param opts.demoFallbackCentre When the seed has no test centres, inject a
+   *   single demo centre so the standalone demo's pickers are non-empty. MUST be
+   *   false on the live Supabase path: the demo centre's id is a slug (`tc-shatila-1`),
+   *   NOT a DB UUID, and letting it reach `create_cycle_with_assessments` /
+   *   `move_exam_year_to_centre` is exactly the `invalid input syntax for type uuid:
+   *   "tc-shatila-1"` failure. Live runs with an empty `test_centres` table must
+   *   instead show the "create a centre first" empty state (defaults to true so the
+   *   pure in-memory demo and existing tests are unchanged).
    */
-  constructor(seed?: Seed, user?: CurrentUser) {
+  constructor(seed?: Seed, user?: CurrentUser, opts?: { demoFallbackCentre?: boolean }) {
     if (seed) this.seed = seed;
     if (user) this.user = user;
     // 0010 — bind the test-centre list now that `seed` is final. Live runs carry
-    // the hydrated centres; the demo falls back to a single active centre so the
+    // the hydrated centres; the demo may fall back to a single active centre so the
     // home/year screens always have a centre to label and the picker is non-empty.
+    const injectFallback = opts?.demoFallbackCentre ?? true;
     this.testCentres =
       this.seed.testCentres && this.seed.testCentres.length > 0
         ? this.seed.testCentres.map((c) => ({ ...c }))
-        : [{ id: "tc-shatila-1", name: "Shatila 1", code: "SHA1", slug: "shatila-1", active: true }];
+        : injectFallback
+          ? [{ id: "tc-shatila-1", name: "Shatila 1", code: "SHA1", slug: "shatila-1", active: true }]
+          : [];
   }
 
   /** The centre new work defaults to: the first ACTIVE centre, else the first. */
@@ -1002,7 +1013,12 @@ export class InMemoryDataProvider implements DataProvider {
       const year = this.yearOf(c.name);
       const sitting = this.sittingOf(c.name);
       const centre = this.centreFor(c.testCentreId);
-      const key = `${centre.id}|${year}`;
+      // Group (and route) on the REAL exam_years id whenever the cycle carries one —
+      // NEVER on the parsed year label. Both sittings of one exam year share its
+      // examYearId, so they pair into a single slot; two distinct exam years whose
+      // names both parse to "Unknown" (or blank) stay separate instead of collapsing.
+      // Only demo/mock cycles with no DB year fall back to grouping by (centre, year).
+      const key = c.examYearId ? `year:${c.examYearId}` : `${centre.id}|${year}`;
       if (!byKey.has(key)) {
         byKey.set(key, { year, centre });
         order.push(key);
@@ -1018,7 +1034,12 @@ export class InMemoryDataProvider implements DataProvider {
     }
     return order.map((key) => {
       const slot = byKey.get(key)!;
-      const id = slot.centre.id === primaryId ? this.yearId(slot.year) : `${this.yearId(slot.year)}--${slot.centre.slug}`;
+      // Route on the real exam_years UUID when it exists; the label-derived id is
+      // only a demo/mock fallback (no DB year). A null/"Unknown"/blank year NAME can
+      // therefore never break or 404 the route — the name is display-only.
+      const derived =
+        slot.centre.id === primaryId ? this.yearId(slot.year) : `${this.yearId(slot.year)}--${slot.centre.slug}`;
+      const id = slot.examYearId ?? derived;
       return {
         id,
         name: slot.year,
@@ -4547,6 +4568,29 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
     return Promise.resolve();
   }
+  /**
+   * Delete an entire cycle and everything keyed to its cycle_id. Mirrors the
+   * SECURITY DEFINER `delete_cycle` RPC: admin-only, audited at the workspace level,
+   * and refuses to remove the LAST remaining cycle (which would leave the workspace
+   * with nothing to open). The demo holds one live cycle in memory (no DB), so the
+   * cascade is modelled by emptying the seed to its Upload baseline.
+   */
+  deleteCycle(cycleId: string): Promise<void> {
+    if (!hasRole(this.user.role, "admin")) return Promise.reject(new Error("not authorized"));
+    // Last-cycle guard: count cycles OTHER than the target across the live +
+    // prior (mock) cycles the workspace can open.
+    const remaining = this.listCycles().filter((c) => c.id !== cycleId).length;
+    if (remaining === 0) {
+      return Promise.reject(
+        new Error("cannot delete the last remaining cycle (the workspace would be left with no cycles)"),
+      );
+    }
+    const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
+    this.resetCycleToEmpty(cycleId);
+    this.audit("cycle", "Deleted cycle", `Removed cycle "${name}" and every row keyed to its cycle_id`, null);
+    this.bump();
+    return Promise.resolve();
+  }
 
   /**
    * Empty a sitting's ingested data + per-cycle decision state back to the fresh
@@ -5516,7 +5560,9 @@ export class InMemoryDataProvider implements DataProvider {
     const active = this.testCentres.filter((c) => c.active);
     return {
       defaultName: "May 2026",
-      sittingDate: "14 May 2026",
+      // ISO (yyyy-mm-dd) so the native <input type="date"> and the DB `date` column
+      // agree on one representation end to end (the picker renders it locale-formatted).
+      sittingDate: "2026-05-14",
       assessments: SUBJECT_CATALOG.map((s) => ({
         id: s.id,
         name: s.name,

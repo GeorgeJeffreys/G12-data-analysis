@@ -35,6 +35,25 @@
  * non-numeric ids (should they ever appear) pass through unchanged.
  */
 export function normalizeResultId(raw: string): string {
+  return canonNumericQmId(raw);
+}
+
+/**
+ * Canonical `QuestionId` (the QM question key). A `QuestionId` is a numeric QM id
+ * from the SAME export family as `ResultId`, so it is subject to the identical
+ * representational skew (wrapping quotes, padded whitespace, spreadsheet trailing
+ * `.0`, exponential form). It is used as the item natural key and as the second leg
+ * of the response de-dup key `(ResultId, QuestionId)`, so it MUST be canonicalised
+ * the same way in every place it is read — otherwise a padded/reshaped QuestionId
+ * misses the canonical item-metadata join and escapes response de-dup, the exact
+ * class of failure that dropped whole sittings on the ResultId axis (task 23).
+ */
+export function normalizeQuestionId(raw: string): string {
+  return canonNumericQmId(raw);
+}
+
+/** Shared numeric-QM-id canonicaliser — one body for ResultId and QuestionId. */
+function canonNumericQmId(raw: string): string {
   let v = (raw ?? "").trim();
   if (v === "") return "";
   // Strip one layer of wrapping quotes (some exporters quote id columns).

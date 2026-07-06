@@ -12,6 +12,7 @@ import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Badge } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
+import { DeleteCycleButton } from "@/components/cycle/DeleteCycleButton";
 import { PIPELINE, type SittingRef } from "@/lib/data/types";
 
 // The step total shown in "k/N steps" derives from the canonical pipeline list
@@ -61,6 +62,9 @@ function SittingCard({ s }: { s: SittingRef }) {
               <Icon name="arrow" color="#fff" />
             </Button>
           </Link>
+          {/* Cycle-level danger action (admin-only, type-to-confirm) — removes the
+              cycle row and every row keyed to its cycle_id, then returns to Years. */}
+          <DeleteCycleButton cycleId={s.cycleId!} name={s.cycleName} />
         </>
       ) : (
         <>

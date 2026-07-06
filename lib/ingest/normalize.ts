@@ -10,7 +10,7 @@
 import type { DemandLevel } from "@/lib/types/database";
 import { repairText, repairValue } from "./repair";
 import { assignParticipantIdentities, type ResolvedIdentity } from "./participant-identity";
-import { normalizeResultId } from "./qm/result-id";
+import { normalizeResultId, normalizeQuestionId } from "./qm/result-id";
 import type { CleanResponse, RawExportRow } from "./types";
 
 export const MCQ_QUESTION_TYPE = "Multiple Choice";
@@ -198,7 +198,7 @@ export function normalizeResponses(
 
     clean.push({
       assessmentName,
-      qmQuestionId: str(row["QuestionId"]),
+      qmQuestionId: normalizeQuestionId(str(row["QuestionId"])),
       qmResultId: normalizeResultId(str(row["ResultId"])),
       qmParticipantId,
       participantPseudonym: pseudonym(qmParticipantId),

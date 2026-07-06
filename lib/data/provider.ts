@@ -379,6 +379,14 @@ export interface DataProvider {
    */
   deleteSitting(cycleId: string): Promise<void>;
   /**
+   * Delete an entire CYCLE and every row keyed to its `cycle_id` across all tables
+   * (reuses the sitting-delete cascade). Admin-gated via the C1 `has_role` primitive
+   * and audited server-side; refuses to delete the last remaining cycle. Resolves
+   * once the DB confirms the cascade removed rows (live) or the in-memory state is
+   * reset (demo). The call site returns to Years and recomputes summaries.
+   */
+  deleteCycle(cycleId: string): Promise<void>;
+  /**
    * Probe the live DB for schema drift — the columns/functions the code needs
    * versus what's installed. Lets the app flag "the DB is behind — run migration
    * NNNN" proactively instead of failing at ingest. The demo has no DB (always ok).

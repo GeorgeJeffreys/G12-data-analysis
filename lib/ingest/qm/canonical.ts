@@ -12,7 +12,7 @@ import {
   type IdentityInputRow,
   type ResolvedIdentity,
 } from "../participant-identity";
-import { normalizeResultId } from "./result-id";
+import { normalizeResultId, normalizeQuestionId } from "./result-id";
 import type { CsvTable } from "./csv";
 import { detectThreeExports, type NamedInput } from "./detect";
 import type {
@@ -245,7 +245,7 @@ export function buildCanonicalModelFromTables(
 
     const itemRows = byResult.items.get(resultId) ?? [];
     const responses = itemRows.map((it) => ({
-      questionId: (it["QuestionId"] ?? "").trim(),
+      questionId: normalizeQuestionId(it["QuestionId"] ?? ""),
       answerGiven: text(it["AnswerGiven"]),
       answerScore: num(it["AnswerScore"], 0)!,
       responseTime: num(it["AnswerResponseTimeSeconds"], null),
@@ -316,7 +316,7 @@ export function buildCanonicalModelFromTables(
   for (const result of results) {
     const itemRows = byResult.items.get(result.resultId) ?? [];
     for (const it of itemRows) {
-      const questionId = (it["QuestionId"] ?? "").trim();
+      const questionId = normalizeQuestionId(it["QuestionId"] ?? "");
       if (!questionId) continue;
       const key = `${result.subject}|${questionId}`;
       if (itemMap.has(key)) continue;

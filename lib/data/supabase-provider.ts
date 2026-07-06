@@ -145,7 +145,7 @@ export class SupabaseDataProvider implements DataProvider {
   private realMembers: MemberDirRow[] = [];
 
   constructor(private supabase: DB) {
-    this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER);
+    this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER, { demoFallbackCentre: false });
     void this.init();
     // The provider instance outlives client-side navigation, so a sign-in that
     // happens after construction (on /signin) would otherwise leave `status`
@@ -207,12 +207,15 @@ export class SupabaseDataProvider implements DataProvider {
     const h = await hydrate(this.supabase);
     if (!h) {
       this.status = "no-cycle";
-      this.inner = new InMemoryDataProvider(EMPTY_SEED, this.user);
+      this.inner = new InMemoryDataProvider(EMPTY_SEED, this.user, { demoFallbackCentre: false });
       await this.fetchMembers();
       this.bump();
       return;
     }
-    const next = new InMemoryDataProvider(h.seed, this.user);
+    // Live path: never inject the demo slug centre. If `test_centres` is empty the
+    // picker stays empty (the "create a centre first" state) rather than offering a
+    // non-UUID centre that would fail the create-sitting insert.
+    const next = new InMemoryDataProvider(h.seed, this.user, { demoFallbackCentre: false });
     this.replay(next, h.seed.liveCycle.id, h.decisions);
     this.inner = next;
     await this.fetchMembers();
@@ -527,6 +530,15 @@ export class SupabaseDataProvider implements DataProvider {
   }
   async deleteSitting(cycleId: string): Promise<void> {
     const { data, error } = await this.rpcData<number>("delete_sitting", { p_cycle: cycleId });
+    if (error) throw new Error(this.driftHint(error.message));
+    this.assertDeleted(data, "delete");
+    await this.rehydrate();
+  }
+  async deleteCycle(cycleId: string): Promise<void> {
+    // 0031 — the guarded cycle-level cascade (admin-gated, audited, last-cycle
+    // guard). Returns the deleted-row count; a null/0 surfaces an explicit error
+    // rather than a silent success, then we re-hydrate so Years recomputes.
+    const { data, error } = await this.rpcData<number>("delete_cycle", { p_cycle: cycleId });
     if (error) throw new Error(this.driftHint(error.message));
     this.assertDeleted(data, "delete");
     await this.rehydrate();
@@ -1023,6 +1035,9 @@ export class SupabaseDataProvider implements DataProvider {
       p_assessments,
       // 0010 — create the sitting (and find-or-create its year) under the centre.
       p_test_centre_id: input.testCentreId || null,
+      // 0031 — carry the chosen sitting date through to the DB (an ISO yyyy-mm-dd
+      // string the `date` column accepts) instead of silently dropping it.
+      p_sitting_date: input.sittingDate || null,
     });
     if (error || !data) {
       // eslint-disable-next-line no-console
