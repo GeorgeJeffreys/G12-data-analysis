@@ -22,8 +22,8 @@ import type { CurrentUser } from "@/lib/data/types";
 
 const CYCLE = "may-2026";
 
-const REVIEWER_A: CurrentUser = { id: "m-sami", name: "Sami Haddad", initials: "SH", role: "reviewer" };
-const ADMIN_B: CurrentUser = { id: "m-rana", name: "Rana Mansour", initials: "RM", role: "lead_admin" };
+const REVIEWER_A: CurrentUser = { id: "m-sami", name: "Omar Reviewer", initials: "SH", role: "reviewer" };
+const ADMIN_B: CurrentUser = { id: "m-rana", name: "Nadia Admin", initials: "RM", role: "lead_admin" };
 const VIEWER_C: CurrentUser = { id: "m-zoe", name: "Zoe Khoury", initials: "ZK", role: "viewer" };
 
 /** First assessment with at least one item, and that item's id. */
@@ -57,10 +57,10 @@ describe("override — authorised user re-includes another user's exclusion", ()
     const e = p.getAuditLog(CYCLE, "all", "").entries[0]!;
     expect(e.type).toBe("override");
     expect(e.isOverride).toBe(true);
-    expect(e.actorName).toBe("Rana Mansour");
-    expect(e.priorActor).toBe("Sami Haddad");
+    expect(e.actorName).toBe("Nadia Admin");
+    expect(e.priorActor).toBe("Omar Reviewer");
     expect(e.reason).toBe("Re-included after appeal upheld");
-    expect(e.detail).toContain("Sami Haddad");
+    expect(e.detail).toContain("Omar Reviewer");
     expect(Number.isNaN(Date.parse(e.ts))).toBe(false);
   });
 });
@@ -164,7 +164,7 @@ describe("override — manual mark adjustment can be reverted by an authorised u
     expect(JSON.stringify(p.getGrades(CYCLE)!.rows)).toBe(baseRows);
     const e = p.getAuditLog(CYCLE, "all", "").entries[0]!;
     expect(e.type).toBe("override");
-    expect(e.priorActor).toBe("Sami Haddad");
+    expect(e.priorActor).toBe("Omar Reviewer");
     expect(e.reason).toBe("Reverted: appeal not upheld");
   });
 });
@@ -179,7 +179,7 @@ describe("audit & overrides view — current effective state with provenance", (
     p.setItemExcluded(CYCLE, aid, itemId, true, "ambiguous");
     let view = p.getOverrideView(CYCLE);
     const before = view.decisions.find((d) => d.itemId === itemId)!;
-    expect(before.decidedBy).toBe("Sami Haddad");
+    expect(before.decidedBy).toBe("Omar Reviewer");
     expect(before.override).toBeFalsy();
     expect(view.canOverride).toBe(false); // reviewer can't override
 
@@ -191,8 +191,8 @@ describe("audit & overrides view — current effective state with provenance", (
     expect(view.canOverride).toBe(true);
     const after = view.decisions.find((d) => d.itemId === itemId)!;
     expect(after.override).toBeTruthy();
-    expect(after.override!.by).toBe("Rana Mansour");
-    expect(after.override!.priorActor).toBe("Sami Haddad");
+    expect(after.override!.by).toBe("Nadia Admin");
+    expect(after.override!.priorActor).toBe("Omar Reviewer");
     expect(after.override!.reason).toBe("Confirmed exclusion at check-in");
     expect(view.counts.overridden).toBeGreaterThanOrEqual(1);
   });
