@@ -101,19 +101,24 @@ export default function DataFlowCyclePage({ params }: { params: { cycleId: strin
 function CollapseState({ model }: { model: DataFlowModel }) {
   const rows = model.subjects;
   const [selSubj, setSelSubj] = useState<string>(
-    rows.find((r) => r.counts.some((c, i) => i > 0 && c < r.counts[i - 1]!))?.key ?? rows[0]?.key ?? "",
+    // Default to a subject with an UNEXPECTED drop (at/after the score matrix), not
+    // the expected staff removal at Clean.
+    rows.find((r) => r.counts[2]! < r.counts[1]! || r.counts[3]! < r.counts[2]!)?.key ?? rows[0]?.key ?? "",
   );
   const [selStage, setSelStage] = useState<DataFlowStageKey>("matrix");
   const selRow = rows.find((r) => r.key === selSubj) ?? rows[0]!;
-  const { ingested, computed, lost, worstStage } = model;
+  const { ingested, cleaned, computed, lost, worstStage } = model;
+  // Subjects with an UNEXPECTED drop (a cleaned sitter that never scored), not the
+  // expected staff removal at Clean.
+  const affected = rows.filter((r) => r.counts[2]! < r.counts[1]! || r.counts[3]! < r.counts[2]!).length;
 
   const stats: { n: string | number; label: string; sub: string; bad?: boolean; small?: boolean }[] = [
-    { n: ingested, label: "Participants ingested", sub: `across all ${rows.length} subjects` },
+    { n: ingested, label: "Participants ingested", sub: `distinct · staff/test incl.` },
     { n: computed, label: "Scores computed", sub: "reached the final stage" },
     {
       n: `−${lost}`,
-      label: "Participants lost",
-      sub: `${ingested ? Math.round((lost / ingested) * 100) : 0}% · ${rows.filter((r) => r.counts[0]! > r.counts[3]!).length} subject(s) affected`,
+      label: "Lost after Clean",
+      sub: `${cleaned ? Math.round((lost / cleaned) * 100) : 0}% of cleaned · ${affected} subject(s) affected`,
       bad: true,
     },
     worstStage
@@ -162,7 +167,7 @@ function CollapseState({ model }: { model: DataFlowModel }) {
           </div>
         }
       >
-        <FlowStrip rows={rows} selSubj={selSubj} onSubj={setSelSubj} selStage={selStage} onStage={setSelStage} />
+        <FlowStrip rows={rows} selSubj={selSubj} onSubj={setSelSubj} selStage={selStage} onStage={setSelStage} totals={model.totals} />
         <div className="hf-sub" style={{ fontSize: 11, marginTop: 12, color: H.ink3 }}>
           Large number = participants at that stage. Items are fixed per subject ({selRow.items} for {selRow.subj}) and hold across every stage — only participants are lost.
         </div>
@@ -197,24 +202,27 @@ function CollapseState({ model }: { model: DataFlowModel }) {
 // ══════════════════════════════════════════════════════════════════════════
 function HealthyState({ model }: { model: DataFlowModel }) {
   const rows = model.subjects;
+  const removed = model.removedByCleaning;
+  const cleanNote =
+    removed > 0
+      ? `${model.ingested} ingested → ${removed} staff/test + soft-deleted removed at Clean → ${model.cleaned} scored. No participant is lost after Clean.`
+      : "Every subject holds its participant count from Ingested through Computed scores. Nothing was dropped after Clean.";
   return (
     <div className="hf-col" style={{ padding: "24px 30px", gap: 18, flex: 1, overflow: "auto" }}>
       <div className="hf-row" style={{ gap: 11, alignItems: "center", flexWrap: "wrap" }}>
         <div className="hf-h1">Data flow</div>
         <Badge tone="neutral"><Icon name="eye" size={11} color={H.ink2} />Read-only · reflects live data</Badge>
-        <Badge tone="good"><Mark kind="pass" size={11} />No loss detected</Badge>
+        <Badge tone="good"><Mark kind="pass" size={11} />No unexpected loss</Badge>
       </div>
-      <div className="hf-sub" style={{ maxWidth: 720, marginTop: -4 }}>
-        Every subject holds its participant count from Ingested through Computed scores. Nothing was dropped or merged
-        between stages.
-      </div>
+      <div className="hf-sub" style={{ maxWidth: 720, marginTop: -4 }}>{cleanNote}</div>
 
       <div className="hf-card">
         <div className="hf-row" style={{ alignItems: "stretch", flexWrap: "wrap" }}>
           {[
-            { n: model.totals[0]!, l: "Participants ingested", s: `across all ${rows.length} subjects` },
-            { n: model.totals[3]!, l: "Scores computed", s: "reached the final stage" },
-            { n: 0, l: "Participants lost", s: "clean pass", good: true },
+            { n: model.ingested, l: "Participants ingested", s: `distinct across ${rows.length} subjects · staff/test incl.` },
+            { n: removed, l: "Removed at Clean", s: "staff/test + soft-deletes (expected)" },
+            { n: model.computed, l: "Scores computed", s: "reached the final stage" },
+            { n: model.lost, l: "Participants lost", s: model.lost === 0 ? "no loss after Clean" : "after Clean", good: model.lost === 0 },
           ].map((c, i) => (
             <div key={i} className="hf-col" style={{ flex: 1, minWidth: 150, gap: 4, padding: "16px 22px", borderLeft: i ? `1px solid ${H.line}` : "none" }}>
               <span className="hf-mono" style={{ fontSize: 27, fontWeight: 600, lineHeight: 1, color: c.good ? H.good : H.ink }}>{c.n}</span>
@@ -225,8 +233,8 @@ function HealthyState({ model }: { model: DataFlowModel }) {
         </div>
       </div>
 
-      <SectionCard n="1" title="Where did data go" sub="Participant count at every stage — all holding" right={<Badge tone="good"><Mark kind="pass" size={10} />all stages balanced</Badge>}>
-        <FlowStrip rows={rows} selSubj={null} onSubj={undefined} selStage={null} onStage={undefined} />
+      <SectionCard n="1" title="Where did data go" sub="Participant count at every stage — staff/test excluded at Clean, then holding" right={<Badge tone="good"><Mark kind="pass" size={10} />no unexpected drop</Badge>}>
+        <FlowStrip rows={rows} selSubj={null} onSubj={undefined} selStage={null} onStage={undefined} totals={model.totals} />
       </SectionCard>
     </div>
   );
@@ -301,14 +309,19 @@ function FlowStrip({
   onSubj,
   selStage,
   onStage,
+  totals: distinctTotals,
 }: {
   rows: DataFlowSubject[];
   selSubj: string | null;
   onSubj?: (k: string) => void;
   selStage: DataFlowStageKey | null;
   onStage?: (k: DataFlowStageKey) => void;
+  /** Per-stage DISTINCT participant totals (from the model). A participant sitting
+   *  several subjects counts once — so the strip's total row reads the real headcount
+   *  (18 → 16), not the sum of per-subject rows (which double-counts). */
+  totals?: number[];
 }) {
-  const totals = DF_STAGES.map((_, i) => rows.reduce((a, r) => a + r.counts[i]!, 0));
+  const totals = distinctTotals ?? DF_STAGES.map((_, i) => rows.reduce((a, r) => a + r.counts[i]!, 0));
   return (
     <div className="hf-col" style={{ gap: 0 }}>
       {/* stage header */}

@@ -67,22 +67,23 @@ describe("developer data-flow model", () => {
     for (const s of m.subjects) expect(new Set(s.counts).size).toBe(1);
   });
 
-  it("switches to the collapse state and traces the dropped participant when one is excluded", () => {
+  it("treats a Clean-stage exclusion as an EXPECTED reduction (removedByCleaning), not a collapse", () => {
     const p = new InMemoryDataProvider();
     const cid = liveId(p);
     const before = buildDataFlow(p, cid)!;
     const subj = before.subjects[0]!;
-    // A live sitter (present through every stage) — excluding them must drop the
-    // cleaned cohort and flip the page into the collapse state.
+    // A live sitter (present through every stage) excluded at Clean. A cohort
+    // exclusion is INTENDED cleaning — it drops the cleaned cohort but is not an
+    // unexpected loss, so the pipeline stays healthy and the drop is counted as
+    // removedByCleaning (the same treatment as the staff/test exclusion).
     const victim = subj.people.find((pp) => pp.last === 3)!;
 
     p.excludeParticipantFromCohort(cid, victim.id, true, "data-flow test");
 
     const after = buildDataFlow(p, cid)!;
-    expect(after.state).toBe("collapse");
-    // Excluded cohort-wide, so lost = the number of subjects the victim sat (≥ 1).
-    expect(after.lost).toBeGreaterThanOrEqual(1);
-    expect(after.worstStage).toBeTruthy();
+    expect(after.state).toBe("healthy"); // intended cleaning, not a collapse
+    expect(after.removedByCleaning).toBeGreaterThanOrEqual(1);
+    expect(after.lost).toBe(0); // no loss AFTER Clean
 
     const s = after.subjects.find((x) => x.key === subj.key)!;
     expect(s.counts[1]).toBe(subj.counts[1]! - 1); // dropped at Cleaned in this subject

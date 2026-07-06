@@ -44,6 +44,7 @@ import type {
   EssayUploadRow,
   CgjUploadRow,
   SchemaHealth,
+  SittingRoster,
 } from "./provider";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
@@ -313,6 +314,7 @@ export class SupabaseDataProvider implements DataProvider {
   listCycles(): CycleSummary[] { return this.inner.listCycles(); }
   getCycle(cycleId: string): CycleDetail | null { return this.inner.getCycle(cycleId); }
   getIngest(cycleId: string): IngestModel | null { return this.inner.getIngest(cycleId); }
+  getSittingRoster(cycleId: string): SittingRoster | null { return this.inner.getSittingRoster(cycleId); }
   getCombinedSplit(cycleId: string): CombinedSplitModel | null { return this.inner.getCombinedSplit(cycleId); }
   getRawData(cycleId: string, assessmentId: string): RawDataModel | null { return this.inner.getRawData(cycleId, assessmentId); }
   getDataCleaning(cycleId: string, assessmentId: string): DataCleaningModel | null { return this.inner.getDataCleaning(cycleId, assessmentId); }

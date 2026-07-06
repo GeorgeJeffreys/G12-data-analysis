@@ -40,7 +40,7 @@ describe("Data flow — within-cycle pipeline inspector", () => {
 
     expect(html).toContain("Data flow");
     expect(html).toContain("Read-only");
-    expect(html).toContain("No loss detected");
+    expect(html).toContain("No unexpected loss");
     // The four stage names appear in the hero strip.
     for (const s of ["Ingested", "Cleaned cohort", "Score matrix", "Computed scores"]) expect(html).toContain(s);
     // Every subject appears in the strip.
@@ -50,12 +50,24 @@ describe("Data flow — within-cycle pipeline inspector", () => {
     expect(html).not.toContain("Drill by participant");
   });
 
-  it("renders the collapse layout (strip + stage detail + drill) when a real drop exists", async () => {
+  it("renders the collapse layout (strip + stage detail + drill) when a real post-Clean drop exists", async () => {
     const p = new InMemoryDataProvider();
     const cid = liveId(p);
-    // Force a real drop: exclude one live sitter from the cohort.
-    const victim = buildDataFlow(p, cid)!.subjects[0]!.people.find((pp) => pp.last === 3)!;
-    p.excludeParticipantFromCohort(cid, victim.id, true, "render test");
+    // Force a REAL (unexpected) drop: a cleaned sitter that never reaches the score
+    // matrix (pivot drop) — distinct from the expected staff/soft-delete removal at
+    // Clean, which stays healthy. Mock the pivot + engine to omit one sitter.
+    const subj = buildDataFlow(p, cid)!.subjects.find((s) => s.people.some((pp) => pp.last === 3))!;
+    const victim = subj.people.find((pp) => pp.last === 3)!;
+    const origNaive = p.getNaiveScores.bind(p);
+    const origComp = p.getComposition.bind(p);
+    (p as unknown as { getNaiveScores: typeof p.getNaiveScores }).getNaiveScores = (c, aid) => {
+      const m = origNaive(c, aid);
+      return m ? { ...m, students: m.students.filter((s) => s.id !== victim.id) } : m;
+    };
+    (p as unknown as { getComposition: typeof p.getComposition }).getComposition = (c) => {
+      const m = origComp(c);
+      return m ? { ...m, students: m.students.filter((s) => s.participantId !== victim.id) } : m;
+    };
     activeProvider = p;
 
     const html = await render(cid);
@@ -63,7 +75,7 @@ describe("Data flow — within-cycle pipeline inspector", () => {
     expect(html).toContain("Where did data go");
     expect(html).toContain("Inside a stage");
     expect(html).toContain("Drill by participant");
-    expect(html).toContain("Participants lost");
+    expect(html).toContain("Lost after Clean");
     // The default-selected Score-matrix stage names the real pivot key.
     expect(html).toContain("(student, QuestionId)");
     // The dropped participant is traceable by their real email/student id.

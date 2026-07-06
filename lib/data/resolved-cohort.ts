@@ -52,6 +52,10 @@ export interface ResolvedCohort {
   subjects: SubjectCohort[];
   /** Distinct participants across the cycle at detection (staff included). */
   detectedTotal: number;
+  /** Distinct participants across the cycle after Clean (staff + soft-deletes out). */
+  cleanedTotal: number;
+  /** Distinct participants across the cycle with a computed subject total. */
+  computedTotal: number;
 }
 
 /**
@@ -74,29 +78,46 @@ export function resolveCohort(provider: DataProvider, cycleId: string): Resolved
     }
   }
 
+  // The authoritative ingest roster (migration 0026 `sittings`): which participants
+  // sat each subject, STAFF INCLUDED, keyed on `count(distinct participant_email)`.
+  // This — not the MCQ response matrix — is the source for the DETECTED (ingest)
+  // stage, so the UI matches what `sittings` holds. Null only for an unknown cycle.
+  const roster = provider.getSittingRoster(cycleId);
+
   const subjects: SubjectCohort[] = [];
   const detectedAll = new Set<string>();
+  const cleanedAll = new Set<string>();
+  const computedAll = new Set<string>();
   for (const a of cycle.assessments) {
     const raw = provider.getRawData(cycleId, a.id);
     const cleaning = provider.getDataCleaning(cycleId, a.id);
     if (!raw || !cleaning) continue;
 
-    const detected = new Set<string>();
+    // Email lookup for staff detection: prefer the roster's own emails, fall back
+    // to the raw matrix's studentId (identical on correct data).
+    const emailById = new Map<string, string>();
+    for (const r of raw.rows) emailById.set(r.id, r.studentId);
+    const rosterForSubject = roster?.byAssessment.get(a.id);
+    if (rosterForSubject) for (const [id, email] of rosterForSubject) emailById.set(id, email);
+
+    // DETECTED = the sitting roster (staff included). Fall back to the raw response
+    // matrix only when the seed carries no sitting spine (legacy seeds).
+    const detected = new Set<string>(rosterForSubject ? rosterForSubject.keys() : raw.rows.map((r) => r.id));
     const staff = new Set<string>();
-    for (const r of raw.rows) {
-      detected.add(r.id);
-      detectedAll.add(r.id);
-      if (isStaffTestEmail(r.studentId)) staff.add(r.id);
+    for (const id of detected) {
+      detectedAll.add(id);
+      if (isStaffTestEmail(emailById.get(id))) staff.add(id);
     }
-    // Cleaned = detected − staff − soft-deleted (cohort-excluded) rows. Iterated
-    // over the raw rows and keyed on the same `excludedRows` set the Clean view
-    // strikes through, so this membership is identical to what Clean/Data-flow
-    // already show — the canonical function does not introduce a new definition.
+    // Cleaned = detected − staff − soft-deleted (cohort-excluded) rows, keyed on the
+    // same `excludedRows` set the Clean view strikes through — so Upload, Clean and
+    // Data-flow can never diverge. Staff/test and ad-hoc soft-deletes both live in
+    // that set (the cohort exclusion the whole app reads).
     const excluded = new Set(cleaning.excludedRows);
     const cleaned = new Set<string>();
-    for (const r of raw.rows) {
-      if (staff.has(r.id) || excluded.has(r.id)) continue;
-      cleaned.add(r.id);
+    for (const id of detected) {
+      if (staff.has(id) || excluded.has(id)) continue;
+      cleaned.add(id);
+      cleanedAll.add(id);
     }
     // Matrix membership = the pivot's OWN output (never re-derived from cleaned).
     const naive = provider.getNaiveScores(cycleId, a.id);
@@ -104,11 +125,20 @@ export function resolveCohort(provider: DataProvider, cycleId: string): Resolved
       naive ? naive.students.map((s) => s.id) : [...cleaned],
     );
     const computed = computedByAssessment.get(a.id) ?? new Set<string>();
+    for (const id of computed) computedAll.add(id);
 
     subjects.push({ assessmentId: a.id, name: a.name, detected, staff, cleaned, matrix, computed });
   }
 
-  return { cycleId, subjects, detectedTotal: detectedAll.size };
+  return {
+    cycleId,
+    subjects,
+    // Distinct across the cycle: the roster's own distinct-email total when present
+    // (the count(distinct participant_email) the DB reports), else the union.
+    detectedTotal: roster?.totalParticipants ?? detectedAll.size,
+    cleanedTotal: cleanedAll.size,
+    computedTotal: computedAll.size,
+  };
 }
 
 /**

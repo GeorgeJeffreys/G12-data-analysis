@@ -161,6 +161,26 @@ export interface SeedLiveCycle {
   assessments: SeedAssessment[];
   /** Informational speededness/timing diagnostics, computed at build time. */
   diagnostics: SeedAssessmentDiagnostics[];
+  /**
+   * The authoritative per-sitting roster — one entry per (participant × subject),
+   * mirrored from the `sittings` table (migration 0026). This is the source every
+   * INGEST-stage participant count reads (`count(distinct participant_email)` per
+   * subject / per cycle), NOT the MCQ `responses` matrix — the two agree on
+   * correctly-ingested data, but `sittings` is the roster of record and includes a
+   * sitter even when a subject carries non-MCQ questions. Optional — legacy seeds
+   * without it fall back to the response matrix.
+   */
+  sittings?: SeedSitting[];
+}
+
+/** One row of the sitting spine, carried into the seed for the ingest-roster count. */
+export interface SeedSitting {
+  /** The subject this sitting belongs to. */
+  assessmentId: string;
+  /** Participant row id / pseudonym (the seed's participant key). */
+  participantId: string;
+  /** Participant email — the `count(distinct participant_email)` natural key. */
+  participantEmail: string;
 }
 
 export interface SeedPriorCycle {
