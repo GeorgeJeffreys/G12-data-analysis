@@ -86,156 +86,147 @@ export default function DataFlowCyclePage({ params }: { params: { cycleId: strin
     <CycleShell cycleId={cycleId} cycleName={cycleName} page="Data flow" area="dataflow">
       {!model || model.state === "empty" ? (
         <EmptyState cycleId={cycleId} />
-      ) : model.state === "healthy" ? (
-        <HealthyState model={model} />
       ) : (
-        <CollapseState model={model} />
+        <Inspector model={model} />
       )}
     </CycleShell>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════════════
-// COLLAPSE — the primary, interactive layout
+// INSPECTOR — the interactive body shared by the healthy and collapse states.
+// Both always render the same three sections: the hero flow strip (counts), the
+// per-stage DATA TABLE (input → transformation → output — the real rows read from
+// the cycle's live artifacts, keyed on the canonical participant id / ResultId /
+// QuestionId), and the participant drill. Only the header badge, subtitle and
+// summary band differ by state, so the full per-stage tables are reachable on
+// every ingested cycle — not only when a collapse is detected.
 // ══════════════════════════════════════════════════════════════════════════
-function CollapseState({ model }: { model: DataFlowModel }) {
+function Inspector({ model }: { model: DataFlowModel }) {
   const rows = model.subjects;
-  const [selSubj, setSelSubj] = useState<string>(
-    // Default to a subject with an UNEXPECTED drop (at/after the score matrix), not
-    // the expected staff removal at Clean.
-    rows.find((r) => r.counts[2]! < r.counts[1]! || r.counts[3]! < r.counts[2]!)?.key ?? rows[0]?.key ?? "",
-  );
-  const [selStage, setSelStage] = useState<DataFlowStageKey>("matrix");
-  const selRow = rows.find((r) => r.key === selSubj) ?? rows[0]!;
-  const { ingested, cleaned, computed, lost, worstStage } = model;
+  const collapsed = model.state === "collapse";
+  const { ingested, cleaned, computed, lost, worstStage, removedByCleaning } = model;
   // Subjects with an UNEXPECTED drop (a cleaned sitter that never scored), not the
   // expected staff removal at Clean.
   const affected = rows.filter((r) => r.counts[2]! < r.counts[1]! || r.counts[3]! < r.counts[2]!).length;
 
-  const stats: { n: string | number; label: string; sub: string; bad?: boolean; small?: boolean }[] = [
-    { n: ingested, label: "Participants ingested", sub: `distinct · staff/test incl.` },
-    { n: computed, label: "Scores computed", sub: "reached the final stage" },
-    {
-      n: `−${lost}`,
-      label: "Lost after Clean",
-      sub: `${cleaned ? Math.round((lost / cleaned) * 100) : 0}% of cleaned · ${affected} subject(s) affected`,
-      bad: true,
-    },
-    worstStage
-      ? { n: worstStage.name, label: "Worst stage", sub: `${worstStage.delta} here (${worstStage.from} → ${worstStage.to})`, bad: true, small: true }
-      : { n: "—", label: "Worst stage", sub: "no single stage dominates", small: true },
-  ];
+  // Default the selected subject to one with an UNEXPECTED drop when a collapse
+  // exists, else the first subject. Default the stage to the worst transition on a
+  // collapse, else the source (Ingested) so the raw response matrix shows first.
+  const [selSubj, setSelSubj] = useState<string>(
+    (collapsed ? rows.find((r) => r.counts[2]! < r.counts[1]! || r.counts[3]! < r.counts[2]!)?.key : undefined) ??
+      rows[0]?.key ??
+      "",
+  );
+  const [selStage, setSelStage] = useState<DataFlowStageKey>(collapsed ? "matrix" : "ingested");
+  const selRow = rows.find((r) => r.key === selSubj) ?? rows[0]!;
+
+  const stats: { n: string | number; label: string; sub: string; bad?: boolean; good?: boolean; small?: boolean }[] = collapsed
+    ? [
+        { n: ingested, label: "Participants ingested", sub: `distinct · staff/test incl.` },
+        { n: computed, label: "Scores computed", sub: "reached the final stage" },
+        { n: `−${lost}`, label: "Lost after Clean", sub: `${cleaned ? Math.round((lost / cleaned) * 100) : 0}% of cleaned · ${affected} subject(s) affected`, bad: true },
+        worstStage
+          ? { n: worstStage.name, label: "Worst stage", sub: `${worstStage.delta} here (${worstStage.from} → ${worstStage.to})`, bad: true, small: true }
+          : { n: "—", label: "Worst stage", sub: "no single stage dominates", small: true },
+      ]
+    : [
+        { n: ingested, label: "Participants ingested", sub: `distinct across ${rows.length} subjects · staff/test incl.` },
+        { n: removedByCleaning, label: "Removed at Clean", sub: "staff/test + soft-deletes (expected)" },
+        { n: computed, label: "Scores computed", sub: "reached the final stage" },
+        { n: lost, label: "Participants lost", sub: lost === 0 ? "no loss after Clean" : "after Clean", good: lost === 0 },
+      ];
 
   return (
-    <div className="hf-col" style={{ padding: "24px 30px", gap: 18, flex: 1, overflow: "auto" }}>
-      {/* header */}
-      <div>
-        <div className="hf-row" style={{ gap: 11, alignItems: "center", flexWrap: "wrap" }}>
-          <div className="hf-h1">Data flow</div>
-          <Badge tone="neutral"><Icon name="eye" size={11} color={H.ink2} />Read-only · reflects live data</Badge>
-          <Badge tone="bad"><Mark kind="fail" size={11} />Collapse detected</Badge>
-        </div>
-        <div className="hf-sub" style={{ marginTop: 7, maxWidth: 720 }}>
-          What happens to this sitting&apos;s data as it moves through each processing stage. Participants are lost between
-          stages{worstStage ? <> — most at the <b style={{ color: H.ink }}>{worstStage.name}</b></> : ""}. Read a row across to
-          see exactly where.
-        </div>
-      </div>
-
-      {/* summary band */}
-      <div className="hf-card">
-        <div className="hf-row" style={{ alignItems: "stretch", flexWrap: "wrap" }}>
-          {stats.map((c, i) => (
-            <div key={i} className="hf-col" style={{ flex: 1, minWidth: 150, gap: 4, padding: "16px 22px", borderLeft: i ? `1px solid ${H.line}` : "none" }}>
-              <span className="hf-mono" style={{ fontSize: c.small ? 19 : 27, fontWeight: 600, lineHeight: 1, color: c.bad ? H.bad : H.ink }}>{c.n}</span>
-              <span className="hf-lbl" style={{ marginTop: 5 }}>{c.label}</span>
-              <span className="hf-sub" style={{ fontSize: 11 }}>{c.sub}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* HERO — flow strip */}
-      <SectionCard
-        n="1"
-        title="Where did data go"
-        sub="Participant count at every stage · click a stage to inspect it, a subject to follow it below"
-        right={
-          <div className="hf-row" style={{ gap: 14 }}>
-            <span className="hf-row" style={{ gap: 6, fontSize: 11, color: H.ink2 }}><span style={{ width: 20, borderTop: `2px solid ${H.line2}` }} />holds</span>
-            <span className="hf-row" style={{ gap: 6, fontSize: 11, color: H.bad, fontWeight: 600 }}><span style={{ width: 20, borderTop: `2px dashed ${H.bad}` }} />participants lost</span>
+    // Plain block scroll container (matches the app's standard page scroll — cf.
+    // the Diagnostics / Clean pages): `minHeight: 0` lets it shrink inside the flex
+    // Shell, and `overflow: auto` scrolls the natural-height body below. The old
+    // `flex: 1` hf-col scroll root squeezed its cards (whose `overflow: hidden`
+    // then clipped them), so lower subjects and the stage tables were unreachable.
+    <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+      <div className="hf-col" style={{ padding: "24px 30px", gap: 18 }}>
+        {/* header */}
+        <div>
+          <div className="hf-row" style={{ gap: 11, alignItems: "center", flexWrap: "wrap" }}>
+            <div className="hf-h1">Data flow</div>
+            <Badge tone="neutral"><Icon name="eye" size={11} color={H.ink2} />Read-only · reflects live data</Badge>
+            {collapsed ? (
+              <Badge tone="bad"><Mark kind="fail" size={11} />Collapse detected</Badge>
+            ) : (
+              <Badge tone="good"><Mark kind="pass" size={11} />No unexpected loss</Badge>
+            )}
           </div>
-        }
-      >
-        <FlowStrip rows={rows} selSubj={selSubj} onSubj={setSelSubj} selStage={selStage} onStage={setSelStage} totals={model.totals} />
-        <div className="hf-sub" style={{ fontSize: 11, marginTop: 12, color: H.ink3 }}>
-          Large number = participants at that stage. Items are fixed per subject ({selRow.items} for {selRow.subj}) and hold across every stage — only participants are lost.
+          <div className="hf-sub" style={{ marginTop: 7, maxWidth: 760 }}>
+            {collapsed ? (
+              <>
+                What happens to this sitting&apos;s data as it moves through each processing stage. Participants are lost
+                between stages{worstStage ? <> — most at the <b style={{ color: H.ink }}>{worstStage.name}</b></> : ""}. Read a
+                row across to see where, then open any stage below to inspect its real rows.
+              </>
+            ) : (
+              <>
+                What happens to this sitting&apos;s data as it moves through each processing stage.{" "}
+                {removedByCleaning > 0
+                  ? `${ingested} ingested → ${removedByCleaning} staff/test + soft-deleted removed at Clean → ${cleaned} scored. No participant is lost after Clean.`
+                  : "Every subject holds its participant count from Ingested through Computed scores."}{" "}
+                Open any stage below to inspect its real rows.
+              </>
+            )}
+          </div>
         </div>
-      </SectionCard>
 
-      {/* STAGE DETAIL */}
-      <SectionCard
-        n="2"
-        title={`Inside a stage — ${DF_STAGES[DF_STAGE_INDEX[selStage]]!.name}`}
-        sub={`Input → transformation → output for ${selRow.subj}`}
-        right={
-          <div className="hf-row" style={{ gap: 6, flexWrap: "wrap" }}>
-            {DF_STAGES.map((st) => (
-              <span key={st.key} className={`hf-chip ${st.key === selStage ? "on" : ""}`} onClick={() => setSelStage(st.key)} style={{ fontSize: 11 }}>{st.name}</span>
+        {/* summary band */}
+        <div className="hf-card">
+          <div className="hf-row" style={{ alignItems: "stretch", flexWrap: "wrap" }}>
+            {stats.map((c, i) => (
+              <div key={i} className="hf-col" style={{ flex: 1, minWidth: 150, gap: 4, padding: "16px 22px", borderLeft: i ? `1px solid ${H.line}` : "none" }}>
+                <span className="hf-mono" style={{ fontSize: c.small ? 19 : 27, fontWeight: 600, lineHeight: 1, color: c.bad ? H.bad : c.good ? H.good : H.ink }}>{c.n}</span>
+                <span className="hf-lbl" style={{ marginTop: 5 }}>{c.label}</span>
+                <span className="hf-sub" style={{ fontSize: 11 }}>{c.sub}</span>
+              </div>
             ))}
           </div>
-        }
-      >
-        <StageDetail row={selRow} stage={selStage} />
-      </SectionCard>
-
-      {/* PARTICIPANT DRILL */}
-      <SectionCard n="3" title="Drill by participant" sub="Follow one test-taker across all four stages — green where present, red where dropped">
-        <ParticipantDrill rows={rows} selSubj={selSubj} onSubj={setSelSubj} />
-      </SectionCard>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════
-// HEALTHY — counts hold
-// ══════════════════════════════════════════════════════════════════════════
-function HealthyState({ model }: { model: DataFlowModel }) {
-  const rows = model.subjects;
-  const removed = model.removedByCleaning;
-  const cleanNote =
-    removed > 0
-      ? `${model.ingested} ingested → ${removed} staff/test + soft-deleted removed at Clean → ${model.cleaned} scored. No participant is lost after Clean.`
-      : "Every subject holds its participant count from Ingested through Computed scores. Nothing was dropped after Clean.";
-  return (
-    <div className="hf-col" style={{ padding: "24px 30px", gap: 18, flex: 1, overflow: "auto" }}>
-      <div className="hf-row" style={{ gap: 11, alignItems: "center", flexWrap: "wrap" }}>
-        <div className="hf-h1">Data flow</div>
-        <Badge tone="neutral"><Icon name="eye" size={11} color={H.ink2} />Read-only · reflects live data</Badge>
-        <Badge tone="good"><Mark kind="pass" size={11} />No unexpected loss</Badge>
-      </div>
-      <div className="hf-sub" style={{ maxWidth: 720, marginTop: -4 }}>{cleanNote}</div>
-
-      <div className="hf-card">
-        <div className="hf-row" style={{ alignItems: "stretch", flexWrap: "wrap" }}>
-          {[
-            { n: model.ingested, l: "Participants ingested", s: `distinct across ${rows.length} subjects · staff/test incl.` },
-            { n: removed, l: "Removed at Clean", s: "staff/test + soft-deletes (expected)" },
-            { n: model.computed, l: "Scores computed", s: "reached the final stage" },
-            { n: model.lost, l: "Participants lost", s: model.lost === 0 ? "no loss after Clean" : "after Clean", good: model.lost === 0 },
-          ].map((c, i) => (
-            <div key={i} className="hf-col" style={{ flex: 1, minWidth: 150, gap: 4, padding: "16px 22px", borderLeft: i ? `1px solid ${H.line}` : "none" }}>
-              <span className="hf-mono" style={{ fontSize: 27, fontWeight: 600, lineHeight: 1, color: c.good ? H.good : H.ink }}>{c.n}</span>
-              <span className="hf-lbl" style={{ marginTop: 5 }}>{c.l}</span>
-              <span className="hf-sub" style={{ fontSize: 11 }}>{c.s}</span>
-            </div>
-          ))}
         </div>
-      </div>
 
-      <SectionCard n="1" title="Where did data go" sub="Participant count at every stage — staff/test excluded at Clean, then holding" right={<Badge tone="good"><Mark kind="pass" size={10} />no unexpected drop</Badge>}>
-        <FlowStrip rows={rows} selSubj={null} onSubj={undefined} selStage={null} onStage={undefined} totals={model.totals} />
-      </SectionCard>
+        {/* HERO — flow strip */}
+        <SectionCard
+          n="1"
+          title="Where did data go"
+          sub="Participant count at every stage · click a stage to inspect it, a subject to follow it below"
+          right={
+            <div className="hf-row" style={{ gap: 14 }}>
+              <span className="hf-row" style={{ gap: 6, fontSize: 11, color: H.ink2 }}><span style={{ width: 20, borderTop: `2px solid ${H.line2}` }} />holds</span>
+              <span className="hf-row" style={{ gap: 6, fontSize: 11, color: H.bad, fontWeight: 600 }}><span style={{ width: 20, borderTop: `2px dashed ${H.bad}` }} />participants lost</span>
+            </div>
+          }
+        >
+          <FlowStrip rows={rows} selSubj={selSubj} onSubj={setSelSubj} selStage={selStage} onStage={setSelStage} totals={model.totals} />
+          <div className="hf-sub" style={{ fontSize: 11, marginTop: 12, color: H.ink3 }}>
+            Large number = participants at that stage. Items are fixed per subject ({selRow.items} for {selRow.subj}) and hold across every stage — only participants are lost.
+          </div>
+        </SectionCard>
+
+        {/* STAGE DETAIL — the full per-stage data table for the selected stage + subject */}
+        <SectionCard
+          n="2"
+          title={`Inside a stage — ${DF_STAGES[DF_STAGE_INDEX[selStage]]!.name}`}
+          sub={`Input → transformation → output for ${selRow.subj} — the real rows at this step`}
+          right={
+            <div className="hf-row" style={{ gap: 6, flexWrap: "wrap" }}>
+              {DF_STAGES.map((st) => (
+                <span key={st.key} className={`hf-chip ${st.key === selStage ? "on" : ""}`} onClick={() => setSelStage(st.key)} style={{ fontSize: 11 }}>{st.name}</span>
+              ))}
+            </div>
+          }
+        >
+          <StageDetail row={selRow} stage={selStage} />
+        </SectionCard>
+
+        {/* PARTICIPANT DRILL */}
+        <SectionCard n="3" title="Drill by participant" sub="Follow one test-taker across all four stages — green where present, red where dropped">
+          <ParticipantDrill rows={rows} selSubj={selSubj} onSubj={setSelSubj} />
+        </SectionCard>
+      </div>
     </div>
   );
 }
@@ -245,7 +236,8 @@ function HealthyState({ model }: { model: DataFlowModel }) {
 // ══════════════════════════════════════════════════════════════════════════
 function EmptyState({ cycleId }: { cycleId: string }) {
   return (
-    <div className="hf-col" style={{ padding: "24px 30px", gap: 18, flex: 1, overflow: "auto" }}>
+    <div style={{ flex: 1, minHeight: 0, overflow: "auto" }}>
+      <div className="hf-col" style={{ padding: "24px 30px", gap: 18 }}>
       <div className="hf-row" style={{ gap: 11, alignItems: "center" }}>
         <div className="hf-h1">Data flow</div>
         <Badge tone="neutral"><Icon name="eye" size={11} color={H.ink2} />Read-only · reflects live data</Badge>
@@ -273,6 +265,7 @@ function EmptyState({ cycleId }: { cycleId: string }) {
             <Link href={`/cycles/${cycleId}/import`}><Button variant="pri"><Icon name="upload" color="#fff" />Go to Ingest</Button></Link>
           </div>
         </div>
+      </div>
       </div>
     </div>
   );
