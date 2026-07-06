@@ -14,6 +14,32 @@ NB: prompt 06 and prompt 02a both shipped a `0016_*` file (`0016_override_role_h
 and `0016_incident_adjustments.sql`); apply both, then `0017`, then `0018`, then `0019`,
 then `0020`.
 
+> **`0025_authorization_rebuild.sql` — REBUILD authorization to one simple, consistent
+> model (SUPERSEDES 0024; run this to reset auth cleanly and unblock admins).**
+> Run AFTER `0001`–`0024`, in the Supabase SQL editor (EU). Idempotent (`create or
+> replace` of SECURITY DEFINER functions + the memberships policy set + the read-only
+> probe — no table/column/constraint/DATA change). Two transactions (functions, then
+> the memberships policies), each with a `lock_timeout`, mirroring the 0024 deadlock
+> discipline. It establishes **one** authorization primitive
+> `app.has_role(target_cycle, allowed[])` — true when the caller holds any `allowed`
+> role for `target_cycle` OR workspace-wide (`cycle_id IS NULL`), SECURITY DEFINER so
+> its `memberships` read does not re-enter RLS — and DERIVES `app.is_member` from it.
+> RLS on `memberships` becomes minimal and non-recursive: SELECT = `user_id =
+> auth.uid()` only (pure self-read, calls no memberships-reading function), and
+> INSERT/UPDATE/DELETE gated on `has_role(cycle_id,'lead_admin')` (workspace admin
+> manages every row; cycle admin manages their cycle) — split per-command so the write
+> guard never leaks onto SELECT. Every other table already routes reads through
+> `is_member` and writes through `has_role`, so they are correct unchanged. The storage
+> enum `member_role` (`lead_admin`/`reviewer`/`viewer`/`analyst`) stays the single
+> persisted source of truth (the app tiers in `lib/auth/roles.ts` are the one app-layer
+> vocabulary); the enum is NOT renamed. `schema_health()` now also asserts the enum,
+> the workspace-aware `has_role`, and the memberships policy shape, and reports `'0025'`.
+> Verify with `select public.schema_health();` (expect `ok=true`, `migration='0025'`),
+> then on the live app as the workspace admin: Replace files (no "forbidden") and Delete
+> (clears to the empty Upload state); a member cannot delete/replace. Engine parity
+> 183/183 unchanged. Roll back with `0025_authorization_rebuild.rollback.sql` (restores
+> the 0024 surface, keeping the helpers workspace-aware).
+
 > **`0024_authorization_workspace_scope.sql` — restore workspace-scope auth
 > (RUN THIS if Delete says "not authorized" and Replace files returns "forbidden").**
 > Task 20. Run AFTER `0001`–`0023`, in the Supabase SQL editor (EU). Idempotent
