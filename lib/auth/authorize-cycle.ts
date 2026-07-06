@@ -22,16 +22,13 @@ import "server-only";
  * the caller; this only looks up that user's roles.
  */
 import type { SupabaseAdminClient } from "@/lib/supabase/admin";
-import { hasRole } from "@/lib/auth/roles";
-import type { MemberRole } from "@/lib/types/database";
+import { canManageCycle, type Membership } from "@/lib/auth/membership-access";
 
 export interface CycleAdminDecision {
   allowed: boolean;
   /** A diagnosable message when `!allowed` (surface this instead of "forbidden"). */
   reason?: string;
 }
-
-type MembershipRow = { role: MemberRole; cycle_id: string | null };
 
 /** Authorize `userId` as an admin (lead_admin) of `cycleId` or of the workspace. */
 export async function authorizeCycleAdmin(
@@ -51,11 +48,10 @@ export async function authorizeCycleAdmin(
     };
   }
 
-  const memberships = (data ?? []) as unknown as MembershipRow[];
-  const allowed = memberships.some(
-    (m) => hasRole(m.role, "admin") && (m.cycle_id === null || m.cycle_id === cycleId),
-  );
-  if (allowed) return { allowed: true };
+  const memberships = (data ?? []) as unknown as Membership[];
+  // The one authorization rule (mirrors the DB `app.has_role(cycle,'lead_admin')`):
+  // a workspace admin (cycle_id = NULL) or a per-cycle admin may manage the cycle.
+  if (canManageCycle(memberships, cycleId)) return { allowed: true };
 
   const seen = memberships.length
     ? memberships
