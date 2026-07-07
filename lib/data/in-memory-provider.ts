@@ -486,9 +486,17 @@ export class InMemoryDataProvider implements DataProvider {
    * @param seed Optional cycle data to serve (defaults to the bundled demo seed).
    * @param user Optional signed-in user (defaults to the MOCK Lead).
    */
-  constructor(seed?: Seed, user?: CurrentUser) {
+  // `hydrated` marks a provider built from the live database (SupabaseDataProvider).
+  // It only affects year IDENTITY: live years always route on a real id (the year's
+  // UUID, or — when a legacy cycle has no year row — the sitting's own cycle id), so
+  // a route param can never be a name label like `year-Unknown`. The demo (no DB)
+  // keeps its stable `year-<year>` fixture key.
+  private readonly hydrated: boolean;
+
+  constructor(seed?: Seed, user?: CurrentUser, hydrated = false) {
     if (seed) this.seed = seed;
     if (user) this.user = user;
+    this.hydrated = hydrated;
     // 0010 — bind the test-centre list now that `seed` is final. Live runs carry
     // the hydrated centres; the demo falls back to a single active centre so the
     // home/year screens always have a centre to label and the picker is non-empty.
@@ -994,22 +1002,34 @@ export class InMemoryDataProvider implements DataProvider {
     const order: string[] = [];
     const byKey = new Map<
       string,
-      { year: string; centre: TestCentreSummary; examYearId?: string; february?: SittingRef; may?: SittingRef }
+      { year: string; centre: TestCentreSummary; examYearId?: string; anchorCycleId?: string; february?: SittingRef; may?: SittingRef }
     >();
     const primaryId = this.primaryTestCentre().id;
     for (const c of this.listCycles()) {
       const year = this.yearOf(c.name);
       const sitting = this.sittingOf(c.name);
       const centre = this.centreFor(c.testCentreId);
-      const key = `${centre.id}|${year}`;
+      // GROUPING KEY — always id-anchored for live data so a route param is never a
+      // name label:
+      //  * a real exam_years row groups all its sittings together (by year_id);
+      //  * a live cycle with NO year row is its own year (keyed on its cycle id) — it
+      //    isn't linked to any other sitting in the DB, so it must never merge by a
+      //    parsed/blank name into a shared "Unknown" bucket;
+      //  * the demo (no DB) groups February + May of a parsed year under one card.
+      const key = c.examYearId
+        ? `y:${c.examYearId}`
+        : this.hydrated && c.id
+          ? `c:${c.id}`
+          : `${centre.id}|${year}`;
       if (!byKey.has(key)) {
-        byKey.set(key, { year, centre });
+        byKey.set(key, { year, centre, anchorCycleId: c.id || undefined });
         order.push(key);
       }
       const slot = byKey.get(key)!;
       // The real exam_years.id (live data) — first cycle in the slot to carry one
       // wins; all sittings of a (centre, year) share the same year row.
       if (!slot.examYearId && c.examYearId) slot.examYearId = c.examYearId;
+      if (!slot.anchorCycleId && c.id) slot.anchorCycleId = c.id;
       const ref = this.sittingRefFrom(c, sitting);
       // First write wins per slot; listCycles is newest-first and the live run is
       // first, so the most relevant cycle keeps the slot if names ever collide.
@@ -1017,16 +1037,17 @@ export class InMemoryDataProvider implements DataProvider {
     }
     return order.map((key) => {
       const slot = byKey.get(key)!;
-      // ROUTE ON THE STABLE DB id. When a real `exam_years` row exists (live data)
-      // its UUID IS the year's canonical id — carried unchanged, never derived from
-      // a display label. A year whose NAME is null/"Unknown" therefore still routes
-      // and loads (the id is the UUID, the name is display-only), and clearing a
-      // sitting's data can never shift the year's identity. Only the demo seed —
-      // which has no database year row — falls back to the derived label-key, which
-      // stays stable for tests.
-      const derived =
+      // ROUTE ID — ALWAYS a real id, NEVER a name label:
+      //  * a real exam_years row → its UUID (canonical year id, carried unchanged);
+      //  * a live cycle with no year row → the sitting's own (real) cycle id, so the
+      //    route param can never be the `year-Unknown` label and the year still opens;
+      //  * the demo (no DB) → its stable `year-<year>` fixture key (no DB id exists,
+      //    and demo names always carry a year, so "Unknown" is never constructed).
+      // The NAME is display-only and falls back to "Unknown"; it is not the key.
+      const derivedLabel =
         slot.centre.id === primaryId ? this.yearId(slot.year) : `${this.yearId(slot.year)}--${slot.centre.slug}`;
-      const id = slot.examYearId ?? derived;
+      const id =
+        slot.examYearId ?? (this.hydrated ? (slot.anchorCycleId ?? derivedLabel) : derivedLabel);
       return {
         id,
         name: slot.year,

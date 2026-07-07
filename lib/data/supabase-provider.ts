@@ -145,7 +145,7 @@ export class SupabaseDataProvider implements DataProvider {
   private realMembers: MemberDirRow[] = [];
 
   constructor(private supabase: DB) {
-    this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER);
+    this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER, true);
     void this.init();
     // The provider instance outlives client-side navigation, so a sign-in that
     // happens after construction (on /signin) would otherwise leave `status`
@@ -213,12 +213,12 @@ export class SupabaseDataProvider implements DataProvider {
       // `invalid input syntax for type uuid`. When there are none, the empty list
       // flows through and the picker prompts to create a centre first.
       const testCentres = await fetchSeedTestCentres(this.supabase).catch(() => []);
-      this.inner = new InMemoryDataProvider({ ...EMPTY_SEED, testCentres }, this.user);
+      this.inner = new InMemoryDataProvider({ ...EMPTY_SEED, testCentres }, this.user, true);
       await this.fetchMembers();
       this.bump();
       return;
     }
-    const next = new InMemoryDataProvider(h.seed, this.user);
+    const next = new InMemoryDataProvider(h.seed, this.user, true);
     this.replay(next, h.seed.liveCycle.id, h.decisions);
     this.inner = next;
     await this.fetchMembers();
