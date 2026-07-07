@@ -60,3 +60,22 @@ describe("Year screen surfaces the delete control on a started sitting card", ()
     expect(html).toContain("Actions for");
   });
 });
+
+describe("Top-level Years LIST surfaces a per-row Delete-cycle control (no need to open the cycle)", () => {
+  it("an admin sees the ⋯ cycle-actions trigger on the list, alongside Open", async () => {
+    activeProvider = providerAs("lead_admin");
+    const { default: YearsDashboard } = await import("@/app/page");
+    const html = renderToStaticMarkup(e(YearsDashboard, {}));
+    // The delete control lives on the LIST row itself (reachable without opening the
+    // cycle/year), rendered next to the row's Open action.
+    expect(html).toContain('aria-label="Cycle actions"');
+    expect(html).toContain("Open");
+  });
+
+  it("a viewer sees no delete control on the list", async () => {
+    activeProvider = providerAs("viewer");
+    const { default: YearsDashboard } = await import("@/app/page");
+    const html = renderToStaticMarkup(e(YearsDashboard, {}));
+    expect(html).not.toContain('aria-label="Cycle actions"');
+  });
+});
