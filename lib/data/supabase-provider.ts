@@ -82,12 +82,10 @@ import type {
   MembersModel,
   NewCycleModel,
   PerformanceReportModel,
-  RetentionConfig,
   ReviewModel,
   ItemDetailModel,
   RolesModel,
   BoundaryModel,
-  BrandingConfig,
   BorderlineConfig,
   StudentReviewModel,
   DistinctionSafeguardModel,
@@ -263,9 +261,7 @@ export class SupabaseDataProvider implements DataProvider {
   private applyWorkspace(p: InMemoryDataProvider, w: Record<string, unknown>): void {
     if (w.grading_defaults) p.setGradingDefaults(w.grading_defaults as Partial<GradingConfig>);
     if (w.quality_thresholds) p.setQualityThresholds(w.quality_thresholds as Partial<QualityThresholds>);
-    if (w.retention) p.setRetention(w.retention as Partial<RetentionConfig>);
-    if (w.branding) p.setBranding(w.branding as Partial<BrandingConfig>);
-    if (w.safeguard) p.setSafeguardConfig(w.safeguard as { distinctionThreshold?: number; topDifficultyDemand?: string });
+    if (w.safeguard) p.setSafeguardConfig(w.safeguard as { topDifficultyDemand?: string });
     if (w.borderline) p.setBorderlineConfig(w.borderline as Partial<BorderlineConfig>);
   }
 
@@ -849,18 +845,6 @@ export class SupabaseDataProvider implements DataProvider {
     });
   }
 
-  // configuration blobs
-  setRetention(patch: Partial<RetentionConfig>): void {
-    this.inner.setRetention(patch);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "retention", p_value: patch });
-  }
-  setBranding(patch: Partial<BrandingConfig>): void {
-    this.inner.setBranding(patch);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "branding", p_value: patch });
-  }
-
   // test centres (migration 0010) — optimistic local update, then persist via the
   // SECURITY DEFINER RPC and re-hydrate so the server-generated row (real id +
   // slug) replaces the optimistic one.
@@ -902,7 +886,7 @@ export class SupabaseDataProvider implements DataProvider {
     if (error) throw new Error(error.message);
     await this.rehydrate();
   }
-  setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {
+  setSafeguardConfig(patch: { topDifficultyDemand?: string }): void {
     this.inner.setSafeguardConfig(patch);
     this.bump();
     this.rpc("set_workspace_setting", { p_key: "safeguard", p_value: patch });

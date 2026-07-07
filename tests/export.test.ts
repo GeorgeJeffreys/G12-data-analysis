@@ -331,13 +331,12 @@ describe("grades workbook — canonical layout", () => {
   const CYCLE = "may-2026";
 
   // A real provider, exercised so the Distinction safeguard caps at least one
-  // student (lower the Distinction boundary to bring candidates in line, raise
-  // the threshold so some fall short).
+  // student (lower the Distinction boundary to bring candidates in line; the
+  // per-exam D3 majority then makes some fall short).
   function makeInput(): GradesInput {
     const provider = new InMemoryDataProvider();
     provider.loadSampleTechnicalErrors(CYCLE);
     provider.setBoundary(CYCLE, "overall", { cutIndex: 0, cutValue: 30 });
-    provider.setSafeguardConfig({ distinctionThreshold: 10 });
 
     const model = provider.getGrades(CYCLE)!;
     const safeguard = provider.getDistinctionSafeguard(CYCLE)!;

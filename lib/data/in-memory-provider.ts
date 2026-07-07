@@ -84,7 +84,6 @@ import {
   type BoundaryMode,
   type BoundaryModel,
   type D3HalfWarning,
-  type BrandingConfig,
   type BorderlineConfig,
   type ConfigModel,
   type CompareColumn,
@@ -125,7 +124,6 @@ import {
   type PerfElementResult,
   type PerfReportSummarySubject,
   type QualityThresholdRow,
-  type RetentionConfig,
   type ReviewModel,
   type CombinedSplitModel,
   type DetectedSubject,
@@ -406,8 +404,7 @@ export class InMemoryDataProvider implements DataProvider {
   private distinctionOverrides = new Map<string, Map<string, { reason: string; by: string }>>();
   private distinctionConfirmed = new Set<string>();
   // safeguard config; empty topDifficultyDemand → resolve to the highest demand present.
-  private safeguard: { distinctionThreshold: number; topDifficultyDemand: string } = {
-    distinctionThreshold: 3,
+  private safeguard: { topDifficultyDemand: string } = {
     topDifficultyDemand: "",
   };
   // Borderline (marginal) flagging band, in percentage points. Grade-bearing
@@ -438,16 +435,6 @@ export class InMemoryDataProvider implements DataProvider {
   private matrix: Record<string, Record<string, boolean>> = defaultMatrix();
   private auditEntries: AuditEntry[] = seedAuditEntries("may-2026");
   private auditSeq = 0;
-  private retention: RetentionConfig = {
-    archiveAfterYears: 3,
-    deleteRawAfterArchive: true,
-    keepAuditIndefinitely: true,
-  };
-  private branding: BrandingConfig = {
-    accent: "#c12c68",
-    logoName: "alsama_logo.svg",
-    defaultCertificateTemplate: "certificate_template.pptx",
-  };
 
   // 0010 — test centres (top-level scoping dimension). The demo seeds a single
   // active centre that every derived year belongs to (the live Supabase provider
@@ -3944,15 +3931,12 @@ export class InMemoryDataProvider implements DataProvider {
     this.bump();
   }
 
-  setSafeguardConfig(patch: { distinctionThreshold?: number; topDifficultyDemand?: string }): void {
+  setSafeguardConfig(patch: { topDifficultyDemand?: string }): void {
     if (!hasRole(this.user.role, "admin")) return;
-    if (patch.distinctionThreshold != null && Number.isFinite(patch.distinctionThreshold)) {
-      this.safeguard.distinctionThreshold = Math.max(1, Math.round(patch.distinctionThreshold));
-    }
     if (patch.topDifficultyDemand != null) {
       this.safeguard.topDifficultyDemand = patch.topDifficultyDemand;
     }
-    this.audit("safeguard", "Updated Distinction safeguard", `Threshold ${this.safeguard.distinctionThreshold} · top-difficulty ${this.resolveTopDifficulty()}`, null);
+    this.audit("safeguard", "Updated Distinction safeguard", `top-difficulty ${this.resolveTopDifficulty()}`, null);
     this.bump();
   }
 
@@ -4792,8 +4776,6 @@ export class InMemoryDataProvider implements DataProvider {
       // Display rows derived from the *live* item-quality thresholds, so the
       // Configuration screen reflects whatever the engine is actually using.
       thresholds: qualityThresholdRows(this.quality),
-      retention: { ...this.retention },
-      branding: { ...this.branding },
       safeguard: {
         // The D3 safeguard reads this demand level (editable); the threshold is
         // the dynamic per-exam majority of available D3 items, not a fixed count.
@@ -5081,15 +5063,6 @@ export class InMemoryDataProvider implements DataProvider {
     if (!this.incidentApplied.has(cycleId)) return;
     this.incidentApplied.delete(cycleId);
     this.audit("student", "Reverted incident adjustments", "Base scores stand alone", cycleId);
-    this.bump();
-  }
-
-  setRetention(patch: Partial<RetentionConfig>): void {
-    this.retention = { ...this.retention, ...patch };
-    this.bump();
-  }
-  setBranding(patch: Partial<BrandingConfig>): void {
-    this.branding = { ...this.branding, ...patch };
     this.bump();
   }
 

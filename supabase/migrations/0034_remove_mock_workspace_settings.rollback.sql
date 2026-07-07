@@ -1,0 +1,3 @@
+-- 0034 rollback — no-op. The deleted 'retention' and 'branding' workspace_settings
+-- rows were mock config read by no code; their removal is not meaningfully
+-- reversible and nothing depends on restoring them.
