@@ -12,6 +12,7 @@ import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Badge } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
+import { CycleCardMenu } from "@/components/cycle/CycleCardMenu";
 import { PIPELINE, type SittingRef } from "@/lib/data/types";
 
 // The step total shown in "k/N steps" derives from the canonical pipeline list
@@ -25,17 +26,22 @@ function SittingCard({ s }: { s: SittingRef }) {
     <Card style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14, minHeight: 190 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ fontWeight: 700, fontSize: 16 }}>{s.label}</div>
-        {s.started ? (
-          s.live ? (
-            <Badge tone="accent">ACTIVE</Badge>
-          ) : s.locked ? (
-            <Badge tone="neutral"><Icon name="lock" size={11} color={H.ink2} /> Locked</Badge>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {s.started ? (
+            s.live ? (
+              <Badge tone="accent">ACTIVE</Badge>
+            ) : s.locked ? (
+              <Badge tone="neutral"><Icon name="lock" size={11} color={H.ink2} /> Locked</Badge>
+            ) : (
+              <Badge tone="warn">In progress</Badge>
+            )
           ) : (
-            <Badge tone="warn">In progress</Badge>
-          )
-        ) : (
-          <Badge tone="neutral">Not started</Badge>
-        )}
+            <Badge tone="neutral">Not started</Badge>
+          )}
+          {/* Admin-only per-cycle overflow menu (Delete cycle). Only for a started
+              sitting, which has a real cycle id to target. */}
+          {s.started && s.cycleId && <CycleCardMenu cycleId={s.cycleId} cycleName={s.cycleName ?? s.label} />}
+        </div>
       </div>
 
       {s.started ? (
