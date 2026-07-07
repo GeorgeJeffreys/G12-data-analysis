@@ -14,7 +14,8 @@
  * re-renders itself — the provider bumps subscribers on rehydrate — so the row
  * disappears immediately without navigating away.
  */
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useProviderData } from "@/lib/data/context";
 import { hasRole } from "@/lib/auth/roles";
 import { H } from "@/lib/ui/tokens";
@@ -27,6 +28,34 @@ export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
   const isLastCycle = useProviderData((p) => p.listCycles().length <= 1);
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState<DeletableCycle | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  // Panel is portalled to <body> and positioned `fixed`, anchored to the trigger,
+  // so it escapes the Years card's `overflow: hidden` (rounded-corner clip) instead
+  // of being cropped to a sliver below the row.
+  const [pos, setPos] = useState<{ top: number; right: number } | null>(null);
+
+  const place = useCallback(() => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, right: window.innerWidth - r.right });
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    place();
+    // Keep it glued to the trigger while the layout moves; close on scroll of any
+    // ancestor (capture) so a scrolled-away menu never floats detached.
+    const onResize = () => place();
+    const onScroll = () => setOpen(false);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    window.addEventListener("resize", onResize);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, place]);
 
   // Nothing to delete (no started sitting) or not an admin → no control.
   if (!isAdmin || cycles.length === 0) return null;
@@ -34,6 +63,7 @@ export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
   return (
     <div style={{ position: "relative", display: "inline-block" }}>
       <button
+        ref={btnRef}
         type="button"
         aria-label="Cycle actions"
         aria-haspopup="menu"
@@ -53,15 +83,15 @@ export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
       >
         ⋯
       </button>
-      {open && (
+      {open && pos && createPortal(
         <>
           <div style={{ position: "fixed", inset: 0, zIndex: 90 }} onClick={() => setOpen(false)} />
           <div
             role="menu"
             style={{
-              position: "absolute",
-              right: 0,
-              top: 34,
+              position: "fixed",
+              right: pos.right,
+              top: pos.top,
               zIndex: 91,
               minWidth: 210,
               background: H.paper,
@@ -102,7 +132,8 @@ export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
               </div>
             )}
           </div>
-        </>
+        </>,
+        document.body,
       )}
       {target && (
         <DeleteCycleDialog
