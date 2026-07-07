@@ -15,9 +15,17 @@ import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Chip } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
+import { YearRowDeleteMenu, type DeletableCycle } from "@/components/cycle/YearRowDeleteMenu";
 import type { SittingRef, TestCentreSummary, YearSummary } from "@/lib/data/types";
 
 type Filter = "all" | "in_progress" | "locked";
+
+/** The started sittings of a Years row, as deletable cycles (real cycle ids). */
+function deletableCyclesOf(y: YearSummary): DeletableCycle[] {
+  return [y.february, y.may]
+    .filter((s): s is SittingRef & { cycleId: string } => s.started && !!s.cycleId)
+    .map((s) => ({ cycleId: s.cycleId, label: s.label, cycleName: s.cycleName ?? `${y.name} ${s.label}` }));
+}
 
 /** A year is "in progress" while any started sitting is still unlocked. */
 function yearLocked(feb: SittingRef, may: SittingRef): boolean {
@@ -203,11 +211,16 @@ export default function YearsDashboard() {
                   </td>
                   <td className="hf-td hf-sub">{y.lastActivity}</td>
                   <td className="hf-td" style={{ textAlign: "right" }}>
-                    <Link href={`/years/${y.id}`}>
-                      <Button>
-                        Open<Icon name="arrow" />
-                      </Button>
-                    </Link>
+                    <div style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                      {/* Delete a cycle straight from the list — by its real cycle id,
+                          with no need to open the (possibly 404-ing) year/pipeline. */}
+                      <YearRowDeleteMenu cycles={deletableCyclesOf(y)} />
+                      <Link href={`/years/${y.id}`}>
+                        <Button>
+                          Open<Icon name="arrow" />
+                        </Button>
+                      </Link>
+                    </div>
                   </td>
                 </tr>
               ))}

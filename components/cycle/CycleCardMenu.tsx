@@ -11,12 +11,10 @@
  * the only remaining cycle. On success we return to Years and summaries recompute.
  */
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useProvider, useProviderData } from "@/lib/data/context";
+import { useProviderData } from "@/lib/data/context";
 import { hasRole } from "@/lib/auth/roles";
 import { H } from "@/lib/ui/tokens";
-import { Button } from "@/components/ui/primitives";
-import { Mark } from "@/components/ui/icons";
+import { DeleteCycleDialog } from "./DeleteCycleDialog";
 
 export function CycleCardMenu({ cycleId, cycleName }: { cycleId: string; cycleName: string }) {
   const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
@@ -95,86 +93,6 @@ export function CycleCardMenu({ cycleId, cycleName }: { cycleId: string; cycleNa
         </>
       )}
       {confirming && <DeleteCycleDialog cycleId={cycleId} cycleName={cycleName} onClose={() => setConfirming(false)} />}
-    </div>
-  );
-}
-
-function DeleteCycleDialog({ cycleId, cycleName, onClose }: { cycleId: string; cycleName: string; onClose: () => void }) {
-  const provider = useProvider();
-  const router = useRouter();
-  const [text, setText] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const armed = text.trim().toLowerCase() === "delete";
-
-  const confirm = async () => {
-    if (!armed) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await provider.deleteCycle(cycleId);
-      router.replace("/"); // back to Years; summaries recompute on rehydrate
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Couldn’t delete this cycle.");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.42)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 120, padding: 20 }}
-      onClick={busy ? undefined : onClose}
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="hf-card" style={{ padding: "20px 22px", maxWidth: 520, width: "100%", background: H.paper }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-          <Mark kind="fail" size={18} />
-          <span className="hf-h2">Delete this cycle?</span>
-        </div>
-        <div className="hf-sub" style={{ fontSize: 12.5, marginBottom: 14 }}>
-          This permanently removes <strong>{cycleName}</strong> and <strong>all</strong> its data across every table
-          (assessments, items, participants, responses, sittings, rollups, scores, grades, incidents, essays). It cannot
-          be undone and is recorded in the audit log. Other cycles are untouched.
-        </div>
-        <label style={{ display: "block", fontSize: 11.5, color: H.ink2, marginBottom: 6 }}>
-          Type <span className="hf-mono" style={{ color: H.bad, fontWeight: 700 }}>delete</span> to confirm
-        </label>
-        <input
-          autoFocus
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && armed && !busy) confirm(); }}
-          placeholder="delete"
-          className="hf-mono"
-          style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: `1px solid ${H.line2}`, fontSize: 13, marginBottom: 16 }}
-        />
-        {error && (
-          <div style={{ fontSize: 12, color: H.bad, marginBottom: 14, display: "flex", gap: 8, alignItems: "flex-start" }}>
-            <Mark kind="fail" size={14} />
-            <span>{error}</span>
-          </div>
-        )}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-          <Button variant="ghost" onClick={onClose} disabled={busy}>Cancel</Button>
-          <button
-            onClick={confirm}
-            disabled={!armed || busy}
-            style={{
-              padding: "7px 14px",
-              borderRadius: 8,
-              border: `1px solid ${!armed || busy ? H.line2 : H.bad}`,
-              background: !armed || busy ? H.tint : H.bad,
-              color: !armed || busy ? H.ink3 : "#fff",
-              fontSize: 12.5,
-              fontWeight: 600,
-              cursor: !armed || busy ? "default" : "pointer",
-            }}
-          >
-            {busy ? "Deleting…" : "Delete cycle"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
