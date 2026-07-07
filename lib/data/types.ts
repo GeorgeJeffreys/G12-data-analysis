@@ -1565,18 +1565,6 @@ export interface QualityThresholdRow {
   flag: string;
 }
 
-export interface RetentionConfig {
-  archiveAfterYears: number;
-  deleteRawAfterArchive: boolean;
-  keepAuditIndefinitely: boolean;
-}
-
-export interface BrandingConfig {
-  accent: string;
-  logoName: string;
-  defaultCertificateTemplate: string;
-}
-
 /**
  * Borderline (marginal) flagging band — a workspace config value the engine reads
  * when flagging students just below a grade boundary. `bandPct` is the symmetric
@@ -1678,8 +1666,6 @@ export interface IncidentReviewModel {
 export interface ConfigModel {
   /** The engine's active rating thresholds (read-only — they drive item ratings). */
   thresholds: QualityThresholdRow[];
-  retention: RetentionConfig;
-  branding: BrandingConfig;
   safeguard: SafeguardConfig;
   /** The configurable borderline (marginal) flagging band (percentage points). */
   borderline: BorderlineConfig;

@@ -9,7 +9,6 @@
  *     is the engine's dynamic per-exam majority, not a fixed count).
  *   - The cut-score guard-rails and target distribution (policy-fixed, display).
  *   - Reliability flags (engine constants, display).
- *   - Mock data-retention and branding settings.
  *
  * Nothing here is decorative: an editable control writes a value the engine
  * actually reads; everything the engine fixes by policy is labelled DISPLAY-ONLY.
@@ -19,8 +18,7 @@ import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
-import { Button, Card, Toggle } from "@/components/ui/primitives";
-import { Icon } from "@/components/ui/icons";
+import { Card } from "@/components/ui/primitives";
 import { settingsSubnav } from "@/lib/ui/subnav";
 import { GradingDefaultsEditor } from "@/components/settings/GradingDefaultsEditor";
 import { QualityThresholdsEditor } from "@/components/settings/QualityThresholdsEditor";
@@ -44,7 +42,7 @@ export default function ConfigPage() {
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 30px", gap: 18, flex: 1, maxWidth: 1040 }}>
         <div>
           <div className="hf-h1">Configuration</div>
-          <div className="hf-sub" style={{ marginTop: 7 }}>Quality thresholds, grading defaults, the award rule and its safeguards, data retention and branding for the whole workspace.</div>
+          <div className="hf-sub" style={{ marginTop: 7 }}>Quality thresholds, grading defaults, the award rule and its safeguards for the whole workspace.</div>
         </div>
 
         {/* test centres now live in their own admin tab — Settings › Test centres. */}
@@ -164,69 +162,16 @@ export default function ConfigPage() {
             <DisplayValue>fewer than <strong>{SMALL_SAMPLE_THRESHOLD}</strong> participants — α is unstable.</DisplayValue>
           </Row>
         </SectionCard>
-
-        <div style={{ display: "flex", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 320, display: "flex", flexDirection: "column", gap: 18 }}>
-            <SectionCard title="Data retention" mock>
-              <Row label="Archive locked sittings after">
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <input
-                    className="hf-input"
-                    style={{ width: 48 }}
-                    value={String(config.retention.archiveAfterYears)}
-                    inputMode="numeric"
-                    onChange={(e) => provider.setRetention({ archiveAfterYears: Number(e.target.value.replace(/[^0-9]/g, "")) || 0 })}
-                  />
-                  <span className="hf-sub">years</span>
-                </span>
-              </Row>
-              <Row label="Delete raw exports after archive">
-                <Toggle on={config.retention.deleteRawAfterArchive} onClick={() => provider.setRetention({ deleteRawAfterArchive: !config.retention.deleteRawAfterArchive })} />
-              </Row>
-              <Row label="Keep audit log indefinitely" last>
-                <Toggle on={config.retention.keepAuditIndefinitely} onClick={() => provider.setRetention({ keepAuditIndefinitely: !config.retention.keepAuditIndefinitely })} />
-              </Row>
-            </SectionCard>
-          </div>
-
-          <div style={{ flex: 1, minWidth: 320, display: "flex", flexDirection: "column", gap: 18 }}>
-            <SectionCard title="Branding" sub="Used on certificates and the sign-in screen." mock>
-              <Row label="Organisation logo">
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="hf-mono hf-sub" style={{ fontSize: 11 }}>{config.branding.logoName}</span>
-                  <Button style={{ fontSize: 11.5 }}><Icon name="upload" size={13} />Replace</Button>
-                </span>
-              </Row>
-              <Row label="Accent colour">
-                <span style={{ display: "flex", gap: 8 }}>
-                  {[H.pink, H.slate, H.good].map((c) => {
-                    const on = config.branding.accent.toLowerCase() === c.toLowerCase();
-                    return (
-                      <button key={c} onClick={() => provider.setBranding({ accent: c })} title={c} style={{ width: 22, height: 22, borderRadius: 6, background: c, border: on ? `2px solid ${H.ink}` : `1px solid ${H.line2}`, outline: on ? `2px solid ${H.paper}` : "none", outlineOffset: -3, cursor: "pointer" }} />
-                    );
-                  })}
-                </span>
-              </Row>
-              <Row label="Default certificate template" last>
-                <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="hf-mono hf-sub" style={{ fontSize: 11 }}>{config.branding.defaultCertificateTemplate}</span>
-                  <Button variant="ghost" style={{ fontSize: 11 }}>Change</Button>
-                </span>
-              </Row>
-            </SectionCard>
-          </div>
-        </div>
       </div>
     </Shell>
   );
 }
 
-function SectionCard({ title, sub, mock, fixed, children }: { title: string; sub?: string; mock?: boolean; fixed?: boolean; children: ReactNode }) {
+function SectionCard({ title, sub, fixed, children }: { title: string; sub?: string; fixed?: boolean; children: ReactNode }) {
   return (
     <Card style={{ padding: "18px 20px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <div className="hf-h2">{title}</div>
-        {mock && <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>MOCK</span>}
         {fixed && <span style={{ fontSize: 8.5, color: H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>DISPLAY-ONLY</span>}
       </div>
       {sub && <div className="hf-sub" style={{ fontSize: 12, marginTop: 3, marginBottom: 14 }}>{sub}</div>}
