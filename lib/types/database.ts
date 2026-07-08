@@ -375,6 +375,15 @@ export interface WorkspaceSettingRow {
   updated_at: string;
 }
 
+// 0036 — the editable role → permission matrix. One row per (tier, permission);
+// readable by any signed-in member, written only via set_role_permission.
+export interface RolePermissionRow {
+  tier: string;
+  permission: string;
+  granted: boolean;
+  updated_at: string;
+}
+
 // 0014 — per-subject A–E element labels. Writes are definer-only (set_element_labels).
 export interface ElementLabelRow {
   id: string;
@@ -542,6 +551,8 @@ export interface Database {
       distinction_overrides: TableDef<DistinctionOverrideRow, never, never>;
       document_settings: TableDef<DocumentSettingsRow, never, never>;
       workspace_settings: TableDef<WorkspaceSettingRow, never, never>;
+      // 0036 — editable role → permission matrix (definer-only writes).
+      role_permissions: TableDef<RolePermissionRow, never, never>;
       // 0014 — per-subject A–E element labels (definer-only writes).
       element_labels: TableDef<ElementLabelRow, never, never>;
       // 0016 — Incident Adjustments config + parsed rows (definer-only writes).
@@ -618,6 +629,8 @@ export interface Database {
       set_document_settings: { Args: { p_cycle: string; p_settings: unknown }; Returns: undefined };
       record_documents: { Args: { p_cycle: string; p_detail: string }; Returns: undefined };
       set_workspace_setting: { Args: { p_key: string; p_value: unknown }; Returns: undefined };
+      // 0036 — edit the role → permission matrix (admin-gated, lockout-guarded).
+      set_role_permission: { Args: { p_tier: string; p_permission: string; p_granted: boolean }; Returns: undefined };
       // 0014 — replace the per-subject element-label config (definer-only).
       set_element_labels: { Args: { p_config: unknown }; Returns: undefined };
       // 0016 — Incident Adjustments config registry + import (admin-only config).

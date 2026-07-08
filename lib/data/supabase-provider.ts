@@ -25,6 +25,7 @@
  */
 import type { Database } from "@/lib/types/database";
 import { storageRoleForTier, type RoleTier } from "@/lib/auth/roles";
+import type { Permission, RolePermissionMap } from "@/lib/auth/permissions";
 import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-directory";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
@@ -254,6 +255,9 @@ export class SupabaseDataProvider implements DataProvider {
     for (const o of d.distinctionOverrides) p.overrideDistinctionCap(cid, o.studentId, o.reason);
     if (d.docSettings) p.setDocumentSettings(cid, d.docSettings as Partial<DocSettings>);
     this.applyWorkspace(p, d.workspace);
+    // 0036 — apply the persisted role → permission matrix over the seeded defaults
+    // (empty rows = fresh/pre-migration DB → defaults stand).
+    p.applyRolePermissions(d.rolePermissions);
     if (d.elementLabels) p.setElementLabels(d.elementLabels);
     if (d.locked) p.lockCycle(cid); // last — freezes further edits
   }
@@ -670,6 +674,17 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.setCapability(roleId, capabilityId, granted);
     this.bump();
     this.rpc("set_workspace_setting", { p_key: "roles", p_value: this.inner.getRoles() });
+  }
+
+  // role → permission matrix (migration 0036). Read delegates to the hydrated
+  // inner map; the write mutates the inner map (which applies the admin gate + the
+  // admin-locked lockout guard), bumps, and persists via the definer RPC (the DB
+  // re-checks both server-side).
+  getRolePermissions(): RolePermissionMap { return this.inner.getRolePermissions(); }
+  setRolePermission(tier: RoleTier, permission: Permission, granted: boolean): void {
+    this.inner.setRolePermission(tier, permission, granted);
+    this.bump();
+    this.rpc("set_role_permission", { p_tier: tier, p_permission: permission, p_granted: granted });
   }
 
   // technical errors / student-review — legacy surface, no DB backing; local only.
