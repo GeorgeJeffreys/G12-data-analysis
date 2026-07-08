@@ -6,59 +6,9 @@
  */
 import type {
   AuditEntry,
-  Capability,
   Member,
   QualityThresholdRow,
-  RoleDef,
 } from "./types";
-
-export const ROLE_LEAD = "role-lead";
-export const ROLE_DS = "role-ds";
-
-export const DEFAULT_ROLES: RoleDef[] = [
-  { id: ROLE_LEAD, name: "G12 Lead", isLead: true, memberCount: 0 },
-  { id: ROLE_DS, name: "Data Scientist", isLead: false, memberCount: 0 },
-];
-
-export const CAPABILITY_GROUPS: { group: string; capabilities: Capability[] }[] = [
-  {
-    group: "Cycle pipeline",
-    capabilities: [
-      { id: "cap-create", group: "Cycle pipeline", label: "Create a cycle" },
-      { id: "cap-upload", group: "Cycle pipeline", label: "Upload / replace an export" },
-      { id: "cap-validate", group: "Cycle pipeline", label: "Resolve validation issues" },
-      { id: "cap-review", group: "Cycle pipeline", label: "Review & exclude items" },
-      { id: "cap-boundaries", group: "Cycle pipeline", label: "Set grade boundaries" },
-      { id: "cap-lock", group: "Cycle pipeline", label: "Lock & sign off grades" },
-      { id: "cap-reopen", group: "Cycle pipeline", label: "Re-open a locked cycle" },
-    ],
-  },
-  {
-    group: "Output",
-    capabilities: [{ id: "cap-certs", group: "Output", label: "Generate certificates & reports" }],
-  },
-  {
-    group: "Admin & analytics",
-    capabilities: [
-      { id: "cap-analytics", group: "Admin & analytics", label: "View analytics" },
-      { id: "cap-users", group: "Admin & analytics", label: "Manage users" },
-      { id: "cap-settings", group: "Admin & analytics", label: "Edit settings" },
-    ],
-  },
-];
-
-export const ALL_CAPABILITY_IDS = CAPABILITY_GROUPS.flatMap((g) => g.capabilities.map((c) => c.id));
-
-/** Default grant matrix: Lead = everything; Data Scientist = all but sign-off/admin/create. */
-export function defaultMatrix(): Record<string, Record<string, boolean>> {
-  const lead: Record<string, boolean> = {};
-  const ds: Record<string, boolean> = {};
-  for (const id of ALL_CAPABILITY_IDS) {
-    lead[id] = true;
-    ds[id] = !["cap-create", "cap-lock", "cap-reopen", "cap-certs", "cap-users", "cap-settings"].includes(id);
-  }
-  return { [ROLE_LEAD]: lead, [ROLE_DS]: ds };
-}
 
 /**
  * No mock/seed members. The real Users & access roster comes from

@@ -1,0 +1,11 @@
+-- 0038 — remove the orphaned `roles` workspace_settings row (P3).
+--
+-- The old Settings › Roles page persisted its mock roles × capabilities grid under
+-- the `roles` workspace_settings key via set_workspace_setting. P3 replaces that
+-- surface with the real, editable permission matrix (role_permissions, 0036), and
+-- removes the createRole/renameRole/deleteRole/setCapability write path — so
+-- nothing writes or reads `roles` any more. Nothing ever read it back on hydrate
+-- (supabase-provider.applyWorkspace ignores it), so this is a harmless cleanup.
+--
+-- Forward-only; run in the Supabase SQL editor after merge.
+delete from workspace_settings where key = 'roles';

@@ -15,7 +15,8 @@
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import { can, PERMISSIONS, ROLE_PERMISSION_DEFAULTS, type RoleTier } from "@/lib/auth/permissions";
-import type { CurrentUser, MemberRole } from "@/lib/data/types";
+import type { CurrentUser } from "@/lib/data/types";
+import type { MemberRole } from "@/lib/types/database";
 
 const CYCLE = "may-2026";
 
