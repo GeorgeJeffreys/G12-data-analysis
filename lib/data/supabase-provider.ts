@@ -30,6 +30,7 @@ import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-d
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import { InMemoryDataProvider } from "./in-memory-provider";
+import { gzipText, GZIP_MARKER_HEADER, GZIP_MARKER_VALUE } from "@/lib/transport/gzip";
 import { hydrate, fetchSeedTestCentres, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
 import { catalogNamesFor } from "./subject-catalog";
 import type { Seed } from "./seed-types";
@@ -483,17 +484,24 @@ export class SupabaseDataProvider implements DataProvider {
     report: ValidationReport,
     extra?: { canonical?: CanonicalModel; files?: { items?: string; assessments?: string; topics?: string } },
   ): Promise<void> {
+    // Gzip the JSON body so the request stays well under Vercel's hard 4.5 MB
+    // request-body ceiling regardless of cohort size. The body compresses ~10×,
+    // so this removes payload size as a class of failure (was: 413 on large
+    // sittings). Mark it with a custom header — never `Content-Encoding`, which
+    // a proxy may auto-decompress and desync — so the server decompresses it
+    // itself; an older client that skips the marker is still read raw server-side.
+    const payload = JSON.stringify({
+      clean,
+      report,
+      fileName: file.name,
+      fileSizeMB: file.sizeMB,
+      canonical: extra?.canonical,
+      files: extra?.files,
+    });
     const res = await fetch(`/api/cycles/${cycleId}/ingest`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        clean,
-        report,
-        fileName: file.name,
-        fileSizeMB: file.sizeMB,
-        canonical: extra?.canonical,
-        files: extra?.files,
-      }),
+      headers: { "content-type": "application/json", [GZIP_MARKER_HEADER]: GZIP_MARKER_VALUE },
+      body: await gzipText(payload),
     });
     if (!res.ok) {
       let message = `Ingest failed (${res.status}).`;

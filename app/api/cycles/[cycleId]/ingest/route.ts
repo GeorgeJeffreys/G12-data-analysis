@@ -18,6 +18,7 @@ import { ingestCleanResponses } from "@/lib/server/ingest-write";
 import { recomputeAndWrite } from "@/lib/server/engine-write";
 import { checkSchemaHealth, describeSchemaHealth } from "@/lib/server/schema-health";
 import { authorizeCycleAdmin } from "@/lib/auth/authorize-cycle";
+import { gunzipToText, GZIP_MARKER_HEADER, GZIP_MARKER_VALUE } from "@/lib/transport/gzip";
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 
@@ -51,9 +52,15 @@ export async function POST(req: Request, { params }: { params: { cycleId: string
   const gate = await authorizeCycleAdmin(admin, user.id, cycleId);
   if (!gate.allowed) return NextResponse.json({ error: gate.reason }, { status: 403 });
 
+  // The client gzips the JSON body and marks it with a custom header so the
+  // request stays under Vercel's 4.5 MB body ceiling on large sittings. Decompress
+  // when marked; otherwise read raw (older client / a direct API caller) so the
+  // pipeline downstream receives byte-identical JSON either way.
   let body: IngestBody;
   try {
-    body = (await req.json()) as IngestBody;
+    const isGzip = req.headers.get(GZIP_MARKER_HEADER) === GZIP_MARKER_VALUE;
+    const text = isGzip ? await gunzipToText(await req.arrayBuffer()) : await req.text();
+    body = JSON.parse(text) as IngestBody;
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
   }
