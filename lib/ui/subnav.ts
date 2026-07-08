@@ -46,7 +46,7 @@ export function settingsSubnav(
 ): SubnavItem[] {
   return [
     { label: "Users & access", href: "/settings/users", on: active === "users" },
-    { label: "Roles & permissions", href: "/settings/roles", on: active === "roles" },
+    { label: "Roles & actions", href: "/settings/roles", on: active === "roles" },
     { label: "Test centres", href: "/settings/test-centres", on: active === "centres" },
     { label: "Configuration", href: "/settings/config", on: active === "config" },
     { label: "Incident adjustments", href: "/settings/incident-adjustments", on: active === "incidents" },
