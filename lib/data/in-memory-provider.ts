@@ -33,6 +33,14 @@ import {
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
 import { hasRole, canOverride, roleTierLabel } from "@/lib/auth/roles";
+import {
+  defaultRolePermissionMap,
+  isAdminLocked,
+  PERMISSIONS,
+  type Permission,
+  type RolePermissionMap,
+  type RoleTier,
+} from "@/lib/auth/permissions";
 import { rollupOverall, overallAwardsReconcile } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
@@ -353,6 +361,11 @@ export class InMemoryDataProvider implements DataProvider {
   // default reproduces the engine's published ratings exactly.
   private quality: QualityThresholds = defaultScoringConfig().quality;
   private docSettingsByCycle = new Map<string, DocSettings>();
+
+  // The editable role → permission matrix (migration 0036), seeded from
+  // ROLE_PERMISSION_DEFAULTS. The SupabaseDataProvider overwrites this from the DB
+  // via applyRolePermissions() on hydrate; `can()` and the P3 matrix UI read it.
+  private rolePermissions: RolePermissionMap = defaultRolePermissionMap();
 
   // incident log (Adjustments) + distinction safeguard
   private technicalErrors = new Map<string, { uploaded: boolean; sample: boolean; fileName: string | null; incidents: TechnicalIncident[] }>();
@@ -4765,6 +4778,46 @@ export class InMemoryDataProvider implements DataProvider {
     this.roles = this.roles.filter((r) => r.id !== roleId);
     delete this.matrix[roleId];
     this.audit("config", "Deleted role", `Removed role "${role.name}"`, null);
+    this.bump();
+  }
+
+  // ── role → permission matrix (migration 0036) ───────────────────────────────
+  getRolePermissions(): RolePermissionMap {
+    return this.rolePermissions;
+  }
+
+  setRolePermission(tier: RoleTier, permission: Permission, granted: boolean): void {
+    if (!hasRole(this.user.role, "admin")) return;
+    // Lockout guard: never ungrant an admin-locked permission from the admin tier,
+    // so the workspace can never lose the ability to manage users, roles & centres.
+    if (!granted && tier === "admin" && isAdminLocked(permission)) return;
+    const set = this.rolePermissions[tier];
+    if (granted) set.add(permission);
+    else set.delete(permission);
+    this.bump();
+  }
+
+  /**
+   * Overwrite the whole matrix from persisted DB rows (SupabaseDataProvider
+   * hydrate). Only rows for known tiers/permissions are honoured; a granted=false
+   * row simply omits the permission. An empty `rows` (fresh DB) leaves the
+   * defaults in place so `can()` is still correct before the first edit.
+   */
+  applyRolePermissions(rows: { tier: string; permission: string; granted: boolean }[]): void {
+    if (rows.length === 0) return;
+    const empty: RolePermissionMap = {
+      team_member: new Set<Permission>(),
+      analyst: new Set<Permission>(),
+      admin: new Set<Permission>(),
+    };
+    const known = new Set<Permission>(PERMISSIONS);
+    for (const r of rows) {
+      if (!r.granted) continue;
+      if (r.tier !== "team_member" && r.tier !== "analyst" && r.tier !== "admin") continue;
+      if (!known.has(r.permission as Permission)) continue;
+      empty[r.tier].add(r.permission as Permission);
+    }
+    this.rolePermissions = empty;
     this.bump();
   }
 

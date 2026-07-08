@@ -38,6 +38,7 @@ import type {
   DistinctionOverrideRow,
   DocumentSettingsRow,
   WorkspaceSettingRow,
+  RolePermissionRow,
   ElementLabelRow,
   ImportBatchRow,
   MemberRole,
@@ -199,6 +200,9 @@ export interface DecisionState {
   workspace: Record<string, unknown>;
   /** Per-subject A–E element labels (0014); absent when the table is empty. */
   elementLabels?: ElementLabelsConfig;
+  /** The editable role → permission matrix (0036). Empty on a pre-migration or
+   *  fresh DB — the provider then keeps the ROLE_PERMISSION_DEFAULTS in place. */
+  rolePermissions: { tier: string; permission: string; granted: boolean }[];
 }
 
 /** Group element-label rows (already sort_order-ordered) into the config shape. */
@@ -343,6 +347,12 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   // 0014 — per-subject A–E element labels (workspace-wide config table).
   const elementLabelRows = await sel<ElementLabelRow>(
     supabase.from("element_labels").select("*").order("sort_order", { ascending: true }),
+  );
+  // 0036 — editable role → permission matrix (workspace-wide). `sel` tolerates a
+  // pre-migration DB (missing table → []), so hydrate never crashes before the
+  // migration is run; an empty result keeps the ROLE_PERMISSION_DEFAULTS in place.
+  const rolePermissionRows = await sel<RolePermissionRow>(
+    supabase.from("role_permissions").select("*"),
   );
   const cleanExclusionRows = await sel<CleanExclusionRow>(
     supabase.from("clean_exclusions").select("*").eq("cycle_id", cycleId),
@@ -706,6 +716,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     docSettings: (docRow?.settings as Record<string, unknown> | undefined) ?? null,
     workspace: Object.fromEntries(workspace.map((w) => [w.key, w.value])),
     elementLabels: elementLabelRows.length ? groupElementLabels(elementLabelRows) : undefined,
+    rolePermissions: rolePermissionRows.map((r) => ({ tier: r.tier, permission: r.permission, granted: r.granted })),
   };
 
   const subjectCodeToAssessmentId = new Map<string, string>();

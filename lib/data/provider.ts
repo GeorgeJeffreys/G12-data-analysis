@@ -88,6 +88,7 @@ import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/imp
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
+import type { Permission, RolePermissionMap, RoleTier } from "@/lib/auth/permissions";
 
 /** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
 export interface TechnicalErrorRow {
@@ -286,6 +287,14 @@ export interface DataProvider {
   // settings: users & roles
   getMembers(): MembersModel;
   getRoles(): RolesModel;
+
+  // settings: role → permission matrix (the editable authorization source of
+  // truth, migration 0036). `getRolePermissions` returns the effective map both
+  // the client `can()` and the P3 matrix UI read; `setRolePermission` toggles one
+  // cell (admin-only, with the admin-locked lockout guard). Additive foundation —
+  // no existing gate consults these yet (P2 does the swap).
+  getRolePermissions(): RolePermissionMap;
+  setRolePermission(tier: RoleTier, permission: Permission, granted: boolean): void;
 
   // settings: test centres (top-level scoping dimension — migration 0010)
   /** Every test centre (active + inactive), for the management list. */
