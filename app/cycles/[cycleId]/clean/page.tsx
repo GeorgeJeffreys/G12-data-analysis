@@ -30,10 +30,12 @@ import { AssessmentTabs } from "@/components/shell/AssessmentTabs";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 import { useTableZoom, ZoomControl } from "@/lib/ui/tableZoom";
-import { RawSpreadsheet } from "@/components/cycle/RawSpreadsheet";
+import { RawSpreadsheet, type FlagMark } from "@/components/cycle/RawSpreadsheet";
 import { StepIntro } from "@/components/ui/StepIntro";
 import { MetricStrip, type MetricDatum } from "@/components/ui/MetricStrip";
 import { downloadWorkbook, fileStem } from "@/lib/ui/export";
+import { computeCleanFlags, type CleanFlag, type CleanFlagSeverity } from "@/lib/clean/flags";
+import { KNOWN_TEST_ACCOUNT_EMAILS } from "@/lib/clean/test-accounts";
 import type {
   RawDataModel,
   CleaningImpactModel,
@@ -48,9 +50,21 @@ import type {
  * participant from EVERY subject. One queued action may carry ops of both scopes
  * (e.g. "Restore selected" over a mixed selection) and is reversed as a unit.
  */
-type CleanScope = "subject" | "cohort";
+type CleanScope = "subject" | "cohort" | "column";
 type CleanOp = { scope: CleanScope; ids: string[]; assessmentId?: string };
 type CleanAction = { kind: "remove" | "restore"; ops: CleanOp[] };
+
+/** Rank a severity for "flagged first" sorting / highest-severity roll-up. */
+const SEV_RANK: Record<CleanFlagSeverity, number> = { high: 3, medium: 2, low: 1 };
+/** Reduce a list of flags to the single highest-severity marker + a tooltip. */
+function toFlagMark(flags: CleanFlag[]): FlagMark | undefined {
+  if (flags.length === 0) return undefined;
+  const severity = flags.reduce<CleanFlagSeverity>(
+    (best, f) => (SEV_RANK[f.severity] > SEV_RANK[best] ? f.severity : best),
+    "low",
+  );
+  return { severity, title: flags.map((f) => `• ${f.message}`).join("\n") };
+}
 
 /** Sentinel tab id for the cross-subject "Overall" (global) view. */
 const OVERALL = "__overall__";
@@ -88,7 +102,12 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
   // Local, session-scoped selection + undo stack (the exclusion state itself lives
   // in the provider and persists; the stack only lets us reverse the last action).
   const [selRows, setSelRows] = useState<Set<string>>(new Set());
+  const [selCols, setSelCols] = useState<Set<string>>(new Set());
   const [undoStack, setUndoStack] = useState<CleanAction[]>([]);
+  // View-state (never mutates the data model): sort flagged rows first, and a
+  // column "show only flagged" filter for triage.
+  const [flaggedFirst, setFlaggedFirst] = useState(false);
+  const [onlyFlaggedCols, setOnlyFlaggedCols] = useState(false);
   // Collapsible detail panels folded into the merged metrics strip: the subject's
   // per-element / per-status breakdown, and the raw-data items breakdown.
   const [detailOpen, setDetailOpen] = useState(false);
@@ -100,6 +119,16 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
   const excludedRows = useMemo(() => new Set(model?.excludedRows ?? []), [model]);
   const subjectExcluded = useMemo(() => new Set(model?.subjectExcludedRows ?? []), [model]);
   const cohortExcluded = useMemo(() => new Set(model?.cohortExcludedRows ?? []), [model]);
+  // Struck columns (soft-deleted items), kept visible + reversible like rows.
+  const excludedCols = useMemo(() => new Set(model?.excludedCols ?? []), [model]);
+  // Live scored-vs-total item counts over the CLEANED (retained) set — so the
+  // headline reflects soft-deletes: removing a scored column drops both counts;
+  // removing the maxScore-0 stimulus item drops only the total (grade-neutral).
+  const itemCounts = useMemo(() => {
+    if (!model) return null;
+    const retained = model.columns.filter((c) => !excludedCols.has(c.id));
+    return { total: retained.length, scored: retained.filter((c) => c.maxScore >= 1).length };
+  }, [model, excludedCols]);
   const toggleRow = (id: string) =>
     setSelRows((s) => {
       const next = new Set(s);
@@ -107,10 +136,91 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
       else next.add(id);
       return next;
     });
-  const clearSel = () => setSelRows(new Set());
+  const toggleCol = (id: string) =>
+    setSelCols((s) => {
+      const next = new Set(s);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const clearSel = () => {
+    setSelRows(new Set());
+    setSelCols(new Set());
+  };
+
+  // ── Flagging: advisory row/column flags computed from the live Clean matrix.
+  // Pure + client-side (no provider call). The matrix is PII-safe (studentId is a
+  // pseudonym), so email-based rules stay dormant here unless a real email rides
+  // along; cell/maxScore rules (STIMULUS_ITEM, ALL_BLANK, NO_RESPONSES, …) fire.
+  const flags = useMemo<CleanFlag[]>(() => {
+    if (!model) return [];
+    const isEmail = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+    return computeCleanFlags({
+      items: model.columns.map((c) => ({ id: c.id, maxScore: c.maxScore, label: c.qLabel })),
+      rows: model.rows.map((r) => ({
+        id: r.id,
+        email: isEmail(r.studentId) ? r.studentId : undefined,
+        cells: r.cells,
+      })),
+      testAccountEmails: KNOWN_TEST_ACCOUNT_EMAILS,
+    });
+  }, [model]);
+  const rowFlagMarks = useMemo(() => {
+    const byId = new Map<string, CleanFlag[]>();
+    for (const f of flags) if (f.target === "row") (byId.get(f.id) ?? byId.set(f.id, []).get(f.id)!).push(f);
+    const out = new Map<string, FlagMark>();
+    for (const [id, fs] of byId) { const m = toFlagMark(fs); if (m) out.set(id, m); }
+    return out;
+  }, [flags]);
+  const colFlagMarks = useMemo(() => {
+    const byId = new Map<string, CleanFlag[]>();
+    for (const f of flags) if (f.target === "column") (byId.get(f.id) ?? byId.set(f.id, []).get(f.id)!).push(f);
+    const out = new Map<string, FlagMark>();
+    for (const [id, fs] of byId) { const m = toFlagMark(fs); if (m) out.set(id, m); }
+    return out;
+  }, [flags]);
+  // Summary counts. STIMULUS_ITEM is informational — counted separately, not as a
+  // column "needing attention".
+  const flagSummary = useMemo(() => {
+    const stimulusCols = new Set(flags.filter((f) => f.code === "STIMULUS_ITEM").map((f) => f.id));
+    const flaggedRows = new Set(flags.filter((f) => f.target === "row").map((f) => f.id));
+    const attentionCols = new Set(
+      flags.filter((f) => f.target === "column" && f.code !== "STIMULUS_ITEM").map((f) => f.id),
+    );
+    return { rows: flaggedRows.size, cols: attentionCols.size, stimulus: stimulusCols.size, stimulusCols };
+  }, [flags]);
+
+  // The table model actually rendered: same data, view-state transforms only
+  // (never mutates the model). "Show only flagged" filters columns (remapping each
+  // row's cells to match); "Flagged first" reorders rows by highest flag severity.
+  const viewModel = useMemo(() => {
+    if (!model) return model;
+    let columns = model.columns;
+    let rows = model.rows;
+    if (onlyFlaggedCols) {
+      const keep = model.columns
+        .map((c, i) => ({ c, i }))
+        .filter((x) => colFlagMarks.has(x.c.id) || excludedCols.has(x.c.id) || selCols.has(x.c.id));
+      columns = keep.map((x) => x.c);
+      rows = rows.map((r) => ({ ...r, cells: keep.map((x) => r.cells[x.i] ?? null) }));
+    }
+    if (flaggedFirst) {
+      rows = rows
+        .map((r, i) => ({ r, i }))
+        .sort((a, b) => {
+          const sa = SEV_RANK[rowFlagMarks.get(a.r.id)?.severity as CleanFlagSeverity] ?? 0;
+          const sb = SEV_RANK[rowFlagMarks.get(b.r.id)?.severity as CleanFlagSeverity] ?? 0;
+          return sb - sa || a.i - b.i; // severity desc, stable by original order
+        })
+        .map((x) => x.r);
+    }
+    return { ...model, columns, rows };
+  }, [model, onlyFlaggedCols, flaggedFirst, colFlagMarks, rowFlagMarks, excludedCols, selCols]);
 
   const selectedActive = [...selRows].filter((id) => !excludedRows.has(id));
   const selectedExcluded = [...selRows].filter((id) => excludedRows.has(id));
+  const selectedColsActive = [...selCols].filter((id) => !excludedCols.has(id));
+  const selectedColsExcluded = [...selCols].filter((id) => excludedCols.has(id));
   const subjectShort = model?.assessment.shortName ?? "this subject";
 
   // Perform one op (or its reverse). "subject" scope routes through the per-subject
@@ -120,6 +230,10 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
     if (op.ids.length === 0) return;
     if (op.scope === "subject") {
       provider.setCleanRemoval(cycleId, op.assessmentId ?? assessmentId, { rows: op.ids }, remove);
+    } else if (op.scope === "column") {
+      // Column soft-delete reuses the parity-safe clean-removal column path — the
+      // same exclusion the engine denominator already honours (via `excludedSet`).
+      provider.setCleanRemoval(cycleId, op.assessmentId ?? assessmentId, { cols: op.ids }, remove);
     } else {
       for (const id of op.ids) provider.excludeParticipantFromCohort(cycleId, id, remove, remove ? "Removed from all subjects in cleaning" : undefined);
     }
@@ -144,6 +258,18 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
     if (selectedActive.length === 0) return;
     runAction({ kind: "remove", ops: [{ scope: "cohort", ids: selectedActive }] });
   };
+  // Remove the selected item column(s) from THIS subject — a soft-delete routed
+  // through the parity-safe clean-removal column path (drops from the item count
+  // and the scored denominator, reversibly).
+  const removeColumns = () => {
+    if (selectedColsActive.length === 0) return;
+    runAction({ kind: "remove", ops: [{ scope: "column", ids: selectedColsActive, assessmentId }] });
+  };
+  // Restore the selected struck column(s).
+  const restoreColumns = () => {
+    if (selectedColsExcluded.length === 0) return;
+    runAction({ kind: "restore", ops: [{ scope: "column", ids: selectedColsExcluded, assessmentId }] });
+  };
   // Restore the selected struck row(s), each in the scope it was removed under.
   const restoreSelected = () => {
     if (selectedExcluded.length === 0) return;
@@ -155,14 +281,16 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
       ],
     });
   };
-  // Restore every struck row currently shown for this subject, each in its own scope.
+  // Restore every struck row AND column currently shown for this subject, each in
+  // its own scope.
   const restoreAll = () => {
-    if (excludedRows.size === 0) return;
+    if (excludedRows.size === 0 && excludedCols.size === 0) return;
     runAction({
       kind: "restore",
       ops: [
         { scope: "subject", ids: [...subjectExcluded], assessmentId },
         { scope: "cohort", ids: [...cohortExcluded] },
+        { scope: "column", ids: [...excludedCols], assessmentId },
       ],
     });
   };
@@ -252,6 +380,7 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
               subject={impact?.bySubject.find((s) => s.assessmentId === assessmentId)}
               summary={summary?.subjects.find((s) => s.assessmentId === assessmentId)}
               raw={raw}
+              itemCounts={itemCounts}
               detailOpen={detailOpen}
               onToggleDetail={() => setDetailOpen((v) => !v)}
               breakdownOpen={breakdownOpen}
@@ -266,46 +395,91 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
             {breakdownOpen && raw && <RawBreakdown model={raw} />}
             <div style={{ display: "flex", flex: 1, alignItems: "stretch", minHeight: 0 }}>
               <div style={{ display: "flex", flexDirection: "column", flex: 1, padding: "12px 24px 16px", gap: 10, minWidth: 0, minHeight: 0 }}>
+              {/* review toolbar — flag summary + sort/filter affordances */}
+              <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", flex: "0 0 auto", fontSize: 12 }}>
+                <FlagSummaryLine rows={flagSummary.rows} cols={flagSummary.cols} stimulus={flagSummary.stimulus} />
+                <div style={{ flex: 1 }} />
+                <StripToggle
+                  open={flaggedFirst}
+                  onClick={() => setFlaggedFirst((v) => !v)}
+                  closedLabel="Flagged rows first"
+                  openLabel="Flagged rows first ✓"
+                />
+                <StripToggle
+                  open={onlyFlaggedCols}
+                  onClick={() => setOnlyFlaggedCols((v) => !v)}
+                  closedLabel="Only flagged columns"
+                  openLabel="Only flagged columns ✓"
+                />
+              </div>
+
               {/* selection + soft-delete action bar — attached directly above the table */}
               <div style={{ display: "flex", gap: 10, padding: "9px 15px", borderRadius: 10, background: H.slate, color: H.cream, alignItems: "center", flexWrap: "wrap", flex: "0 0 auto" }}>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: "#fff" }}>
-                  {selRows.size === 0 ? "Click a participant row to select it" : `${selRows.size} row${selRows.size === 1 ? "" : "s"} selected`}
+                  {selCols.size > 0
+                    ? `${selCols.size} column${selCols.size === 1 ? "" : "s"} selected`
+                    : selRows.size === 0
+                    ? "Click a row or a column header to select it"
+                    : `${selRows.size} row${selRows.size === 1 ? "" : "s"} selected`}
                 </span>
-                {excludedRows.size > 0 && <Badge tone="bad">{excludedRows.size} removed</Badge>}
-                {excludedRows.size > 0 && (
+                {excludedRows.size > 0 && <Badge tone="bad">{excludedRows.size} row{excludedRows.size === 1 ? "" : "s"} removed</Badge>}
+                {excludedCols.size > 0 && <Badge tone="bad">{excludedCols.size} column{excludedCols.size === 1 ? "" : "s"} removed</Badge>}
+                {(excludedRows.size > 0 || excludedCols.size > 0) && (
                   <button type="button" onClick={restoreAll} className="hf-btn ghost" style={{ fontSize: 11, color: H.cream, borderColor: H.slate2 }}>Restore all</button>
                 )}
                 <div style={{ flex: 1 }} />
-                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selRows.size === 0} onClick={clearSel}>Clear</Button>
+                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selRows.size === 0 && selCols.size === 0} onClick={clearSel}>Clear</Button>
                 <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={undoStack.length === 0} onClick={undo} title="Undo the last remove / restore">
                   <Icon name="refresh" size={12} color={H.cream} />Undo
                 </Button>
-                <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} disabled={selectedExcluded.length === 0} onClick={restoreSelected}>
-                  Restore selected
-                </Button>
-                <Button
-                  disabled={selectedActive.length === 0}
-                  onClick={removeFromCohort}
-                  style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }}
-                  title="Remove the selected participant(s) from every subject (staff / test / withdrawn)"
-                >
-                  <Icon name="trash" size={12} color={H.cream} />Remove from all subjects
-                </Button>
-                <Button variant="danger" disabled={selectedActive.length === 0} onClick={removeFromSubject} style={{ fontSize: 11.5, background: H.paper }} title={`Remove the selected participant(s) from ${subjectShort} only — their other subjects are untouched`}>
-                  <Icon name="trash" size={12} color={H.bad} />Remove from {subjectShort}
-                </Button>
+                {/* Column actions — shown when column(s) are selected */}
+                {selectedColsExcluded.length > 0 && (
+                  <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={restoreColumns}>
+                    Restore column{selectedColsExcluded.length === 1 ? "" : "s"}
+                  </Button>
+                )}
+                {selectedColsActive.length > 0 && (
+                  <Button variant="danger" onClick={removeColumns} style={{ fontSize: 11.5, background: H.paper }} title="Remove the selected item column(s) from this subject — drops from the item count and the scored denominator, reversibly">
+                    <Icon name="trash" size={12} color={H.bad} />Remove column{selectedColsActive.length === 1 ? "" : "s"}
+                  </Button>
+                )}
+                {/* Row actions — shown when row(s) are selected */}
+                {selectedExcluded.length > 0 && (
+                  <Button style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }} onClick={restoreSelected}>
+                    Restore selected
+                  </Button>
+                )}
+                {selectedActive.length > 0 && (
+                  <Button
+                    onClick={removeFromCohort}
+                    style={{ fontSize: 11.5, background: "transparent", borderColor: H.slate2, color: H.cream }}
+                    title="Remove the selected participant(s) from every subject (staff / test / withdrawn)"
+                  >
+                    <Icon name="trash" size={12} color={H.cream} />Remove from all subjects
+                  </Button>
+                )}
+                {selectedActive.length > 0 && (
+                  <Button variant="danger" onClick={removeFromSubject} style={{ fontSize: 11.5, background: H.paper }} title={`Remove the selected participant(s) from ${subjectShort} only — their other subjects are untouched`}>
+                    <Icon name="trash" size={12} color={H.bad} />Remove from {subjectShort}
+                  </Button>
+                )}
               </div>
 
               <RawSpreadsheet
-                model={model}
+                model={viewModel ?? model}
                 scrollRef={scrollRef}
                 zoomWrapStyle={zoomWrapStyle}
                 fill
                 rtl={model.assessment.rtl}
                 selectable
                 selRows={selRows}
+                selCols={selCols}
                 struckRows={excludedRows}
+                struckCols={excludedCols}
+                rowFlags={rowFlagMarks}
+                colFlags={colFlagMarks}
                 onToggleRow={toggleRow}
+                onToggleCol={toggleCol}
               />
             </div>
 
@@ -343,6 +517,26 @@ function CleanPageInner({ params }: { params: { cycleId: string } }) {
   );
 }
 
+/**
+ * A compact one-line flag summary above the cleaning table, e.g.
+ * "3 rows flagged · 1 column flagged · 1 stimulus item". Reads "No flags" when the
+ * subject is clean. The stimulus-item count is called out separately because it is
+ * informational (the maxScore-0 41st item), not something to fix.
+ */
+function FlagSummaryLine({ rows, cols, stimulus }: { rows: number; cols: number; stimulus: number }) {
+  const parts: string[] = [];
+  if (rows > 0) parts.push(`${rows} row${rows === 1 ? "" : "s"} flagged`);
+  if (cols > 0) parts.push(`${cols} column${cols === 1 ? "" : "s"} flagged`);
+  if (stimulus > 0) parts.push(`${stimulus} stimulus item${stimulus === 1 ? "" : "s"}`);
+  const clean = rows === 0 && cols === 0;
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 7, color: clean ? H.ink3 : H.ink2 }}>
+      <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", background: clean ? H.good : rows + cols > 0 ? H.warn : H.ink3, flex: "0 0 auto" }} />
+      <span style={{ fontWeight: 600 }}>{parts.length ? parts.join(" · ") : "No flags — nothing needs attention"}</span>
+    </span>
+  );
+}
+
 /** A quiet inline strip toggle (chevron + label), matching the "Show breakdown"
  *  affordance used across the step pages. Label is text (not colour) so the
  *  open/closed state is legible without the accent. */
@@ -377,6 +571,7 @@ function SubjectMetrics({
   subject,
   summary,
   raw,
+  itemCounts,
   detailOpen,
   onToggleDetail,
   breakdownOpen,
@@ -385,6 +580,8 @@ function SubjectMetrics({
   subject: CleaningImpactSubject | undefined;
   summary: CleaningSummarySubject | undefined;
   raw: RawDataModel | null;
+  /** Live scored/total item counts over the cleaned (retained) set. */
+  itemCounts: { scored: number; total: number } | null;
   detailOpen: boolean;
   onToggleDetail: () => void;
   breakdownOpen: boolean;
@@ -395,8 +592,22 @@ function SubjectMetrics({
     metrics.push({ label: "Records", value: subject.records.after, was: subject.records.before, big: true });
     metrics.push({ label: "Participants", value: subject.participants.after, was: subject.participants.before, big: true });
   }
+  if (itemCounts) {
+    // Scored-vs-total split — the transparent answer to "41 items but marks are out
+    // of 40". Value is the scored count (the mark denominator); the hint reconciles
+    // it with the total, naming the unscored stimulus/instruction item(s). Both
+    // reflect the cleaned set, so a soft-deleted column drops them live.
+    const unscored = itemCounts.total - itemCounts.scored;
+    metrics.push({
+      label: "Items scored",
+      value: itemCounts.scored,
+      hint:
+        unscored > 0
+          ? `of ${itemCounts.total} total · ${unscored} unscored stimulus/instruction item${unscored === 1 ? "" : "s"}`
+          : `of ${itemCounts.total} total`,
+    });
+  }
   if (raw) {
-    metrics.push({ label: "Items", value: raw.items });
     metrics.push({ label: "Major elements", value: raw.elementsCount });
     metrics.push({ label: "Sub-elements", value: raw.subElementsCount });
     metrics.push({ label: "D1·D2·D3", value: `${raw.demand.D1}·${raw.demand.D2}·${raw.demand.D3}` });
