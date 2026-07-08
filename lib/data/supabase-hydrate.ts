@@ -155,33 +155,40 @@ export interface SessionUser {
   status: SessionStatus;
   user: CurrentUser | null;
 }
-// Collapse a user's memberships to their single highest-privilege role, in
-// canonical order (admin > analyst > team-member{reviewer > viewer}).
-function pickRole(roles: Role[]): Role {
-  if (roles.includes("lead_admin")) return "lead_admin";
-  if (roles.includes("analyst")) return "analyst";
-  if (roles.includes("reviewer")) return "reviewer";
-  return "viewer";
-}
 export async function fetchSessionUser(supabase: DB): Promise<SessionUser> {
   const { data: auth } = await supabase.auth.getUser();
   const u = auth.user;
   if (!u) return { status: "no-session", user: null };
 
-  const memberships = await sel<{ role: MemberRole; role_id: string | null }>(
-    supabase.from("memberships").select("role, role_id").eq("user_id", u.id),
+  const memberships = await sel<{ role: MemberRole | null; role_id: string | null; cycle_id: string | null }>(
+    supabase.from("memberships").select("role, role_id, cycle_id").eq("user_id", u.id),
   );
+  // "is_member" for the access gate = has ANY membership (unchanged; not the enum).
   if (memberships.length === 0) return { status: "not-member", user: null };
 
-  const role = pickRole(memberships.map((m) => m.role));
-  // Carry the dynamic role_id of the highest-privilege membership (0040) so `can()`
-  // resolves against the hydrated grid; falls back to the enum tier when null.
-  const roleId = memberships.find((m) => m.role === role)?.role_id ?? null;
+  // Resolve the carried role from role_id, not the enum (0040/0042): prefer the
+  // workspace-wide membership (cycle_id is null — admin over every cycle), else the
+  // first. `can()` (the whole-user path) resolves this role_id against the hydrated
+  // grid; the server `can_do` stays authoritative, so this only fixes the client
+  // picture. The legacy enum is carried best-effort (nullable post-0040) purely so
+  // the `.role` fallback in bare-string `can()` call sites keeps working.
+  const chosen = memberships.find((m) => m.cycle_id === null) ?? memberships[0]!;
+  const roleId = chosen.role_id ?? null;
+  const role: Role = chosen.role ?? "viewer";
+  // The role's display name, resolved role_id → roles.name (0040). Drives the
+  // account-menu label so it reflects the real (incl. custom) role, not the enum.
+  let roleName: string | null = null;
+  if (roleId) {
+    const roleRow = await selOne<{ name: string }>(
+      supabase.from("roles").select("name").eq("id", roleId).maybeSingle(),
+    );
+    roleName = roleRow?.name ?? null;
+  }
   const name =
     ((u.user_metadata?.full_name as string | undefined) ||
       (u.email ? u.email.split("@")[0] : undefined)) ??
     "User";
-  return { status: "ok", user: { id: u.id, name, initials: initialsOf(name), role, roleId } };
+  return { status: "ok", user: { id: u.id, name, initials: initialsOf(name), role, roleId, roleName } };
 }
 
 // ── decision state replayed into the inner provider ─────────────────────────

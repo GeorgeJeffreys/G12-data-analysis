@@ -26,7 +26,7 @@ import {
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Check } from "@/components/ui/primitives";
-import { Icon } from "@/components/ui/icons";
+import { Icon, Mark } from "@/components/ui/icons";
 import { settingsSubnav } from "@/lib/ui/subnav";
 
 /** Group a flat action list by its `group`, in the fixed pipeline-step order. */
@@ -59,6 +59,8 @@ export default function RolesPage() {
   const [newName, setNewName] = useState("");
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameText, setRenameText] = useState("");
+  /** The deletable role pending confirmation (opens the delete dialog); null = closed. */
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
 
   const addRole = () => {
     const name = newName.trim();
@@ -153,7 +155,7 @@ export default function RolesPage() {
                             </button>
                             <DeleteRoleButton
                               reason={deleteReason(role.id, role.isSystem)}
-                              onDelete={() => provider.deleteRole(role.id)}
+                              onDelete={() => setPendingDelete({ id: role.id, name: role.name })}
                             />
                           </div>
                         )}
@@ -210,7 +212,70 @@ export default function RolesPage() {
           fixed on and the Admin role can&apos;t be deleted.
         </div>
       </div>
+
+      {pendingDelete && (
+        <DeleteRoleDialog
+          roleName={pendingDelete.name}
+          onCancel={() => setPendingDelete(null)}
+          onConfirm={() => {
+            provider.deleteRole(pendingDelete.id);
+            setPendingDelete(null);
+          }}
+        />
+      )}
     </Shell>
+  );
+}
+
+/**
+ * Confirmation before deleting a role — mirrors the delete-cycle dialog pattern
+ * (fixed overlay, destructive action) rather than a native `confirm()`. Only ever
+ * shown for a genuinely deletable role (the trash affordance is disabled, with a
+ * reason on hover, for the Admin role or a role that still has members).
+ */
+function DeleteRoleDialog({
+  roleName,
+  onCancel,
+  onConfirm,
+}: {
+  roleName: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(31,42,49,.42)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 120, padding: 20 }}
+      onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="hf-card" style={{ padding: "20px 22px", maxWidth: 440, width: "100%", background: H.paper }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+          <Mark kind="fail" size={18} />
+          <span className="hf-h2">Delete the &lsquo;{roleName}&rsquo; role?</span>
+        </div>
+        <div className="hf-sub" style={{ fontSize: 12.5, marginBottom: 16 }}>This can&apos;t be undone.</div>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          <button
+            autoFocus
+            onClick={onConfirm}
+            style={{
+              padding: "7px 14px",
+              borderRadius: 8,
+              border: `1px solid ${H.bad}`,
+              background: H.bad,
+              color: "#fff",
+              fontSize: 12.5,
+              fontWeight: 600,
+              cursor: "pointer",
+            }}
+          >
+            Delete role
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -218,10 +283,11 @@ const iconBtn: React.CSSProperties = {
   border: "none", background: "transparent", cursor: "pointer", padding: 2, display: "inline-flex", borderRadius: 4,
 };
 
-/** Trash affordance: disabled (with a reason tooltip) when the role can't be deleted;
- *  otherwise a two-step confirm so a column isn't dropped by a stray click. */
+/** Trash affordance: disabled (with a reason tooltip) when the role can't be deleted
+ *  — the Admin role or a role that still has members; otherwise clicking opens the
+ *  confirmation dialog (`onDelete`), so a genuinely deletable role is only removed
+ *  after an explicit confirm, never on a stray click. */
 function DeleteRoleButton({ reason, onDelete }: { reason: string | null; onDelete: () => void }) {
-  const [confirm, setConfirm] = useState(false);
   if (reason) {
     return (
       <button type="button" title={reason} disabled style={{ ...iconBtn, cursor: "not-allowed", opacity: 0.4 }}>
@@ -229,21 +295,8 @@ function DeleteRoleButton({ reason, onDelete }: { reason: string | null; onDelet
       </button>
     );
   }
-  if (confirm) {
-    return (
-      <button
-        type="button"
-        title="Click again to delete this role"
-        onClick={() => { onDelete(); setConfirm(false); }}
-        onBlur={() => setConfirm(false)}
-        style={{ ...iconBtn, color: H.bad, fontSize: 9, fontWeight: 700 }}
-      >
-        <Icon name="trash" size={11} color={H.bad} />
-      </button>
-    );
-  }
   return (
-    <button type="button" title="Delete role" onClick={() => setConfirm(true)} style={iconBtn}>
+    <button type="button" title="Delete role" onClick={onDelete} style={iconBtn}>
       <Icon name="trash" size={11} color={H.ink3} />
     </button>
   );

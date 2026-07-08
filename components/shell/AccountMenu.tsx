@@ -77,7 +77,10 @@ export function AccountMenu() {
   };
 
   const primary = email ?? user.name;
-  const secondary = roleLabel(user.role);
+  // Prefer the real dynamic role name (0042, resolved role_id → roles.name) so the
+  // label reflects the actual (incl. custom) role; fall back to the enum label in
+  // the in-memory demo, which carries no session-resolved role name.
+  const secondary = user.roleName ?? roleLabel(user.role);
 
   return (
     <div ref={ref} style={{ position: "relative" }}>
