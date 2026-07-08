@@ -51,10 +51,15 @@ describe("Incident Adjustments review page", () => {
     expect(html).not.toContain("Admin only");
   });
 
-  it("a lower role views the surface but cannot commit (Admin only)", async () => {
+  it("without the `adjust` permission the surface is read-only (Admin only)", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentRows(id);
+    p.loadSampleIncidentRows(id); // seeded as the default admin
+    // Ungrant `adjust` from team_member (matrix-driven denial), then view as one.
+    p.applyRolePermissions([
+      { tier: "team_member", permission: "view", granted: true },
+      { tier: "team_member", permission: "clean", granted: true },
+    ]);
     p.setCurrentUser(VIEWER);
     activeProvider = p;
     const html = await render(id);

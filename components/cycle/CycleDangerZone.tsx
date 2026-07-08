@@ -19,13 +19,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { hasRole } from "@/lib/auth/roles";
+import { can } from "@/lib/auth/permissions";
 import { H } from "@/lib/ui/tokens";
 import { Button } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
 
 export function CycleDangerZone({ cycleId, cycleName }: { cycleId: string; cycleName: string }) {
-  const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
+  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "workspace_admin"));
   const [open, setOpen] = useState(false);
 
   // Non-admins never see the destructive control (defence-in-depth over the RPC gate).

@@ -12,12 +12,12 @@
  */
 import { useState } from "react";
 import { useProviderData } from "@/lib/data/context";
-import { hasRole } from "@/lib/auth/roles";
+import { can } from "@/lib/auth/permissions";
 import { H } from "@/lib/ui/tokens";
 import { DeleteCycleDialog } from "./DeleteCycleDialog";
 
 export function CycleCardMenu({ cycleId, cycleName }: { cycleId: string; cycleName: string }) {
-  const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
+  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "workspace_admin"));
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
 

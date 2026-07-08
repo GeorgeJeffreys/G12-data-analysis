@@ -7,7 +7,7 @@
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { hasRole } from "@/lib/auth/roles";
+import { can } from "@/lib/auth/permissions";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Card, Check } from "@/components/ui/primitives";
@@ -21,7 +21,7 @@ export default function RolesPage() {
   const [newName, setNewName] = useState("");
   const [editingRole, setEditingRole] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<{ id: string; name: string } | null>(null);
-  const isLead = hasRole(provider.getCurrentUser().role, "admin");
+  const isLead = can(provider.getCurrentUser().role, "workspace_admin");
 
   const addRole = () => {
     if (newName.trim()) provider.createRole(newName.trim());

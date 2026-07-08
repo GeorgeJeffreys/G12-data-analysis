@@ -1,9 +1,9 @@
 "use client";
 
 /**
- * Settings › Incident adjustments (configuration registry). ADMIN-ONLY editing
- * (gated on `hasRole(user, 'admin')` via the provider's `canEdit`); lower roles
- * see the same page read-only. This is the configuration half of the Incident
+ * Settings › Incident adjustments (configuration registry). Editing is gated on
+ * the `configure` permission via the provider's `canEdit`; roles without it see
+ * the same page read-only. This is the configuration half of the Incident
  * Adjustments subsystem (02a): the registry of incident codes + formulae + caps,
  * the per-student global cap, and the reconfigurable import column mapping.
  *

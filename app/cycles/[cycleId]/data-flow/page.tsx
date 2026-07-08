@@ -18,7 +18,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useProviderData } from "@/lib/data/context";
-import { hasRole } from "@/lib/auth/roles";
+import { can } from "@/lib/auth/permissions";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { Badge, Button, Avatar } from "@/components/ui/primitives";
@@ -65,7 +65,7 @@ const IDW = 236;
 export default function DataFlowCyclePage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
   const router = useRouter();
-  const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
+  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "workspace_admin"));
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const model = useProviderData((p) => buildDataFlow(p, cycleId), [cycleId]);
 
