@@ -16,7 +16,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useProviderData, useProvider } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Avatar, Badge, type BadgeTone } from "@/components/ui/primitives";
@@ -70,7 +70,7 @@ export default function AuditPage({ params }: { params: { cycleId: string } }) {
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
 
   // The whole audit surface is gated on `audit.view` (0039).
-  const canAudit = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "audit.view"));
+  const canAudit = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "general.audit"));
   useEffect(() => {
     if (!canAudit) router.replace("/access-denied");
   }, [canAudit, router]);

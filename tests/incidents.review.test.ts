@@ -117,7 +117,7 @@ describe("incident review — commit gated on the `adjust` permission, explicit"
     // Enforcement reads the grants: as an admin, revoke the Adjustments permission
     // from team_member, then the same viewer is denied (canApply=false, no-op).
     const d = new InMemoryDataProvider(); // default user is admin
-    d.setRoleGrant("team_member", "perm-adjust", false);
+    d.setRoleAction("team_member", "incidents.apply", false);
     d.setCurrentUser(VIEWER);
     const did = liveId(d);
     expect(d.getIncidentReview(did)!.canApply).toBe(false);

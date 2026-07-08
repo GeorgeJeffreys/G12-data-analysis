@@ -10,7 +10,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
 import { Button, Chip } from "@/components/ui/primitives";
@@ -130,7 +130,7 @@ export default function YearsDashboard() {
   const provider = useProvider();
   const years = useProviderData((p) => p.listYears());
   const centres = useProviderData((p) => p.listTestCentres());
-  const isAdmin = can(provider.getCurrentUser().role, "workspace_admin");
+  const isAdmin = can(provider.getCurrentUser().role, "general.manage_centres");
   const [filter, setFilter] = useState<Filter>("all");
 
   const rows = years.filter((y) => {

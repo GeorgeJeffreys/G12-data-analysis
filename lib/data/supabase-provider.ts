@@ -24,8 +24,7 @@
  * sign-in / access-denied states for the invite-only model.
  */
 import type { Database } from "@/lib/types/database";
-import { storageRoleForTier, type RoleTier } from "@/lib/auth/roles";
-import type { Capability, CapabilityDef, Permission, RoleGrants } from "@/lib/auth/permissions";
+import type { ActionDef, ActionKey, Role } from "@/lib/auth/actions";
 import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-directory";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
@@ -254,9 +253,9 @@ export class SupabaseDataProvider implements DataProvider {
     for (const o of d.distinctionOverrides) p.overrideDistinctionCap(cid, o.studentId, o.reason);
     if (d.docSettings) p.setDocumentSettings(cid, d.docSettings as Partial<DocSettings>);
     this.applyWorkspace(p, d.workspace);
-    // 0039 — apply the persisted permissions + role grants over the seeded defaults
+    // 0040 — apply the persisted roles + action grid over the seeded defaults
     // (empty = fresh/pre-migration DB → defaults stand).
-    p.applyConfigurablePermissions(d.permissions, d.roleGrants);
+    p.applyRolesAndActions(d.roles, d.roleActions);
     if (d.elementLabels) p.setElementLabels(d.elementLabels);
     if (d.locked) p.lockCycle(cid); // last — freezes further edits
   }
@@ -621,17 +620,15 @@ export class SupabaseDataProvider implements DataProvider {
   // members — the REAL memberships table (via SECURITY DEFINER RPCs, admin-gated
   // by the C1 authorization primitive). No mock state, no workspace blob.
   //
-  // The UI passes a canonical TIER (team_member | analyst | admin) as roleId; we
-  // persist a concrete member_role via storageRoleForTier. The member id encodes
-  // (user_id, cycle_id) so the write targets the exact membership scope.
+  // The UI passes a dynamic role_id as roleId (migration 0040); we persist it via
+  // memberships.role_id. The member id encodes (user_id, cycle_id) so the write
+  // targets the exact membership scope.
   inviteMember(email: string, roleId: string): void {
-    const role = storageRoleForTier(roleId as RoleTier);
-    void this.mutateMembers("invite_member", { p_email: email.trim(), p_role: role, p_cycle: null });
+    void this.mutateMembers("invite_member", { p_email: email.trim(), p_role_id: roleId, p_cycle: null });
   }
   setMemberRole(memberId: string, roleId: string): void {
     const { userId, cycleId } = parseMemberKey(memberId);
-    const role = storageRoleForTier(roleId as RoleTier);
-    void this.mutateMembers("set_member_role", { p_user: userId, p_cycle: cycleId, p_role: role });
+    void this.mutateMembers("set_member_role", { p_user: userId, p_cycle: cycleId, p_role_id: roleId });
   }
   removeMember(memberId: string): void {
     const { userId, cycleId } = parseMemberKey(memberId);
@@ -653,32 +650,32 @@ export class SupabaseDataProvider implements DataProvider {
     await this.fetchMembers();
     this.bump();
   }
-  // configurable permissions (migration 0039). Reads delegate to the hydrated
-  // inner state; writes mutate the inner state (which applies the admin gate + the
-  // Workspace-administration lockout guard), bump, and persist via the definer RPCs
-  // (the DB re-checks + re-guards server-side), then re-hydrate to pick up DB ids.
-  getCapabilities(): CapabilityDef[] { return this.inner.getCapabilities(); }
-  getPermissions(): Permission[] { return this.inner.getPermissions(); }
-  getRoleGrants(): RoleGrants { return this.inner.getRoleGrants(); }
-  createPermission(name: string, description: string, capabilities: Capability[]): void {
-    this.inner.createPermission(name, description, capabilities);
+  // dynamic roles × granular actions (migration 0040). Reads delegate to the
+  // hydrated inner state; writes mutate the inner state (which applies the admin
+  // gate + the lockout guards), bump, and persist via the definer RPCs (the DB
+  // re-checks + re-guards server-side), then re-hydrate to pick up DB-generated ids.
+  getActionCatalogue(): ActionDef[] { return this.inner.getActionCatalogue(); }
+  getRoles(): Role[] { return this.inner.getRoles(); }
+  getRoleActions(): Record<string, ActionKey[]> { return this.inner.getRoleActions(); }
+  createRole(name: string): void {
+    this.inner.createRole(name);
     this.bump();
-    void this.rpcThenRehydrate("create_permission", { p_name: name, p_description: description, p_capabilities: capabilities });
+    void this.rpcThenRehydrate("create_role", { p_name: name });
   }
-  updatePermission(id: string, name: string, description: string, capabilities: Capability[]): void {
-    this.inner.updatePermission(id, name, description, capabilities);
+  renameRole(id: string, name: string): void {
+    this.inner.renameRole(id, name);
     this.bump();
-    void this.rpcThenRehydrate("update_permission", { p_id: id, p_name: name, p_description: description, p_capabilities: capabilities });
+    void this.rpcThenRehydrate("rename_role", { p_id: id, p_name: name });
   }
-  deletePermission(id: string): void {
-    this.inner.deletePermission(id);
+  deleteRole(id: string): void {
+    this.inner.deleteRole(id);
     this.bump();
-    void this.rpcThenRehydrate("delete_permission", { p_id: id });
+    void this.rpcThenRehydrate("delete_role", { p_id: id });
   }
-  setRoleGrant(tier: RoleTier, permissionId: string, granted: boolean): void {
-    this.inner.setRoleGrant(tier, permissionId, granted);
+  setRoleAction(roleId: string, action: ActionKey, granted: boolean): void {
+    this.inner.setRoleAction(roleId, action, granted);
     this.bump();
-    this.rpc("set_role_grant", { p_tier: tier, p_permission_id: permissionId, p_granted: granted });
+    this.rpc("set_role_action", { p_role_id: roleId, p_action: action, p_granted: granted });
   }
 
   // technical errors / student-review — legacy surface, no DB backing; local only.

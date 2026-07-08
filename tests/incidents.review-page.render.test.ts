@@ -57,7 +57,7 @@ describe("Incident Adjustments review page", () => {
     p.loadSampleIncidentRows(id); // seeded as the default admin
     // Revoke the Adjustments permission from team_member (grant-driven denial),
     // then view as one.
-    p.setRoleGrant("team_member", "perm-adjust", false);
+    p.setRoleAction("team_member", "incidents.apply", false);
     p.setCurrentUser(VIEWER);
     activeProvider = p;
     const html = await render(id);

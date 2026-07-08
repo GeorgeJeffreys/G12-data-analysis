@@ -87,7 +87,7 @@ import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/imp
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
-import type { Capability, CapabilityDef, Permission, RoleGrants, RoleTier } from "@/lib/auth/permissions";
+import type { ActionDef, ActionKey, Role } from "@/lib/auth/actions";
 
 /** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
 export interface TechnicalErrorRow {
@@ -288,18 +288,20 @@ export interface DataProvider {
   // via the configurable-permissions API below, not a custom-role editor.
   getMembers(): MembersModel;
 
-  // settings: configurable permissions (migration 0039). Enforcement resolves
-  // role → granted permissions → their capabilities. `getCapabilities` is the
-  // fixed code catalogue; `getPermissions` are the admin-editable bundles;
-  // `getRoleGrants` is tier → permission ids. The setters are admin-only and
-  // enforce the Workspace-administration lockout guard (client mirror of the RPC).
-  getCapabilities(): CapabilityDef[];
-  getPermissions(): Permission[];
-  getRoleGrants(): RoleGrants;
-  createPermission(name: string, description: string, capabilities: Capability[]): void;
-  updatePermission(id: string, name: string, description: string, capabilities: Capability[]): void;
-  deletePermission(id: string): void;
-  setRoleGrant(tier: RoleTier, permissionId: string, granted: boolean): void;
+  // settings: dynamic roles × granular actions (migration 0040). Enforcement
+  // resolves membership role_id → the role's granted actions → the gated action.
+  // `getActionCatalogue` is the fixed code catalogue; `getRoles` are the
+  // add/deletable role rows; `getRoleActions` is role_id → granted action keys.
+  // The setters are admin-only (general.manage_roles) and mirror the RPC lockout
+  // guards (Admin undeletable; its manage_roles/manage_users cells locked on;
+  // never orphan manage_roles; can't delete a role that still has members).
+  getActionCatalogue(): ActionDef[];
+  getRoles(): Role[];
+  getRoleActions(): Record<string, ActionKey[]>;
+  createRole(name: string): void;
+  renameRole(id: string, name: string): void;
+  deleteRole(id: string): void;
+  setRoleAction(roleId: string, action: ActionKey, granted: boolean): void;
 
   // settings: test centres (top-level scoping dimension — migration 0010)
   /** Every test centre (active + inactive), for the management list. */

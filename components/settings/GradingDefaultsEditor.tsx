@@ -13,7 +13,7 @@
  */
 import { useMemo, useState, type ReactNode } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { Button, Card } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
@@ -32,7 +32,7 @@ interface AwardRow {
 export function GradingDefaultsEditor() {
   const provider = useProvider();
   const defaults = useProviderData((p) => p.getGradingDefaults());
-  const editable = can(provider.getCurrentUser().role, "configure");
+  const editable = can(provider.getCurrentUser().role, "general.config_methodology");
 
   // Levels currently assigned to real (non-mock) cycle results — used to warn
   // when a removed level/award is still in use. Real data, via the provider.

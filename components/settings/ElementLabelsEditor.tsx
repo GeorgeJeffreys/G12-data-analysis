@@ -15,7 +15,7 @@
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { Button, Card, Badge } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
@@ -26,7 +26,7 @@ const clone = (c: ElementLabelsConfig): ElementLabelsConfig => JSON.parse(JSON.s
 export function ElementLabelsEditor() {
   const provider = useProvider();
   const live = useProviderData((p) => p.getElementLabels());
-  const editable = can(provider.getCurrentUser().role, "configure");
+  const editable = can(provider.getCurrentUser().role, "general.config_methodology");
 
   const [draft, setDraft] = useState<ElementLabelsConfig>(() => clone(live));
   const [saved, setSaved] = useState(false);

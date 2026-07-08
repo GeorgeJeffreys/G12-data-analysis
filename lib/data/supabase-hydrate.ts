@@ -38,8 +38,8 @@ import type {
   DistinctionOverrideRow,
   DocumentSettingsRow,
   WorkspaceSettingRow,
-  PermissionRow,
-  RoleGrantRow,
+  RoleRow,
+  RoleActionRow,
   ElementLabelRow,
   ImportBatchRow,
   MemberRole,
@@ -168,17 +168,20 @@ export async function fetchSessionUser(supabase: DB): Promise<SessionUser> {
   const u = auth.user;
   if (!u) return { status: "no-session", user: null };
 
-  const memberships = await sel<{ role: MemberRole }>(
-    supabase.from("memberships").select("role").eq("user_id", u.id),
+  const memberships = await sel<{ role: MemberRole; role_id: string | null }>(
+    supabase.from("memberships").select("role, role_id").eq("user_id", u.id),
   );
   if (memberships.length === 0) return { status: "not-member", user: null };
 
   const role = pickRole(memberships.map((m) => m.role));
+  // Carry the dynamic role_id of the highest-privilege membership (0040) so `can()`
+  // resolves against the hydrated grid; falls back to the enum tier when null.
+  const roleId = memberships.find((m) => m.role === role)?.role_id ?? null;
   const name =
     ((u.user_metadata?.full_name as string | undefined) ||
       (u.email ? u.email.split("@")[0] : undefined)) ??
     "User";
-  return { status: "ok", user: { id: u.id, name, initials: initialsOf(name), role } };
+  return { status: "ok", user: { id: u.id, name, initials: initialsOf(name), role, roleId } };
 }
 
 // ── decision state replayed into the inner provider ─────────────────────────
@@ -201,10 +204,10 @@ export interface DecisionState {
   workspace: Record<string, unknown>;
   /** Per-subject A–E element labels (0014); absent when the table is empty. */
   elementLabels?: ElementLabelsConfig;
-  /** Configurable permissions + role grants (0039). Empty on a pre-migration or
+  /** Dynamic roles + the role_id → action grid (0040). Empty on a pre-migration or
    *  fresh DB — the provider then keeps the seeded defaults in place. */
-  permissions: { id: string; name: string; description: string | null; capabilities: string[]; is_system: boolean }[];
-  roleGrants: { tier: string; permission_id: string }[];
+  roles: { id: string; name: string; is_system: boolean; sort: number | null }[];
+  roleActions: { role_id: string; action: string }[];
 }
 
 /** Group element-label rows (already sort_order-ordered) into the config shape. */
@@ -350,11 +353,11 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const elementLabelRows = await sel<ElementLabelRow>(
     supabase.from("element_labels").select("*").order("sort_order", { ascending: true }),
   );
-  // 0039 — configurable permissions + role grants (workspace-wide). `sel` tolerates
-  // a pre-migration DB (missing table → []), so hydrate never crashes before the
-  // migration is run; empty results keep the seeded defaults in place.
-  const permissionRows = await sel<PermissionRow>(supabase.from("permissions").select("*"));
-  const roleGrantRows = await sel<RoleGrantRow>(supabase.from("role_grants").select("*"));
+  // 0040 — dynamic roles + the role_id → action grid (workspace-wide). `sel`
+  // tolerates a pre-migration DB (missing table → []), so hydrate never crashes
+  // before the migration is run; empty results keep the seeded defaults in place.
+  const roleRows = await sel<RoleRow>(supabase.from("roles").select("*"));
+  const roleActionRows = await sel<RoleActionRow>(supabase.from("role_actions").select("*").eq("granted", true));
   const cleanExclusionRows = await sel<CleanExclusionRow>(
     supabase.from("clean_exclusions").select("*").eq("cycle_id", cycleId),
   );
@@ -717,8 +720,8 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     docSettings: (docRow?.settings as Record<string, unknown> | undefined) ?? null,
     workspace: Object.fromEntries(workspace.map((w) => [w.key, w.value])),
     elementLabels: elementLabelRows.length ? groupElementLabels(elementLabelRows) : undefined,
-    permissions: permissionRows.map((r) => ({ id: r.id, name: r.name, description: r.description, capabilities: r.capabilities ?? [], is_system: r.is_system })),
-    roleGrants: roleGrantRows.map((r) => ({ tier: r.tier, permission_id: r.permission_id })),
+    roles: roleRows.map((r) => ({ id: r.id, name: r.name, is_system: r.is_system, sort: r.sort })),
+    roleActions: roleActionRows.map((r) => ({ role_id: r.role_id, action: r.action })),
   };
 
   const subjectCodeToAssessmentId = new Map<string, string>();
