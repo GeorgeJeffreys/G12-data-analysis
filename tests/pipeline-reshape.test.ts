@@ -71,7 +71,7 @@ describe("stepper order + labels", () => {
 
 describe("top cycle tab bar", () => {
   it("carries Critical Path, Audit log, Diagnostics and Settings (no per-sitting Certificates tab)", () => {
-    const tabs = cyclesSubnav("c", "pipeline");
+    const tabs = cyclesSubnav("c", "pipeline", { audit: true });
     const labels = tabs.map((t) => t.label);
     expect(labels).toEqual(["Critical Path", "Audit log", "Diagnostics", "Settings"]);
     // The sitting-level "Diagnostics" reference tab routes to its own hub, distinct

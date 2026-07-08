@@ -77,8 +77,10 @@ export function CycleShell({
     if (isPipeline && stageIndex != null) recordCycleStep(cycleId, stageIndex);
   }, [isPipeline, stageIndex, cycleId]);
   // The admin-only "Data flow" developer tab is added to the cycle nav only for the
-  // top admin role. Tolerant of partial provider stubs used in render tests.
+  // top admin role; the Audit log tab only for roles with `audit.view`. Tolerant of
+  // partial provider stubs used in render tests.
   const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "workspace_admin"));
+  const canAudit = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "audit.view"));
   const crumb = page
     ? [{ label: "Sittings", href: "/" }, { label: cycleName, href: `/cycles/${cycleId}` }, { label: page }]
     : [{ label: "Sittings", href: "/" }, { label: cycleName }];
@@ -88,7 +90,7 @@ export function CycleShell({
       active="Cycles"
       crumb={crumb}
       status={<LockStatus cycleId={cycleId} />}
-      subnav={cyclesSubnav(cycleId, area, { dataFlow: isAdmin })}
+      subnav={cyclesSubnav(cycleId, area, { dataFlow: isAdmin, audit: canAudit })}
       stageIndex={isPipeline ? (stageIndex ?? 0) : undefined}
       cycleId={cycleId}
       // pipeline pages pin the primary in the stepper row; other areas in the header.

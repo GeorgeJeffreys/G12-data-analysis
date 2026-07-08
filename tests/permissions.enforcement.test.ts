@@ -1,28 +1,31 @@
 /**
- * P2 — enforcement is now driven by the permission matrix on BOTH sides of the
- * wire. This exercises the CLIENT side through the real in-memory provider: for
- * each of the three canonical tiers, the provider's gates and read-model flags
- * permit exactly the actions the P1 default matrix grants, and deny the rest.
+ * Enforcement is driven by the configurable-permissions model (0039). This
+ * exercises the CLIENT side through the real in-memory provider: for each tier,
+ * the provider's gates and read-model flags permit exactly the capabilities the
+ * seeded grants resolve to, and deny the rest.
  *
- * Default matrix (lib/auth/permissions.ts ROLE_PERMISSION_DEFAULTS):
+ * Seeded effective access (resolve role → granted permissions → capabilities):
  *   team_member : view, clean, adjust
- *   analyst     : view, clean, adjust, intake, boundaries, safeguard
- *   admin       : everything
+ *   analyst     : + intake, boundaries, safeguard, audit.view
+ *   admin       : everything (incl. both overrides, signoff, configure, workspace_admin)
  *
- * The server twin (app.has_permission) is asserted structurally in
+ * The server twin (app.has_capability) is asserted structurally in
  * tests/migration.rpc-permission-gates.test.ts.
  */
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { can, PERMISSIONS, ROLE_PERMISSION_DEFAULTS, type RoleTier } from "@/lib/auth/permissions";
+import { can, CAPABILITY_KEYS, type Capability, type RoleTier } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/data/types";
 import type { MemberRole } from "@/lib/types/database";
 
 const CYCLE = "may-2026";
 
-// One representative storage role per canonical tier (the collapse is covered in
-// roles.permissions.test.ts). team_member is exercised via `reviewer`.
 const AS: Record<RoleTier, MemberRole> = { team_member: "reviewer", analyst: "analyst", admin: "lead_admin" };
+const EXPECTED: Record<RoleTier, Capability[]> = {
+  team_member: ["view", "clean", "adjust"],
+  analyst: ["view", "clean", "adjust", "intake", "boundaries", "safeguard", "audit.view"],
+  admin: [...CAPABILITY_KEYS],
+};
 
 function providerAs(tier: RoleTier): InMemoryDataProvider {
   const p = new InMemoryDataProvider();
@@ -36,26 +39,28 @@ const firstItem = (p: InMemoryDataProvider) => {
   return { aid, itemId: p.getReview(CYCLE, aid)!.items[0]!.id };
 };
 
-describe("read-model flags mirror the matrix, per tier", () => {
-  const cases: { tier: RoleTier; signoff: boolean; safeguard: boolean; configure: boolean; adjust: boolean; override: boolean }[] = [
-    { tier: "team_member", signoff: false, safeguard: false, configure: false, adjust: true, override: false },
-    { tier: "analyst",     signoff: false, safeguard: true,  configure: false, adjust: true, override: false },
-    { tier: "admin",       signoff: true,  safeguard: true,  configure: true,  adjust: true, override: true },
+describe("read-model flags mirror the resolved grants, per tier", () => {
+  const cases: { tier: RoleTier; signoff: boolean; distinctionOverride: boolean; configure: boolean; adjust: boolean; marksOverride: boolean }[] = [
+    { tier: "team_member", signoff: false, distinctionOverride: false, configure: false, adjust: true, marksOverride: false },
+    // analyst can CONFIRM the distinction cap (safeguard) but no longer OVERRIDE it
+    // (override.distinction is admin-only via the Overrides permission).
+    { tier: "analyst",     signoff: false, distinctionOverride: false, configure: false, adjust: true, marksOverride: false },
+    { tier: "admin",       signoff: true,  distinctionOverride: true,  configure: true,  adjust: true, marksOverride: true },
   ];
   for (const c of cases) {
     it(`${c.tier}: flags match`, () => {
       const p = providerAs(c.tier);
       expect(p.getGrades(CYCLE)!.canLock).toBe(c.signoff); // signoff
-      expect(p.getDistinctionSafeguard(CYCLE)!.canOverride).toBe(c.safeguard); // safeguard
+      expect(p.getDistinctionSafeguard(CYCLE)!.canOverride).toBe(c.distinctionOverride); // override.distinction
       expect(p.getIncidentConfig().canEdit).toBe(c.configure); // configure
       p.loadSampleIncidentRows(CYCLE);
       expect(p.getIncidentReview(CYCLE)!.canApply).toBe(c.adjust); // adjust
-      expect(p.getOverrideView(CYCLE).canOverride).toBe(c.override); // override
+      expect(p.getOverrideView(CYCLE).canOverride).toBe(c.marksOverride); // override.marks_exclusions
     });
   }
 });
 
-describe("write gates enforce the matrix, per tier", () => {
+describe("write gates enforce the resolved grants, per tier", () => {
   it("clean: every tier may exclude an item (all hold `clean`)", () => {
     for (const tier of ["team_member", "analyst", "admin"] as RoleTier[]) {
       const p = providerAs(tier);
@@ -72,7 +77,7 @@ describe("write gates enforce the matrix, per tier", () => {
       const before = JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts);
       p.setBoundary(CYCLE, aid, { cuts: [5, 3, 1] });
       const changed = JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts) !== before;
-      expect(changed).toBe(ROLE_PERMISSION_DEFAULTS[tier].includes("boundaries"));
+      expect(changed).toBe(EXPECTED[tier].includes("boundaries"));
     }
   });
 
@@ -95,11 +100,11 @@ describe("write gates enforce the matrix, per tier", () => {
   });
 });
 
-describe("can() agrees with the provider gates for every tier × permission", () => {
-  it("matches ROLE_PERMISSION_DEFAULTS", () => {
+describe("can() agrees with the resolved grants for every tier × capability", () => {
+  it("matches the seeded effective access", () => {
     for (const tier of ["team_member", "analyst", "admin"] as RoleTier[]) {
-      for (const perm of PERMISSIONS) {
-        expect(can(AS[tier], perm)).toBe(ROLE_PERMISSION_DEFAULTS[tier].includes(perm));
+      for (const cap of CAPABILITY_KEYS) {
+        expect(can(AS[tier], cap)).toBe(EXPECTED[tier].includes(cap));
       }
     }
   });

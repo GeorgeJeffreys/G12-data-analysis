@@ -114,15 +114,11 @@ describe("incident review — commit gated on the `adjust` permission, explicit"
     v.applyIncidentAdjustments(vid);
     expect(v.getIncidentReview(vid)!.applied).toBe(true);
 
-    // The gate reads the MATRIX: ungrant `adjust` from team_member and the same
-    // viewer is denied (canApply=false, apply is a no-op).
-    const d = new InMemoryDataProvider();
+    // Enforcement reads the grants: as an admin, revoke the Adjustments permission
+    // from team_member, then the same viewer is denied (canApply=false, no-op).
+    const d = new InMemoryDataProvider(); // default user is admin
+    d.setRoleGrant("team_member", "perm-adjust", false);
     d.setCurrentUser(VIEWER);
-    d.applyRolePermissions([
-      { tier: "team_member", permission: "view", granted: true },
-      { tier: "team_member", permission: "clean", granted: true },
-      // adjust intentionally omitted → not granted
-    ]);
     const did = liveId(d);
     expect(d.getIncidentReview(did)!.canApply).toBe(false);
     d.applyIncidentAdjustments(did);

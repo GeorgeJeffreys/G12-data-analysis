@@ -10,14 +10,16 @@ import type { SubnavItem } from "@/components/shell/Shell";
 export function cyclesSubnav(
   cycleId: string,
   active: "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow" | "settings",
-  /** Append the admin-only "Data flow" developer tab (task 15). */
-  opts?: { dataFlow?: boolean },
+  /** Append the admin-only "Data flow" developer tab (task 15). `audit` gates the
+   *  Audit log tab on the `audit.view` capability (0039). */
+  opts?: { dataFlow?: boolean; audit?: boolean },
 ): SubnavItem[] {
   return [
     // "Critical Path" is the per-sitting pipeline (Upload → … → Grades). Renamed
     // from "Pipeline" so the tab name matches how the team refers to it.
     { label: "Critical Path", href: `/cycles/${cycleId}`, on: active === "pipeline" },
-    { label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" },
+    // The Audit log tab appears only for roles holding `audit.view`.
+    ...(opts?.audit ? [{ label: "Audit log", href: `/cycles/${cycleId}/audit`, on: active === "audit" }] : []),
     // Sitting-level "Diagnostics" reference tab — the single home for exploratory /
     // demand-level breakdowns. No longer ambiguous: the in-critical-path check is
     // the whole-assessment "Assessment Health" step (/diagnostics), so this is the
