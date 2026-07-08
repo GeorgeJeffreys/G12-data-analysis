@@ -7,8 +7,8 @@
  *
  * "Delete cycle" removes the cycle row AND every row keyed to that cycle_id across
  * all tables (the FK cascade behind the SECURITY DEFINER `delete_cycle` RPC), behind
- * a TYPED confirmation naming the cycle. A last-cycle guard disables it when this is
- * the only remaining cycle. On success we return to Years and summaries recompute.
+ * a TYPED confirmation naming the cycle. An admin may delete every cycle, leaving an
+ * empty workspace. On success we return to Years and summaries recompute.
  */
 import { useState } from "react";
 import { useProviderData } from "@/lib/data/context";
@@ -18,7 +18,6 @@ import { DeleteCycleDialog } from "./DeleteCycleDialog";
 
 export function CycleCardMenu({ cycleId, cycleName }: { cycleId: string; cycleName: string }) {
   const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
-  const isLastCycle = useProviderData((p) => p.listCycles().length <= 1);
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
@@ -66,7 +65,6 @@ export function CycleCardMenu({ cycleId, cycleName }: { cycleId: string; cycleNa
             <button
               type="button"
               role="menuitem"
-              disabled={isLastCycle}
               onClick={() => { setOpen(false); setConfirming(true); }}
               style={{
                 display: "block",
@@ -76,19 +74,14 @@ export function CycleCardMenu({ cycleId, cycleName }: { cycleId: string; cycleNa
                 borderRadius: 7,
                 border: "none",
                 background: "transparent",
-                color: isLastCycle ? H.ink3 : H.bad,
+                color: H.bad,
                 fontSize: 12.5,
                 fontWeight: 600,
-                cursor: isLastCycle ? "default" : "pointer",
+                cursor: "pointer",
               }}
             >
               Delete cycle
             </button>
-            {isLastCycle && (
-              <div className="hf-sub" style={{ fontSize: 10.5, padding: "0 10px 6px" }}>
-                The workspace must keep at least one cycle.
-              </div>
-            )}
           </div>
         </>
       )}

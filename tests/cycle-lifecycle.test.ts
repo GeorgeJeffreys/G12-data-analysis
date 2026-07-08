@@ -1,5 +1,5 @@
 /**
- * Cycle lifecycle: create under a real centre, delete with a last-cycle guard (task 23).
+ * Cycle lifecycle: create under a real centre, delete with a full cascade (task 23).
  *
  * Two label/mistyped-id fixes on the create/delete path:
  *  1. The "Start a sitting" centre picker must offer the centre's REAL id (a DB
@@ -7,8 +7,8 @@
  *     create insert with `invalid input syntax for type uuid`. A DEFINED (even
  *     empty) test-centre list is live data and is used verbatim; only the demo seed
  *     (field absent) falls back to a single labelling centre.
- *  2. `deleteCycle` removes the cycle and everything keyed to it, but REFUSES to
- *     delete the last remaining cycle (the workspace must keep one to open).
+ *  2. `deleteCycle` removes the cycle and everything keyed to it, with no last-cycle
+ *     restriction: an admin may delete every cycle, leaving an empty workspace.
  */
 import { describe, it, expect } from "vitest";
 import seedJson from "@/lib/data/seed.generated.json";
@@ -56,17 +56,22 @@ describe("create-sitting centre picker submits a real centre UUID", () => {
   });
 });
 
-describe("deleteCycle — full removal with a last-cycle guard", () => {
-  it("refuses to delete the only remaining cycle", async () => {
+describe("deleteCycle — full removal, no last-cycle restriction", () => {
+  it("deletes the only remaining cycle without refusing (zero cycles is allowed)", async () => {
     const seed = clone();
     seed.priorCycles = []; // exactly one cycle (the live one)
     const p = new InMemoryDataProvider(seed);
     expect(p.listCycles()).toHaveLength(1);
 
-    await expect(p.deleteCycle(p.listCycles()[0]!.id)).rejects.toThrow(/last remaining cycle/i);
+    const cycleId = p.listCycles()[0]!.id;
+    await expect(p.deleteCycle(cycleId)).resolves.toBeUndefined();
+    // Demo caveat: with no DB the sole seeded cycle is emptied to the Upload baseline
+    // rather than removed as a row (the live Supabase path deletes for real to zero).
+    expect(p.getCycle(cycleId)!.participants).toBe(0);
+    expect(p.getCycle(cycleId)!.assessmentCount).toBe(0);
   });
 
-  it("deletes a cycle when others remain (workspace keeps at least one)", async () => {
+  it("deletes a cycle when others remain", async () => {
     const p = new InMemoryDataProvider(); // default seed carries prior cycles too
     expect(p.listCycles().length).toBeGreaterThan(1);
     const cycleId = p.listCycles()[0]!.id;

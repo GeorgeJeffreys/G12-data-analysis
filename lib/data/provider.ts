@@ -379,9 +379,9 @@ export interface DataProvider {
   /**
    * Delete a whole cycle AND every row keyed to that cycle_id across all tables
    * (the full cascade), from the cycle's Settings danger surface. Same guarantees
-   * as deleteSitting (admin-only, audited, resolves only once the DB removed rows)
-   * PLUS a last-cycle guard: deleting the final remaining cycle is refused so the
-   * workspace is never left with nothing to open. Returns to Years on success.
+   * as deleteSitting (admin-only, audited, resolves only once the DB removed rows).
+   * No last-cycle restriction: an admin may delete every cycle, leaving an empty
+   * workspace (zero cycles is a valid state). Returns to Years on success.
    */
   deleteCycle(cycleId: string): Promise<void>;
   /**

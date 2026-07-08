@@ -2,9 +2,10 @@
 
 /**
  * Cycle Settings — the cycle-level admin surface. Today it hosts the danger zone
- * (delete cycle: full cascade, admin-gated, type-to-confirm, last-cycle guarded,
- * audit-logged, returns to Years). Kept separate from the per-sitting Upload
- * danger zone so a whole-cycle delete has its own deliberate home.
+ * (delete cycle: full cascade, admin-gated, type-to-confirm, audit-logged, returns
+ * to Years — an admin may delete every cycle, leaving an empty workspace). Kept
+ * separate from the per-sitting Upload danger zone so a whole-cycle delete has its
+ * own deliberate home.
  */
 import { useProviderData } from "@/lib/data/context";
 import { CycleShell } from "@/components/shell/CycleShell";
