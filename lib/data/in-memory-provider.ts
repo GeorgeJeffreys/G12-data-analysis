@@ -32,22 +32,21 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
-import { roleTierLabel, ROLE_TIERS } from "@/lib/auth/roles";
+import { roleTierLabel } from "@/lib/auth/roles";
 import {
   can,
-  CAPABILITIES,
-  defaultPermissions,
-  defaultRoleGrants,
-  guardsWorkspaceAdmin,
-  resolveGrants,
-  WORKSPACE_ADMIN_CAPABILITY,
-  type Capability,
-  type CapabilityDef,
-  type Permission,
-  type ResolvedGrants,
-  type RoleGrants,
-  type RoleTier,
-} from "@/lib/auth/permissions";
+  ACTIONS,
+  ACTION_KEYS,
+  defaultRoles,
+  defaultRoleActions,
+  resolveRoleActions,
+  MANAGE_ROLES_ACTION,
+  MANAGE_USERS_ACTION,
+  type ActionDef,
+  type ActionKey,
+  type ResolvedRoleActions,
+  type Role as RoleModel,
+} from "@/lib/auth/actions";
 import { rollupOverall, overallAwardsReconcile } from "./overall";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
@@ -363,14 +362,14 @@ export class InMemoryDataProvider implements DataProvider {
   private quality: QualityThresholds = defaultScoringConfig().quality;
   private docSettingsByCycle = new Map<string, DocSettings>();
 
-  // Configurable authorization (migration 0039): the admin-editable permission
-  // bundles + tier → permission-id grants, seeded from the defaults. The
-  // SupabaseDataProvider overwrites both from the DB on hydrate. `resolvedCaps`
-  // is the derived (role tier → effective capabilities) view every gate reads via
-  // `can()`; it is recomputed whenever `permissions`/`roleGrants` change.
-  private permissions: Permission[] = defaultPermissions();
-  private roleGrants: RoleGrants = defaultRoleGrants();
-  private resolvedCaps: ResolvedGrants = resolveGrants(this.permissions, this.roleGrants);
+  // Dynamic roles × granular actions (migration 0040): the add/deletable role rows
+  // + each role's granted actions, seeded from the defaults. The
+  // SupabaseDataProvider overwrites both from the DB on hydrate. `resolvedActions`
+  // is the derived (role_id → granted action set) view every gate reads via
+  // `can()`; it is recomputed whenever `roles`/`roleActions` change.
+  private roles: RoleModel[] = defaultRoles();
+  private roleActions: Record<string, ActionKey[]> = defaultRoleActions();
+  private resolvedActions: ResolvedRoleActions = resolveRoleActions(this.roles, this.roleActions);
 
   // incident log (Adjustments) + distinction safeguard
   private technicalErrors = new Map<string, { uploaded: boolean; sample: boolean; fileName: string | null; incidents: TechnicalIncident[] }>();
@@ -2307,7 +2306,7 @@ export class InMemoryDataProvider implements DataProvider {
       starMap: this.grading.starMap,
       performanceLevels: perfLevels,
       locked: this.locked.has(cycleId),
-      canLock: can(this.user.role, "signoff", this.resolvedCaps) && !this.locked.has(cycleId),
+      canLock: can(this.user, "general.signoff", this.resolvedActions) && !this.locked.has(cycleId),
     };
   }
 
@@ -2873,7 +2872,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   uploadTechnicalErrors(cycleId: string, fileName: string, rows: TechnicalErrorRow[]): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const incidents = rows
       .filter((r) => (r.student ?? "").trim() || (r.question ?? "").trim())
@@ -2895,7 +2894,7 @@ export class InMemoryDataProvider implements DataProvider {
    * into scoring); it is flagged `sample: true` everywhere it surfaces.
    */
   loadSampleTechnicalErrors(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const label = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
     const spec: { sid: string; item: string; error: string; decision: IncidentDecision; reason: string | null }[] = [
@@ -2917,7 +2916,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   clearTechnicalErrors(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     if (!this.technicalErrors.has(cycleId)) return;
     this.technicalErrors.delete(cycleId);
@@ -2962,7 +2961,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const st = this.buildEssayState(rows, false, fileName);
     this.essayMarksByCycle.set(cycleId, st);
@@ -2983,7 +2982,7 @@ export class InMemoryDataProvider implements DataProvider {
    * per student per subject exercise the averaging rule.
    */
   loadSampleEssayMarks(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const ids = this.seed.liveCycle.participants.slice(0, 10).map((p) => p.id);
     const rows: EssayUploadRow[] = [];
@@ -3000,7 +2999,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   clearEssayMarks(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     if (!this.essayMarksByCycle.has(cycleId)) return;
     this.essayMarksByCycle.delete(cycleId);
@@ -3110,7 +3109,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   uploadIncidentLog(cycleId: string, fileName: string, rows: IncidentInput[]): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const incidents = rows.map((r) => this.buildTriageIncident(r));
     this.incidentLogByCycle.set(cycleId, { uploaded: true, sample: false, fileName, incidents });
@@ -3153,7 +3152,7 @@ export class InMemoryDataProvider implements DataProvider {
    * auto-applied — every row still needs a human decision.
    */
   loadSampleIncidentLog(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const label = (i: number) => this.seed.liveCycle.participants[i]?.label ?? `Student ${i}`;
     const rows: IncidentInput[] = [
@@ -3171,7 +3170,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   clearIncidentLog(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     if (!this.incidentLogByCycle.has(cycleId)) return;
     this.incidentLogByCycle.delete(cycleId);
@@ -3181,7 +3180,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.triage", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const st = this.incidentLogByCycle.get(cycleId);
     const inc = st?.incidents.find((i) => i.id === incidentId);
@@ -3261,7 +3260,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   uploadCgjFile(cycleId: string, fileName: string, rows: CgjUploadRow[]): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "cgj.upload", this.resolvedActions)) return;
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const students = this.buildCgjStudents(rows);
     this.cgjByCycle.set(cycleId, { uploaded: true, sample: false, fileName, students });
@@ -3276,7 +3275,7 @@ export class InMemoryDataProvider implements DataProvider {
    * comparison shows all four outcomes. Flagged `sample: true` everywhere.
    */
   loadSampleCgj(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "cgj.upload", this.resolvedActions)) return;
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const grades = this.getGrades(cycleId);
     const levels = this.grading.performanceLevels;
@@ -3305,7 +3304,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   clearCgj(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "cgj.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     if (!this.cgjByCycle.has(cycleId)) return;
     this.cgjByCycle.delete(cycleId);
@@ -3657,7 +3656,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.triage", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const te = this.technicalErrors.get(cycleId);
     const inc = te?.incidents.find((i) => i.id === incidentId);
@@ -3841,14 +3840,14 @@ export class InMemoryDataProvider implements DataProvider {
         capped: vals.filter((v) => v === "capped").length,
         overridden: vals.filter((v) => v === "override").length,
       },
-      canOverride: can(this.user.role, "override.distinction", this.resolvedCaps),
+      canOverride: can(this.user, "general.override_distinction", this.resolvedActions),
       attemptedNote:
         "Eligibility uses D3 items answered CORRECTLY against the MAJORITY of D3 items AVAILABLE on each exam (dynamic per exam; recomputed after exclusions) — not attempts, and not a fixed count.",
     };
   }
 
   confirmDistinctionCaps(cycleId: string): void {
-    if (!can(this.user.role, "safeguard", this.resolvedCaps)) return;
+    if (!can(this.user, "grades.confirm_distinction", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const capped = [...this.distinctionDecisions(cycleId).values()].filter((v) => v === "capped").length;
     this.distinctionConfirmed.add(cycleId);
@@ -3862,7 +3861,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   overrideDistinctionCap(cycleId: string, studentId: string, reason: string): void {
-    if (!can(this.user.role, "override.distinction", this.resolvedCaps) || this.locked.has(cycleId)) return;
+    if (!can(this.user, "general.override_distinction", this.resolvedActions) || this.locked.has(cycleId)) return;
     const clean = reason.trim();
     if (!clean) return;
     const m = this.distinctionOverrides.get(cycleId) ?? new Map<string, { reason: string; by: string }>();
@@ -3874,7 +3873,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   undoDistinctionOverride(cycleId: string, studentId: string): void {
-    if (!can(this.user.role, "override.distinction", this.resolvedCaps) || this.locked.has(cycleId)) return;
+    if (!can(this.user, "general.override_distinction", this.resolvedActions) || this.locked.has(cycleId)) return;
     const m = this.distinctionOverrides.get(cycleId);
     if (m?.delete(studentId)) {
       const label = this.seed.liveCycle.participants.find((p) => p.id === studentId)?.label ?? studentId;
@@ -3894,7 +3893,7 @@ export class InMemoryDataProvider implements DataProvider {
    * reason, time). Engine parity is unaffected: only the alterations INPUT changes.
    */
   adjustStudentMark(cycleId: string, participantId: string, assessmentId: string, newMark: number, reason: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "grades.adjust", this.resolvedActions)) return;
     if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
     const clean = (reason ?? "").trim();
     if (!clean) return; // reason is required
@@ -3947,7 +3946,7 @@ export class InMemoryDataProvider implements DataProvider {
    * audits the removal.
    */
   removeStudentMarkAdjustment(cycleId: string, adjustmentId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "grades.adjust", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const list = this.manualAdjustmentsByCycle.get(cycleId);
     const adj = list?.find((m) => m.id === adjustmentId);
@@ -3965,7 +3964,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setSafeguardConfig(patch: { topDifficultyDemand?: string }): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_methodology", this.resolvedActions)) return;
     if (patch.topDifficultyDemand != null) {
       this.safeguard.topDifficultyDemand = patch.topDifficultyDemand;
     }
@@ -4132,7 +4131,7 @@ export class InMemoryDataProvider implements DataProvider {
     excluded: boolean,
     reason?: string | null,
   ): void {
-    if (!can(this.user.role, "clean", this.resolvedCaps)) return;
+    if (!can(this.user, "review.exclude", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     this.applyItemExclusionState(cycleId, assessmentId, itemId, excluded, reason ?? null);
     // A fresh direct decision supersedes any prior override provenance.
@@ -4168,7 +4167,7 @@ export class InMemoryDataProvider implements DataProvider {
     exclude: boolean,
     reason: string,
   ): void {
-    if (!can(this.user.role, "override.marks_exclusions", this.resolvedCaps)) return;
+    if (!can(this.user, "general.override_marks", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${assessmentId}:${itemId}`;
     // `prior` names the previous decider for the override audit trail. P2 gates
@@ -4211,7 +4210,7 @@ export class InMemoryDataProvider implements DataProvider {
     newMark: number | null,
     reason: string,
   ): void {
-    if (!can(this.user.role, "override.marks_exclusions", this.resolvedCaps)) return;
+    if (!can(this.user, "general.override_marks", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const list = this.manualAdjustmentsByCycle.get(cycleId) ?? [];
     const existing = list.find((m) => m.participantId === participantId && m.assessmentId === assessmentId);
@@ -4288,7 +4287,7 @@ export class InMemoryDataProvider implements DataProvider {
     target: { rows?: string[]; cols?: string[] },
     removed: boolean,
   ): void {
-    if (!can(this.user.role, "clean", this.resolvedCaps)) return;
+    if (!can(this.user, "clean.rows", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${assessmentId}`;
     const rows = this.cleanRows.get(key) ?? new Set<string>();
@@ -4336,7 +4335,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   clearCleanRemovals(cycleId: string, assessmentId: string): void {
-    if (!can(this.user.role, "clean", this.resolvedCaps)) return;
+    if (!can(this.user, "clean.rows", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${assessmentId}`;
     const hadR = this.cleanRows.get(key)?.size ?? 0;
@@ -4356,7 +4355,7 @@ export class InMemoryDataProvider implements DataProvider {
     excluded: boolean,
     reason?: string | null,
   ): void {
-    if (!can(this.user.role, "clean", this.resolvedCaps)) return;
+    if (!can(this.user, "clean.cohort", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     let m = this.participantExclusions.get(cycleId);
     if (!m) this.participantExclusions.set(cycleId, (m = new Map<string, string>()));
@@ -4380,7 +4379,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setBoundary(cycleId: string, scope: string, input: SetBoundaryInput): void {
-    if (!can(this.user.role, "boundaries", this.resolvedCaps)) return;
+    if (!can(this.user, "cuts.set", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const key = `${cycleId}:${scope}`;
     const cur = this.boundaryState(cycleId, scope);
@@ -4481,7 +4480,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setGradingDefaults(patch: Partial<GradingConfig>): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_methodology", this.resolvedActions)) return;
     // When the level/award arrays are replaced, replace the star map wholesale
     // (rather than merging) so renamed/removed levels don't leave stale stars.
     const starMap = patch.starMap
@@ -4508,7 +4507,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setQualityThresholds(patch: Partial<QualityThresholds>): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_methodology", this.resolvedActions)) return;
     this.quality = {
       pValue: { ...this.quality.pValue, ...(patch.pValue ?? {}) },
       itemTotal: { ...this.quality.itemTotal, ...(patch.itemTotal ?? {}) },
@@ -4537,7 +4536,7 @@ export class InMemoryDataProvider implements DataProvider {
     // `clean`, keeping parity untouched).
     extra?: { canonical?: CanonicalModel; files?: { items?: string; assessments?: string; topics?: string } },
   ): Promise<void> {
-    if (!can(this.user.role, "intake", this.resolvedCaps)) return Promise.resolve();
+    if (!can(this.user, "upload.ingest", this.resolvedActions)) return Promise.resolve();
     const lc = this.seed.liveCycle;
     if (cycleId !== lc.id) return Promise.resolve();
 
@@ -4592,14 +4591,14 @@ export class InMemoryDataProvider implements DataProvider {
   // a clear/delete. Kept async to match the interface (and the live provider, which
   // awaits the DB). A re-ingest repopulates the seed and the counts recompute.
   clearSittingData(cycleId: string): Promise<void> {
-    if (!can(this.user.role, "intake", this.resolvedCaps)) return Promise.resolve();
+    if (!can(this.user, "upload.manage", this.resolvedActions)) return Promise.resolve();
     this.resetCycleToEmpty(cycleId);
     this.audit("upload", "Cleared sitting data", "Emptied ingested data — sitting returned to the Upload state", cycleId);
     this.bump();
     return Promise.resolve();
   }
   deleteSitting(cycleId: string): Promise<void> {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return Promise.resolve();
+    if (!can(this.user, "general.delete", this.resolvedActions)) return Promise.resolve();
     const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
     this.resetCycleToEmpty(cycleId);
     this.audit("cycle", "Deleted sitting", `Removed sitting "${name}" and all its ingested data`, null);
@@ -4612,7 +4611,7 @@ export class InMemoryDataProvider implements DataProvider {
   // seeded cycle is emptied in place rather than removed, so it still shows here
   // after delete — the live Supabase path deletes for real and reaches zero.)
   deleteCycle(cycleId: string): Promise<void> {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return Promise.resolve();
+    if (!can(this.user, "general.delete", this.resolvedActions)) return Promise.resolve();
     const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
     this.resetCycleToEmpty(cycleId);
     this.audit("cycle", "Deleted cycle", `Removed cycle "${name}" and every row keyed to it`, null);
@@ -4693,14 +4692,14 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   lockCycle(cycleId: string): void {
-    if (!can(this.user.role, "signoff", this.resolvedCaps)) return;
+    if (!can(this.user, "general.signoff", this.resolvedActions)) return;
     this.locked.add(cycleId);
     const n = this.seed.liveCycle.participants.length;
     this.audit("lock", "Locked grades", `${n} students signed off across ${this.seed.liveCycle.assessments.length} assessments`, cycleId);
     this.bump();
   }
   unlockCycle(cycleId: string): void {
-    if (!can(this.user.role, "signoff", this.resolvedCaps)) return;
+    if (!can(this.user, "general.signoff", this.resolvedActions)) return;
     this.locked.delete(cycleId);
     this.audit("reopen", "Re-opened cycle", "Cycle unlocked for further review", cycleId);
     this.bump();
@@ -4710,51 +4709,51 @@ export class InMemoryDataProvider implements DataProvider {
   getMembers(): MembersModel {
     return {
       members: this.members.map((m) => ({ ...m })),
-      // The three FIXED canonical tiers are the only assignable roles (P3 removed
-      // the editable custom-role machinery; only their PERMISSIONS are editable).
-      roles: ROLE_TIERS.map((tier) => ({ id: tier, name: roleTierLabel(tier) })),
+      // Roles are the dynamic role rows (add/deletable), not a fixed tier list.
+      roles: [...this.roles].sort((a, b) => a.sort - b.sort).map((r) => ({ id: r.id, name: r.name })),
     };
   }
 
   inviteMember(email: string, roleId: string): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+    if (!can(this.user, MANAGE_USERS_ACTION, this.resolvedActions)) return;
     const clean = email.trim();
     if (!clean || this.members.some((m) => m.email.toLowerCase() === clean.toLowerCase())) return;
-    const tier: RoleTier = (ROLE_TIERS as readonly string[]).includes(roleId) ? (roleId as RoleTier) : "team_member";
+    const role = this.roles.find((r) => r.id === roleId) ?? [...this.roles].sort((a, b) => a.sort - b.sort)[0];
+    if (!role) return;
     const name = clean
       .split("@")[0]!
       .split(/[._]/)
       .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
       .join(" ");
-    const roleName = roleTierLabel(tier);
     this.members.push({
       id: `m-${Date.now()}`,
       name: name || clean,
       email: clean,
-      roleId: tier,
-      roleName,
+      roleId: role.id,
+      roleName: role.name,
       status: "invited",
       lastActive: "Invite sent just now",
       isCurrent: false,
     });
-    this.audit("upload", "Invited person", `${clean} as ${roleName}`, null);
+    this.audit("upload", "Invited person", `${clean} as ${role.name}`, null);
     this.bump();
   }
   setMemberRole(memberId: string, roleId: string): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+    if (!can(this.user, MANAGE_USERS_ACTION, this.resolvedActions)) return;
     const m = this.members.find((x) => x.id === memberId);
-    if (!m || !(ROLE_TIERS as readonly string[]).includes(roleId)) return;
-    m.roleId = roleId;
-    m.roleName = roleTierLabel(roleId as RoleTier);
+    const role = this.roles.find((r) => r.id === roleId);
+    if (!m || !role) return;
+    m.roleId = role.id;
+    m.roleName = role.name;
     this.bump();
   }
   removeMember(memberId: string): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps) || memberId === this.user.id) return;
+    if (!can(this.user, MANAGE_USERS_ACTION, this.resolvedActions) || memberId === this.user.id) return;
     this.members = this.members.filter((m) => m.id !== memberId);
     this.bump();
   }
   resendInvite(memberId: string): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+    if (!can(this.user, MANAGE_USERS_ACTION, this.resolvedActions)) return;
     const m = this.members.find((x) => x.id === memberId);
     if (m && m.status === "invited") {
       m.lastActive = "Invite re-sent just now";
@@ -4762,115 +4761,115 @@ export class InMemoryDataProvider implements DataProvider {
     }
   }
 
-  // ── configurable permissions (migration 0039) ───────────────────────────────
-  /** The fixed CODE catalogue of gateable capabilities. */
-  getCapabilities(): CapabilityDef[] {
-    return CAPABILITIES.map((c) => ({ ...c }));
+  // ── dynamic roles × granular actions (migration 0040) ────────────────────────
+  /** The fixed CODE catalogue of gateable actions (grouped by pipeline step). */
+  getActionCatalogue(): ActionDef[] {
+    return ACTIONS.map((a) => ({ ...a }));
   }
-  /** The admin-editable permission bundles. */
-  getPermissions(): Permission[] {
-    return this.permissions.map((p) => ({ ...p, capabilities: [...p.capabilities] }));
+  /** The add/deletable role rows, in sort order. */
+  getRoles(): RoleModel[] {
+    return [...this.roles].sort((a, b) => a.sort - b.sort).map((r) => ({ ...r }));
   }
-  /** tier → granted permission ids. */
-  getRoleGrants(): RoleGrants {
-    return { team_member: [...this.roleGrants.team_member], analyst: [...this.roleGrants.analyst], admin: [...this.roleGrants.admin] };
-  }
-
-  /** Recompute the derived (tier → effective capabilities) view every gate reads. */
-  private recomputeResolved(): void {
-    this.resolvedCaps = resolveGrants(this.permissions, this.roleGrants);
+  /** role_id → the actions that role holds (the grid). */
+  getRoleActions(): Record<string, ActionKey[]> {
+    const out: Record<string, ActionKey[]> = {};
+    for (const [id, acts] of Object.entries(this.roleActions)) out[id] = [...acts];
+    return out;
   }
 
-  /** Keep only catalogue capabilities, de-duplicated. */
-  private sanitizeCaps(caps: Capability[]): Capability[] {
-    const known = new Set<string>(CAPABILITIES.map((c) => c.key));
-    return [...new Set(caps.filter((c) => known.has(c)))];
+  /** Recompute the derived (role_id → granted action set) view every gate reads. */
+  private recomputeResolvedActions(): void {
+    this.resolvedActions = resolveRoleActions(this.roles, this.roleActions);
+  }
+  /** How many roles (optionally excluding one) still hold `general.manage_roles`. */
+  private rolesHoldingManageRoles(excludeRoleId?: string): number {
+    return this.roles.filter(
+      (r) => r.id !== excludeRoleId && (this.roleActions[r.id] ?? []).includes(MANAGE_ROLES_ACTION),
+    ).length;
   }
 
-  createPermission(name: string, description: string, capabilities: Capability[]): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+  createRole(name: string): void {
+    if (!can(this.user, MANAGE_ROLES_ACTION, this.resolvedActions)) return;
     const clean = name.trim();
-    if (!clean) return;
-    this.permissions.push({
-      id: `perm-${this.seq++}-${clean.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      name: clean,
-      description: description.trim(),
-      capabilities: this.sanitizeCaps(capabilities),
-      isSystem: false,
-    });
-    this.audit("config", "Created permission", `${clean} — ${capabilities.join(", ")}`, null);
+    if (!clean || this.roles.some((r) => r.name.toLowerCase() === clean.toLowerCase())) return;
+    const id = `role-${this.seq++}-${clean.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+    const sort = this.roles.reduce((mx, r) => Math.max(mx, r.sort), -1) + 1;
+    this.roles.push({ id, name: clean, isSystem: false, sort });
+    this.roleActions[id] = [];
+    this.recomputeResolvedActions();
+    this.audit("config", "Created role", clean, null);
     this.bump();
   }
 
-  updatePermission(id: string, name: string, description: string, capabilities: Capability[]): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
-    const p = this.permissions.find((x) => x.id === id);
-    if (!p) return;
-    const nextCaps = this.sanitizeCaps(capabilities);
-    // Lockout guard: the Workspace-administration system permission must always
-    // retain the workspace_admin capability, or an admin could be locked out.
-    if (guardsWorkspaceAdmin(p) && !nextCaps.includes(WORKSPACE_ADMIN_CAPABILITY)) return;
+  renameRole(id: string, name: string): void {
+    if (!can(this.user, MANAGE_ROLES_ACTION, this.resolvedActions)) return;
+    const r = this.roles.find((x) => x.id === id);
+    if (!r) return;
     const clean = name.trim();
-    if (clean) p.name = clean;
-    p.description = description.trim();
-    p.capabilities = nextCaps;
-    this.recomputeResolved();
-    this.audit("config", "Updated permission", `${p.name} — ${nextCaps.join(", ")}`, null);
+    if (!clean || this.roles.some((x) => x.id !== id && x.name.toLowerCase() === clean.toLowerCase())) return;
+    r.name = clean;
+    // Keep every member's cached role label in step with the rename.
+    for (const m of this.members) if (m.roleId === id) m.roleName = clean;
+    this.audit("config", "Renamed role", clean, null);
     this.bump();
   }
 
-  deletePermission(id: string): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
-    const p = this.permissions.find((x) => x.id === id);
-    // Lockout guard: the Workspace-administration system permission is undeletable.
-    if (!p || guardsWorkspaceAdmin(p)) return;
-    this.permissions = this.permissions.filter((x) => x.id !== id);
-    for (const tier of Object.keys(this.roleGrants) as RoleTier[]) {
-      this.roleGrants[tier] = this.roleGrants[tier].filter((pid) => pid !== id);
-    }
-    this.recomputeResolved();
-    this.audit("config", "Deleted permission", `Removed "${p.name}"`, null);
+  deleteRole(id: string): void {
+    if (!can(this.user, MANAGE_ROLES_ACTION, this.resolvedActions)) return;
+    const r = this.roles.find((x) => x.id === id);
+    if (!r) return;
+    // Lockout guard: the Admin system role is undeletable.
+    if (r.isSystem) return;
+    // Refuse if the role still has members (reassign in Users first).
+    if (this.members.some((m) => m.roleId === id)) return;
+    // Lockout guard: never delete the last role holding general.manage_roles.
+    if ((this.roleActions[id] ?? []).includes(MANAGE_ROLES_ACTION) && this.rolesHoldingManageRoles(id) === 0) return;
+    this.roles = this.roles.filter((x) => x.id !== id);
+    delete this.roleActions[id];
+    this.recomputeResolvedActions();
+    this.audit("config", "Deleted role", `Removed "${r.name}"`, null);
     this.bump();
   }
 
-  setRoleGrant(tier: RoleTier, permissionId: string, granted: boolean): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
-    const p = this.permissions.find((x) => x.id === permissionId);
-    if (!p) return;
-    // Lockout guard: the Workspace-administration permission can never be ungranted
-    // from the admin tier.
-    if (!granted && tier === "admin" && guardsWorkspaceAdmin(p)) return;
-    const has = this.roleGrants[tier].includes(permissionId);
-    if (granted && !has) this.roleGrants[tier] = [...this.roleGrants[tier], permissionId];
-    else if (!granted && has) this.roleGrants[tier] = this.roleGrants[tier].filter((pid) => pid !== permissionId);
+  setRoleAction(roleId: string, action: ActionKey, granted: boolean): void {
+    if (!can(this.user, MANAGE_ROLES_ACTION, this.resolvedActions)) return;
+    const r = this.roles.find((x) => x.id === roleId);
+    if (!r || !(ACTION_KEYS as string[]).includes(action)) return;
+    // Lockout guard: the Admin role's manage-roles + manage-users cells are
+    // permanently granted (can't be turned off).
+    if (r.isSystem && !granted && (action === MANAGE_ROLES_ACTION || action === MANAGE_USERS_ACTION)) return;
+    const cur = this.roleActions[roleId] ?? [];
+    const has = cur.includes(action);
+    // Lockout guard: never leave zero roles holding general.manage_roles.
+    if (action === MANAGE_ROLES_ACTION && !granted && has && this.rolesHoldingManageRoles(roleId) === 0) return;
+    if (granted && !has) this.roleActions[roleId] = [...cur, action];
+    else if (!granted && has) this.roleActions[roleId] = cur.filter((a) => a !== action);
     else return;
-    this.recomputeResolved();
+    this.recomputeResolvedActions();
     this.bump();
   }
 
   /**
-   * Overwrite the permission set + grants from persisted DB rows (Supabase
-   * hydrate). Empty inputs (fresh DB) leave the seeded defaults in place so `can()`
-   * is correct before the first edit.
+   * Overwrite the roles + grid from persisted DB rows (Supabase hydrate). Empty
+   * input (fresh DB) leaves the seeded defaults in place so `can()` is correct
+   * before the first edit.
    */
-  applyConfigurablePermissions(
-    permissions: { id: string; name: string; description: string | null; capabilities: string[]; is_system: boolean }[],
-    grants: { tier: string; permission_id: string }[],
+  applyRolesAndActions(
+    roles: { id: string; name: string; is_system: boolean; sort: number | null }[],
+    roleActions: { role_id: string; action: string }[],
   ): void {
-    if (permissions.length === 0) return;
-    this.permissions = permissions.map((p) => ({
-      id: p.id,
-      name: p.name,
-      description: p.description ?? "",
-      capabilities: this.sanitizeCaps(p.capabilities as Capability[]),
-      isSystem: p.is_system,
-    }));
-    const next: RoleGrants = { team_member: [], analyst: [], admin: [] };
-    for (const g of grants) {
-      if (g.tier === "team_member" || g.tier === "analyst" || g.tier === "admin") next[g.tier].push(g.permission_id);
+    if (roles.length === 0) return;
+    this.roles = roles
+      .map((r) => ({ id: r.id, name: r.name, isSystem: r.is_system, sort: r.sort ?? 0 }))
+      .sort((a, b) => a.sort - b.sort);
+    const next: Record<string, ActionKey[]> = {};
+    for (const r of this.roles) next[r.id] = [];
+    for (const ra of roleActions) {
+      const bucket = next[ra.role_id];
+      if (bucket && (ACTION_KEYS as string[]).includes(ra.action)) bucket.push(ra.action as ActionKey);
     }
-    this.roleGrants = next;
-    this.recomputeResolved();
+    this.roleActions = next;
+    this.recomputeResolvedActions();
     this.bump();
   }
 
@@ -4901,7 +4900,7 @@ export class InMemoryDataProvider implements DataProvider {
    * full grade recompute on the next read (marginalInfo runs inside getGrades).
    */
   setBorderlineConfig(patch: Partial<BorderlineConfig>): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_methodology", this.resolvedActions)) return;
     if (patch.bandPct == null || !Number.isFinite(patch.bandPct)) return;
     this.borderline = { bandPct: clampBorderlineBand(patch.bandPct) };
     this.audit("config", "Updated borderline flagging band", `±${this.borderline.bandPct}% around each grade boundary`, null);
@@ -4912,7 +4911,7 @@ export class InMemoryDataProvider implements DataProvider {
     return JSON.parse(JSON.stringify(this.elementLabels));
   }
   setElementLabels(config: ElementLabelsConfig): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_methodology", this.resolvedActions)) return;
     // Server-side parity: reject an invalid set (empty labels, duplicate letters).
     if (validateElementLabels(config)) return;
     this.elementLabels = JSON.parse(JSON.stringify(config));
@@ -4924,7 +4923,7 @@ export class InMemoryDataProvider implements DataProvider {
   getIncidentConfig(): IncidentConfigModel {
     const c = this.incidentConfig;
     return {
-      canEdit: can(this.user.role, "configure", this.resolvedCaps),
+      canEdit: can(this.user, "general.config_incidents", this.resolvedActions),
       perStudentCap: c.perStudentCap,
       mapping: { ...c.mapping },
       codes: c.codes.map((code) => ({
@@ -4936,7 +4935,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   upsertIncidentCode(input: IncidentCodeInput): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_incidents", this.resolvedActions)) return;
     // Defence in depth (the UI validates too): reject anything not add-only / invalid.
     if (validateIncidentCode(input, this.incidentConfig.codes).length > 0) return;
     if (input.id) {
@@ -4953,7 +4952,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   deleteIncidentCode(id: string): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_incidents", this.resolvedActions)) return;
     const before = this.incidentConfig.codes.length;
     this.incidentConfig.codes = this.incidentConfig.codes.filter((c) => c.id !== id);
     if (this.incidentConfig.codes.length !== before) {
@@ -4963,7 +4962,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setIncidentPerStudentCap(cap: number | null): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_incidents", this.resolvedActions)) return;
     if (validatePerStudentCap(cap).length > 0) return;
     this.incidentConfig.perStudentCap = cap;
     this.audit("config", "Updated per-student incident cap", cap === null ? "No cap" : `${cap} marks`, null);
@@ -4971,7 +4970,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setIncidentMapping(mapping: IncidentColumnMapping): void {
-    if (!can(this.user.role, "configure", this.resolvedCaps)) return;
+    if (!can(this.user, "general.config_incidents", this.resolvedActions)) return;
     this.incidentConfig.mapping = { ...mapping };
     this.audit("config", "Updated incident import mapping", "Column mapping", null);
     this.bump();
@@ -4991,7 +4990,7 @@ export class InMemoryDataProvider implements DataProvider {
     rows: readonly ResolvedIncidentRow[],
     source?: { fileName: string; sample: boolean },
   ): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     this.incidentRows.set(cycleId, rows.map((r) => ({ ...r, errors: [...r.errors] })));
     if (source) this.incidentSource.set(cycleId, { ...source });
@@ -5002,7 +5001,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   clearIncidentRows(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     if (!this.incidentRows.has(cycleId) && !this.incidentSource.has(cycleId)) return;
     this.incidentRows.delete(cycleId);
@@ -5020,7 +5019,7 @@ export class InMemoryDataProvider implements DataProvider {
    * student pushed over the per-student global cap, and an unmatched row.
    */
   loadSampleIncidentRows(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
     const comp = this.getComposition(cycleId);
     if (!comp) return;
@@ -5136,7 +5135,7 @@ export class InMemoryDataProvider implements DataProvider {
       applied: applied !== null,
       appliedBy: applied?.by ?? null,
       appliedAt: applied?.at ?? null,
-      canApply: can(this.user.role, "adjust", this.resolvedCaps),
+      canApply: can(this.user, "incidents.apply", this.resolvedActions),
       perStudentCap: this.incidentConfig.perStudentCap,
       source: this.incidentSource.get(cycleId) ?? null,
       students: matched,
@@ -5155,7 +5154,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   applyIncidentAdjustments(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return; // only admin may commit to scores
+    if (!can(this.user, "incidents.apply", this.resolvedActions)) return; // only admin may commit to scores
     if (this.locked.has(cycleId)) return;
     if ((this.incidentRows.get(cycleId) ?? []).length === 0) return;
     this.incidentApplied.set(cycleId, { by: this.user.name, at: new Date().toISOString() });
@@ -5166,7 +5165,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   unapplyIncidentAdjustments(cycleId: string): void {
-    if (!can(this.user.role, "adjust", this.resolvedCaps)) return;
+    if (!can(this.user, "incidents.apply", this.resolvedActions)) return;
     if (!this.incidentApplied.has(cycleId)) return;
     this.incidentApplied.delete(cycleId);
     this.audit("student", "Reverted incident adjustments", "Base scores stand alone", cycleId);
@@ -5206,7 +5205,7 @@ export class InMemoryDataProvider implements DataProvider {
     // P2: a decision is overridable when the signed-in user holds the `override`
     // permission and the sitting is unlocked — the matrix, not the old
     // strictly-higher role hierarchy. `decidedByRole` is kept purely as a label.
-    const mayOverride = (): boolean => !locked && can(this.user.role, "override.marks_exclusions", this.resolvedCaps);
+    const mayOverride = (): boolean => !locked && can(this.user, "general.override_marks", this.resolvedActions);
 
     // Excluded items (the grade-bearing item-review state).
     for (const [key, set] of this.exclusions) {
@@ -5265,7 +5264,7 @@ export class InMemoryDataProvider implements DataProvider {
       // Override rights AT ALL: holds the `override` permission on an unlocked
       // sitting. Each row's `canOverride` reflects the same permission (P2: the
       // matrix is the source of truth, not the old strictly-higher hierarchy).
-      canOverride: can(this.user.role, "override.marks_exclusions", this.resolvedCaps) && !locked,
+      canOverride: can(this.user, "general.override_marks", this.resolvedActions) && !locked,
       decisions,
       counts: { decisions: decisions.length, overridden: decisions.filter((d) => d.override).length },
     };
@@ -5664,7 +5663,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   createCycle(input: CreateCycleInput): Promise<string> {
-    if (!can(this.user.role, "intake", this.resolvedCaps)) return Promise.resolve(this.seed.liveCycle.id);
+    if (!can(this.user, "upload.manage", this.resolvedActions)) return Promise.resolve(this.seed.liveCycle.id);
     // In-memory/demo mode has no database: record the intent in the audit log and
     // resolve to the demo cycle id (the only one with real data) so navigation
     // works. The Supabase provider overrides this to persist a real cycle.
@@ -5685,7 +5684,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   createTestCentre(input: { name: string; code: string }): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+    if (!can(this.user, "general.manage_centres", this.resolvedActions)) return;
     const name = input.name.trim();
     const code = input.code.trim();
     if (!name || !code) return;
@@ -5697,7 +5696,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   updateTestCentre(id: string, patch: { name?: string; code?: string; active?: boolean }): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+    if (!can(this.user, "general.manage_centres", this.resolvedActions)) return;
     const c = this.testCentres.find((x) => x.id === id);
     if (!c) return;
     if (patch.name !== undefined && patch.name.trim()) c.name = patch.name.trim();
@@ -5708,7 +5707,7 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   setTestCentreActive(id: string, active: boolean): void {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return;
+    if (!can(this.user, "general.manage_centres", this.resolvedActions)) return;
     const c = this.testCentres.find((x) => x.id === id);
     if (!c) return;
     c.active = active;
@@ -5726,7 +5725,7 @@ export class InMemoryDataProvider implements DataProvider {
    * re-run. `yearId` is the derived year id from `listYears()`.
    */
   moveExamYearToCentre(yearId: string, testCentreId: string): Promise<void> {
-    if (!can(this.user.role, "workspace_admin", this.resolvedCaps)) return Promise.resolve();
+    if (!can(this.user, "general.manage_centres", this.resolvedActions)) return Promise.resolve();
     const years = this.buildYears();
     const year = years.find((y) => y.id === yearId);
     if (!year) return Promise.reject(new Error("Exam year not found."));

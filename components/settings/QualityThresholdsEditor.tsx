@@ -12,7 +12,7 @@
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { Button, Card } from "@/components/ui/primitives";
 import { Mark } from "@/components/ui/icons";
@@ -28,7 +28,7 @@ export function QualityThresholdsEditor() {
   const provider = useProvider();
   const config = useProviderData((p) => p.getScoringConfig());
   const live = config.quality;
-  const editable = can(provider.getCurrentUser().role, "configure");
+  const editable = can(provider.getCurrentUser().role, "general.config_methodology");
 
   const [draft, setDraft] = useState<QualityThresholds>(() => clone(live));
   const [saved, setSaved] = useState(false);

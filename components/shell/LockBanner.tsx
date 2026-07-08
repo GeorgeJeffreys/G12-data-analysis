@@ -11,7 +11,7 @@
  * "Re-open" (unlock) action lives on the pill and is audit-logged in the provider.
  */
 import { useProvider, useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { Icon } from "@/components/ui/icons";
 
@@ -19,7 +19,7 @@ export function LockStatus({ cycleId }: { cycleId: string }) {
   const provider = useProvider();
   const cycle = useProviderData((p) => p.getCycle(cycleId), [cycleId]);
   if (!cycle?.locked) return null;
-  const isLead = can(provider.getCurrentUser().role, "signoff");
+  const isLead = can(provider.getCurrentUser().role, "general.signoff");
 
   return (
     <span

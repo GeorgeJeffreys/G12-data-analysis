@@ -17,14 +17,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { H } from "@/lib/ui/tokens";
 import { DeleteCycleDialog } from "./DeleteCycleDialog";
 
 export type DeletableCycle = { cycleId: string; label: string; cycleName: string };
 
 export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
-  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "workspace_admin"));
+  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "general.delete"));
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState<DeletableCycle | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);

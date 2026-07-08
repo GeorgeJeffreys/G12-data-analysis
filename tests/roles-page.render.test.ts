@@ -1,9 +1,9 @@
 /**
- * Settings › Roles page — the admin surface for configurable permissions (R2).
- * Three sections: A · Permissions (create/edit/delete), B · Roles × permissions
- * (grant grid), C · Capability catalogue (read-only reference). Admin sees the
- * editing controls; a lower role sees everything read-only. The Admin ×
- * Workspace-administration grant is always-on & locked.
+ * Settings › Roles & actions page — the READ surface for the dynamic role × action
+ * grid (migration 0040, X1). Three sections: Roles (the role rows), Roles × actions
+ * (a read-only grid of which role holds which action) and the Action catalogue
+ * reference. The editable grid lands in X2; here we lock the read surface and that no
+ * bundle-era ("permission" / capability) machinery remains.
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement as e } from "react";
@@ -30,36 +30,32 @@ async function render(): Promise<string> {
 
 const VIEWER: CurrentUser = { id: "v", name: "Vic", initials: "V", role: "viewer" };
 
-describe("Roles & permissions admin page", () => {
-  it("renders all three sections for an admin", async () => {
+describe("Roles & actions page", () => {
+  it("renders roles, the grid and the action catalogue", async () => {
     activeProvider = new InMemoryDataProvider();
     const html = await render();
-    // A · Permissions — the section, the create control, a permission summary.
-    expect(html).toContain("Permissions");
-    expect(html).toContain("New permission");
-    expect(html).toContain("capabilities:"); // e.g. "1 capability: …" / "N capabilities: …"
-    // B · Roles × permissions — the tier columns + the lockout note.
+    // The three seeded roles, by name.
     expect(html).toContain("G12 team member");
     expect(html).toContain("Data analyst");
     expect(html).toContain("Admin");
-    expect(html).toContain("must keep workspace administration");
-    // C · Capability catalogue — the model explainer + a capability key.
-    expect(html).toContain("Capability catalogue");
-    expect(html).toContain("Capabilities are the fixed operations the app enforces");
-    expect(html).toContain("override.marks_exclusions"); // a catalogue key
-    // System permission is labelled; no custom-role machinery remains.
-    expect(html).toContain("System");
-    expect(html).not.toContain("Add role");
-    expect(html).not.toContain("Data Scientist");
+    expect(html).toContain("System"); // the Admin system-role badge
+    // Action catalogue — the explainer + granular keys grouped by pipeline step.
+    expect(html).toContain("Action catalogue");
+    expect(html).toContain("Actions are the fixed operations the app enforces");
+    expect(html).toContain("general.manage_roles"); // a catalogue key
+    expect(html).toContain("awards.generate"); // the new action
+    expect(html).toContain("Upload"); // a pipeline-step group heading
+    // No bundle-era machinery survives.
+    expect(html).not.toContain("New permission");
+    expect(html).not.toContain("Capability catalogue");
+    expect(html).not.toContain("workspace_admin");
   });
 
-  it("a non-admin sees everything read-only (no create/edit controls)", async () => {
+  it("a non-admin sees the read-only note", async () => {
     const p = new InMemoryDataProvider();
     p.setCurrentUser(VIEWER);
     activeProvider = p;
     const html = await render();
     expect(html).toContain("read-only for your role");
-    expect(html).not.toContain("New permission");
-    expect(html).not.toContain(">Edit<");
   });
 });

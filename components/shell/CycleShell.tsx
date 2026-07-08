@@ -29,7 +29,7 @@ import { StepBackButton } from "./StepBackButton";
 import { cyclesSubnav } from "@/lib/ui/subnav";
 import { recordCycleStep } from "@/lib/ui/last-step";
 import { useProviderData } from "@/lib/data/context";
-import { can } from "@/lib/auth/permissions";
+import { can } from "@/lib/auth/actions";
 import { Icon, Mark, type MarkKind } from "@/components/ui/icons";
 
 export type CycleArea = "pipeline" | "audit" | "documents" | "diagnostics" | "dataflow" | "settings";
@@ -79,8 +79,8 @@ export function CycleShell({
   // The admin-only "Data flow" developer tab is added to the cycle nav only for the
   // top admin role; the Audit log tab only for roles with `audit.view`. Tolerant of
   // partial provider stubs used in render tests.
-  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "workspace_admin"));
-  const canAudit = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "audit.view"));
+  const isAdmin = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "general.manage_users"));
+  const canAudit = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "general.audit"));
   const crumb = page
     ? [{ label: "Sittings", href: "/" }, { label: cycleName, href: `/cycles/${cycleId}` }, { label: page }]
     : [{ label: "Sittings", href: "/" }, { label: cycleName }];

@@ -24,6 +24,12 @@ export interface CurrentUser {
   name: string;
   initials: string;
   role: Role;
+  /**
+   * The membership's dynamic role id (migration 0040). When present, `can()`
+   * resolves against the hydrated role_id → actions grid; when absent (demo /
+   * pre-hydration), it falls back to the seeded role id derived from `role`.
+   */
+  roleId?: string | null;
 }
 
 // Document/certificate generation is NOT a per-sitting pipeline step: certificates

@@ -25,6 +25,7 @@ import { getDocumentGenerator } from "@/lib/documents/generator";
 import type { DocKind, GenerateResult } from "@/lib/documents/types";
 import type { IssuanceSignOff, IssuanceReadiness } from "@/lib/data/types";
 import { BatchPreview, CertificateProof, ReportProof, studentIssues } from "@/components/documents/BatchPreview";
+import { can } from "@/lib/auth/actions";
 
 type IssueMode = "draft" | "official";
 
@@ -86,7 +87,10 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
   const readiness: IssuanceReadiness | undefined = model.readiness;
   const officialAllowed = readiness?.officialAllowed ?? false;
   const draft = issueMode === "draft";
-  const canExport = draft || (officialAllowed && officialConfirmed);
+  // Awards gate (migration 0040): generating Overall Award documents — draft proofs
+  // included — now requires `awards.generate`, which the default seed grants to Admin.
+  const canGenerate = can(provider.getCurrentUser().role, "awards.generate");
+  const canExport = canGenerate && (draft || (officialAllowed && officialConfirmed));
 
   const doGenerate = async () => {
     if (!canExport) return;
@@ -226,7 +230,12 @@ export default function OverallDocumentsPage({ params }: { params: { yearId: str
                   Preview &amp; verify
                 </Button>
               </div>
-              {!draft && !canExport && (
+              {!canGenerate && (
+                <div className="hf-sub" style={{ fontSize: 11, color: H.ink3 }}>
+                  You need the “Generate certificates / reports” permission to produce Overall Award documents.
+                </div>
+              )}
+              {canGenerate && !draft && !canExport && (
                 <div className="hf-sub" style={{ fontSize: 11, color: H.ink3 }}>
                   {officialAllowed
                     ? "Tick the confirmation above to issue official documents."
