@@ -4569,13 +4569,11 @@ export class InMemoryDataProvider implements DataProvider {
     return Promise.resolve();
   }
   // Delete a whole cycle (Settings danger surface). Mirrors deleteSitting's full
-  // removal, with the last-cycle guard: refuse when this is the only cycle left, so
-  // the workspace is never emptied to an unopenable state. (The demo holds a single
-  // cycle, so this guard fires there — the UI disables the control accordingly.)
+  // removal, with no last-cycle restriction: an admin may delete cycles down to an
+  // empty workspace (zero cycles is a valid state). (Demo caveat: with no DB the sole
+  // seeded cycle is emptied in place rather than removed, so it still shows here
+  // after delete — the live Supabase path deletes for real and reaches zero.)
   deleteCycle(cycleId: string): Promise<void> {
-    if (this.listCycles().length <= 1) {
-      return Promise.reject(new Error("Can’t delete the last remaining cycle — a workspace must keep at least one."));
-    }
     const name = cycleId === this.seed.liveCycle.id ? this.seed.liveCycle.name : cycleId;
     this.resetCycleToEmpty(cycleId);
     this.audit("cycle", "Deleted cycle", `Removed cycle "${name}" and every row keyed to it`, null);

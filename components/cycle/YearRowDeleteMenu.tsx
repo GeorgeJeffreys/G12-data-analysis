@@ -8,9 +8,9 @@
  * through the year/pipeline page, a cycle stranded by a routing 404 can still be
  * deleted here.
  *
- * Admin-only (hidden for everyone else). Type-to-confirm naming the cycle, a
- * last-cycle guard (never delete the only remaining cycle), and the existing
- * `delete_cycle` cascade (all cycle_id rows, audit-logged). After a delete the list
+ * Admin-only (hidden for everyone else). Type-to-confirm naming the cycle and the
+ * existing `delete_cycle` cascade (all cycle_id rows, audit-logged); an admin may
+ * delete every cycle, leaving an empty workspace. After a delete the list
  * re-renders itself — the provider bumps subscribers on rehydrate — so the row
  * disappears immediately without navigating away.
  */
@@ -25,7 +25,6 @@ export type DeletableCycle = { cycleId: string; label: string; cycleName: string
 
 export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
   const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
-  const isLastCycle = useProviderData((p) => p.listCycles().length <= 1);
   const [open, setOpen] = useState(false);
   const [target, setTarget] = useState<DeletableCycle | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -107,7 +106,6 @@ export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
                 key={c.cycleId}
                 type="button"
                 role="menuitem"
-                disabled={isLastCycle}
                 onClick={() => { setOpen(false); setTarget(c); }}
                 style={{
                   display: "block",
@@ -117,20 +115,15 @@ export function YearRowDeleteMenu({ cycles }: { cycles: DeletableCycle[] }) {
                   borderRadius: 7,
                   border: "none",
                   background: "transparent",
-                  color: isLastCycle ? H.ink3 : H.bad,
+                  color: H.bad,
                   fontSize: 12.5,
                   fontWeight: 600,
-                  cursor: isLastCycle ? "default" : "pointer",
+                  cursor: "pointer",
                 }}
               >
                 Delete {c.label} cycle
               </button>
             ))}
-            {isLastCycle && (
-              <div className="hf-sub" style={{ fontSize: 10.5, padding: "0 10px 6px" }}>
-                The workspace must keep at least one cycle.
-              </div>
-            )}
           </div>
         </>,
         document.body,

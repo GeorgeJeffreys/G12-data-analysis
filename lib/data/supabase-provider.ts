@@ -527,9 +527,9 @@ export class SupabaseDataProvider implements DataProvider {
     this.assertDeleted(data, "delete");
     await this.rehydrate();
   }
-  // 0032 — full-cascade cycle delete with a server-side last-cycle guard. Same
-  // count-check + rehydrate contract as deleteSitting; the guard surfaces as a
-  // plain (non-drift) message from the RPC when the final cycle is targeted.
+  // 0032 (last-cycle guard dropped in 0035) — full-cascade cycle delete with no
+  // last-cycle restriction. Same count-check + rehydrate contract as deleteSitting;
+  // an admin may delete every cycle, leaving an empty workspace.
   async deleteCycle(cycleId: string): Promise<void> {
     const { data, error } = await this.rpcData<number>("delete_cycle", { p_cycle: cycleId });
     if (error) throw new Error(this.driftHint(error.message));

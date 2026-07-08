@@ -6,15 +6,15 @@
  *   * Delete cycle — removes the cycle row AND every row keyed to that cycle_id
  *     across all tables (the full FK cascade), irreversibly. Gated behind a TYPED
  *     confirmation (type "delete") so it can never fire on a stray click, and
- *     ADMIN-ONLY (hidden entirely for non-admins). A LAST-CYCLE guard disables the
- *     action when this is the only remaining cycle — the workspace must always keep
- *     one to open. On success we return to Years (the deleted cycle no longer
- *     exists, so `replace`, not `push`, keeps the back button off the dead route).
+ *     ADMIN-ONLY (hidden entirely for non-admins). An admin may delete every cycle,
+ *     leaving an empty workspace (zero cycles is a valid state). On success we return
+ *     to Years (the deleted cycle no longer exists, so `replace`, not `push`, keeps
+ *     the back button off the dead route).
  *
  * The provider (live) runs the SECURITY DEFINER `delete_cycle` RPC that authorizes
- * lead/admin, enforces the same last-cycle guard server-side, writes the audit row
- * with the resolved user, and only resolves once the DB has really removed rows (a
- * null/0 count throws) — so a silent no-op can never read as success.
+ * lead/admin, writes the audit row with the resolved user, and only resolves once the
+ * DB has really removed rows (a null/0 count throws) — so a silent no-op can never
+ * read as success.
  */
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -26,10 +26,6 @@ import { Icon, Mark } from "@/components/ui/icons";
 
 export function CycleDangerZone({ cycleId, cycleName }: { cycleId: string; cycleName: string }) {
   const isAdmin = useProviderData((p) => hasRole(p.getCurrentUser?.()?.role ?? "viewer", "admin"));
-  // Last-cycle guard: the delete is refused (server + client) when this is the only
-  // remaining cycle. Count from the roster the Years screen reads.
-  const cycleCount = useProviderData((p) => p.listCycles().length);
-  const isLastCycle = cycleCount <= 1;
   const [open, setOpen] = useState(false);
 
   // Non-admins never see the destructive control (defence-in-depth over the RPC gate).
@@ -56,13 +52,8 @@ export function CycleDangerZone({ cycleId, cycleName }: { cycleId: string; cycle
           participants, responses, sittings, rollups, scores, grades, incidents and essays. This cannot be undone and is
           recorded in the audit log. Other cycles are untouched.
         </div>
-        {isLastCycle && (
-          <div className="hf-sub" style={{ fontSize: 11.5, color: H.ink2 }}>
-            This is the only cycle in the workspace — create another before deleting this one.
-          </div>
-        )}
         <div>
-          <DangerButton onClick={() => setOpen(true)} disabled={isLastCycle}>Delete cycle</DangerButton>
+          <DangerButton onClick={() => setOpen(true)}>Delete cycle</DangerButton>
         </div>
       </div>
 
