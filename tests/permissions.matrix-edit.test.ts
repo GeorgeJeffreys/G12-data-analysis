@@ -146,4 +146,31 @@ describe("(d) set_member_role assigns and enforcement follows", () => {
     expect(can({ roleId: member.roleId }, "cuts.set", grid(p))).toBe(true);
     expect(can({ roleId: member.roleId }, "general.signoff", grid(p))).toBe(false);
   });
+
+  it("a member of a one-action custom role can do exactly that action, and untick removes it", () => {
+    const p = new InMemoryDataProvider(); // acting admin builds the grid
+    p.createRole("Marker");
+    const marker = roleIdByName(p, "Marker");
+    p.setRoleAction(marker, "cuts.set", true); // the ONLY action Marker holds
+
+    // Act as a member assigned the Marker role (role_id drives can()).
+    p.setCurrentUser({ id: "mk", name: "Mara", initials: "M", role: "reviewer", roleId: marker });
+    const aid = p.getGrades(CYCLE)!.assessments[0]!.id;
+    const before = JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts);
+
+    // The ticked action works…
+    p.setBoundary(CYCLE, aid, { cuts: [5, 3, 1] });
+    expect(JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts)).not.toBe(before);
+    // …but an un-ticked action (signoff) does not.
+    p.lockCycle(CYCLE);
+    expect(p.getCycle(CYCLE)!.locked).toBe(false);
+
+    // Admin unticks cuts.set → the member can no longer set boundaries.
+    p.setCurrentUser({ id: "a", name: "Admin", initials: "A", role: "lead_admin" });
+    p.setRoleAction(marker, "cuts.set", false);
+    p.setCurrentUser({ id: "mk", name: "Mara", initials: "M", role: "reviewer", roleId: marker });
+    const now = JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts);
+    p.setBoundary(CYCLE, aid, { cuts: [9, 8, 7] });
+    expect(JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts)).toBe(now); // no-op — action gone
+  });
 });

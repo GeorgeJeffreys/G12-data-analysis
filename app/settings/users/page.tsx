@@ -2,10 +2,11 @@
 
 /**
  * Settings › Users & access. The REAL roster — auth.users ⋈ memberships via the
- * provider's getMembers() (list_members RPC) — with roles in the one canonical
- * vocabulary (lib/auth/roles.ts). Invite / role-change / remove write to the real
- * memberships table (admin-gated by the C1 authorization). The signed-in account
- * is flagged "(you)" from the session, so displayed identity = authenticated user.
+ * provider's getMembers() (list_members RPC). The role selector lists the DYNAMIC
+ * roles from getMembers().roles (migration 0040) by id, and assignment calls
+ * setMemberRole(memberId, roleId) → memberships.role_id (admin-gated on
+ * general.manage_users). The signed-in account is flagged "(you)" from the session,
+ * so displayed identity = authenticated user.
  */
 import { useState } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
