@@ -63,6 +63,32 @@ describe("granting/revoking a permission changes enforcement for that tier", () 
     p.setRoleGrant("team_member", perm.id, true);
     expect(resolved(p).team_member.has("boundaries")).toBe(true);
   });
+
+  it("editing a permission's capabilities changes what its holders can do", () => {
+    const p = new InMemoryDataProvider();
+    p.createPermission("Marker", "", ["adjust"]);
+    const perm = p.getPermissions().find((x) => x.name === "Marker")!;
+    p.setRoleGrant("team_member", perm.id, true);
+    expect(resolved(p).team_member.has("adjust")).toBe(true);
+    expect(resolved(p).team_member.has("boundaries")).toBe(false);
+    // Add Cut scores to the same permission → holders gain it.
+    p.updatePermission(perm.id, "Marker", "", ["adjust", "boundaries"]);
+    expect(resolved(p).team_member.has("boundaries")).toBe(true);
+  });
+
+  it("deleting a permission revokes its capabilities from every holder", () => {
+    const p = new InMemoryDataProvider();
+    p.createPermission("Marker", "", ["adjust", "boundaries"]);
+    const perm = p.getPermissions().find((x) => x.name === "Marker")!;
+    p.setRoleGrant("team_member", perm.id, true);
+    expect(resolved(p).team_member.has("boundaries")).toBe(true);
+    p.deletePermission(perm.id);
+    // team_member keeps its seeded adjust (from the Adjustments permission) but
+    // loses boundaries, which only the deleted permission granted.
+    expect(p.getPermissions().some((x) => x.id === perm.id)).toBe(false);
+    expect(resolved(p).team_member.has("boundaries")).toBe(false);
+    expect(resolved(p).team_member.has("adjust")).toBe(true);
+  });
 });
 
 describe("the Workspace-administration grant can never be revoked from admin", () => {
