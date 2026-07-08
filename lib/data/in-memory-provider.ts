@@ -32,7 +32,7 @@ import {
   POLICY_GUARDRAILS,
 } from "@/lib/engine/cut-scores";
 import seedJson from "./seed.generated.json";
-import { hasRole, roleTierLabel } from "@/lib/auth/roles";
+import { roleTierLabel, ROLE_TIERS } from "@/lib/auth/roles";
 import {
   can,
   defaultRolePermissionMap,
@@ -154,8 +154,6 @@ import {
   type NaiveScoresModel,
   type NaiveElementCol,
   type NaiveStudentRow,
-  type RoleDef,
-  type RolesModel,
   type StudentSummary,
   type UnofficialSubject,
   type UnofficialElement,
@@ -221,12 +219,8 @@ import {
   clampBorderlineBand,
 } from "./grading";
 import {
-  ALL_CAPABILITY_IDS,
   ANALYTICS_CYCLE_LABELS,
   ANALYTICS_CYCLE_NAMES,
-  CAPABILITY_GROUPS,
-  DEFAULT_ROLES,
-  defaultMatrix,
   defaultMembers,
   mockPriors,
   mockCompareSubjects,
@@ -445,8 +439,6 @@ export class InMemoryDataProvider implements DataProvider {
 
   // admin / audit / config state (all MOCK — see lib/data/mock-admin.ts)
   private members: Member[] = defaultMembers();
-  private roles: RoleDef[] = DEFAULT_ROLES.map((r) => ({ ...r }));
-  private matrix: Record<string, Record<string, boolean>> = defaultMatrix();
   private auditEntries: AuditEntry[] = seedAuditEntries("may-2026");
   private auditSeq = 0;
 
@@ -4707,20 +4699,10 @@ export class InMemoryDataProvider implements DataProvider {
   // ── members & roles ───────────────────────────────────────────────────────
   getMembers(): MembersModel {
     return {
-      members: this.members.map((m) => ({ ...m, roleName: this.roles.find((r) => r.id === m.roleId)?.name ?? m.roleName })),
-      roles: this.roles.map((r) => ({ id: r.id, name: r.name })),
-    };
-  }
-
-  private roleMemberCount(roleId: string): number {
-    return this.members.filter((m) => m.roleId === roleId).length;
-  }
-
-  getRoles(): RolesModel {
-    return {
-      roles: this.roles.map((r) => ({ ...r, memberCount: this.roleMemberCount(r.id) })),
-      groups: CAPABILITY_GROUPS,
-      matrix: this.matrix,
+      members: this.members.map((m) => ({ ...m })),
+      // The three FIXED canonical tiers are the only assignable roles (P3 removed
+      // the editable custom-role machinery; only their PERMISSIONS are editable).
+      roles: ROLE_TIERS.map((tier) => ({ id: tier, name: roleTierLabel(tier) })),
     };
   }
 
@@ -4728,17 +4710,18 @@ export class InMemoryDataProvider implements DataProvider {
     if (!can(this.user.role, "workspace_admin", this.rolePermissions)) return;
     const clean = email.trim();
     if (!clean || this.members.some((m) => m.email.toLowerCase() === clean.toLowerCase())) return;
+    const tier: RoleTier = (ROLE_TIERS as readonly string[]).includes(roleId) ? (roleId as RoleTier) : "team_member";
     const name = clean
       .split("@")[0]!
       .split(/[._]/)
       .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
       .join(" ");
-    const roleName = this.roles.find((r) => r.id === roleId)?.name ?? "Data Scientist";
+    const roleName = roleTierLabel(tier);
     this.members.push({
       id: `m-${Date.now()}`,
       name: name || clean,
       email: clean,
-      roleId,
+      roleId: tier,
       roleName,
       status: "invited",
       lastActive: "Invite sent just now",
@@ -4750,10 +4733,9 @@ export class InMemoryDataProvider implements DataProvider {
   setMemberRole(memberId: string, roleId: string): void {
     if (!can(this.user.role, "workspace_admin", this.rolePermissions)) return;
     const m = this.members.find((x) => x.id === memberId);
-    const role = this.roles.find((r) => r.id === roleId);
-    if (!m || !role) return;
+    if (!m || !(ROLE_TIERS as readonly string[]).includes(roleId)) return;
     m.roleId = roleId;
-    m.roleName = role.name;
+    m.roleName = roleTierLabel(roleId as RoleTier);
     this.bump();
   }
   removeMember(memberId: string): void {
@@ -4768,42 +4750,6 @@ export class InMemoryDataProvider implements DataProvider {
       m.lastActive = "Invite re-sent just now";
       this.bump();
     }
-  }
-  createRole(name: string): void {
-    if (!hasRole(this.user.role, "admin")) return;
-    const clean = name.trim();
-    if (!clean) return;
-    const id = `role-${Date.now()}`;
-    this.roles.push({ id, name: clean, isLead: false, memberCount: 0 });
-    // New roles start with no capabilities — tick what they need.
-    this.matrix[id] = Object.fromEntries(ALL_CAPABILITY_IDS.map((c) => [c, false]));
-    this.bump();
-  }
-  renameRole(roleId: string, name: string): void {
-    if (!hasRole(this.user.role, "admin")) return;
-    const r = this.roles.find((x) => x.id === roleId);
-    const clean = name.trim();
-    if (!r || !clean) return;
-    r.name = clean;
-    for (const m of this.members) if (m.roleId === roleId) m.roleName = clean;
-    this.bump();
-  }
-  setCapability(roleId: string, capabilityId: string, granted: boolean): void {
-    if (!hasRole(this.user.role, "admin")) return;
-    const row = this.matrix[roleId] ?? (this.matrix[roleId] = {});
-    row[capabilityId] = granted;
-    this.bump();
-  }
-  deleteRole(roleId: string): void {
-    if (!hasRole(this.user.role, "admin")) return;
-    const role = this.roles.find((r) => r.id === roleId);
-    // The Lead archetype is undeletable, and a role still assigned to members
-    // can't be removed (reassign them first).
-    if (!role || role.isLead || this.roleMemberCount(roleId) > 0) return;
-    this.roles = this.roles.filter((r) => r.id !== roleId);
-    delete this.matrix[roleId];
-    this.audit("config", "Deleted role", `Removed role "${role.name}"`, null);
-    this.bump();
   }
 
   // ── role → permission matrix (migration 0036) ───────────────────────────────

@@ -69,7 +69,6 @@ import type {
   PerformanceReportModel,
   ReviewModel,
   ItemDetailModel,
-  RolesModel,
   BoundaryModel,
   BorderlineConfig,
   StudentReviewModel,
@@ -284,15 +283,15 @@ export interface DataProvider {
   /** Student Summary for document generation (only populated once locked). */
   getDocuments(cycleId: string): DocumentsModel | null;
 
-  // settings: users & roles
+  // settings: users. The three FIXED canonical tiers are the only assignable
+  // roles (see getMembers().roles); their PERMISSIONS are edited via the matrix
+  // below, not a custom-role editor.
   getMembers(): MembersModel;
-  getRoles(): RolesModel;
 
   // settings: role → permission matrix (the editable authorization source of
   // truth, migration 0036). `getRolePermissions` returns the effective map both
-  // the client `can()` and the P3 matrix UI read; `setRolePermission` toggles one
-  // cell (admin-only, with the admin-locked lockout guard). Additive foundation —
-  // no existing gate consults these yet (P2 does the swap).
+  // the client `can()` and the Roles matrix UI read; `setRolePermission` toggles
+  // one cell (admin-only, with the admin-locked lockout guard).
   getRolePermissions(): RolePermissionMap;
   setRolePermission(tier: RoleTier, permission: Permission, granted: boolean): void;
 
@@ -443,10 +442,6 @@ export interface DataProvider {
   setMemberRole(memberId: string, roleId: string): void;
   removeMember(memberId: string): void;
   resendInvite(memberId: string): void;
-  createRole(name: string): void;
-  renameRole(roleId: string, name: string): void;
-  deleteRole(roleId: string): void;
-  setCapability(roleId: string, capabilityId: string, granted: boolean): void;
 
   // per-student technical exclusions (Student review)
   uploadTechnicalErrors(cycleId: string, fileName: string, rows: TechnicalErrorRow[]): void;

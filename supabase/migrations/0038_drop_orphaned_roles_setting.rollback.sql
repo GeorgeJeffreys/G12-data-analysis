@@ -1,0 +1,3 @@
+-- 0038 rollback — no-op. The deleted `roles` workspace_settings row held the old
+-- mock roles × capabilities grid that no code reads any more; its removal is not
+-- meaningfully reversible and nothing depends on restoring it.

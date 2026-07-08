@@ -1299,28 +1299,6 @@ export interface MembersModel {
   roles: { id: string; name: string }[];
 }
 
-// --- Roles & permissions ----------------------------------------------------
-export interface Capability {
-  id: string;
-  group: string;
-  label: string;
-}
-
-export interface RoleDef {
-  id: string;
-  name: string;
-  isLead: boolean;
-  memberCount: number;
-}
-
-export interface RolesModel {
-  roles: RoleDef[];
-  /** Capabilities grouped for the grid, in display order. */
-  groups: { group: string; capabilities: Capability[] }[];
-  /** matrix[roleId][capabilityId] = granted. */
-  matrix: Record<string, Record<string, boolean>>;
-}
-
 // --- Audit log --------------------------------------------------------------
 export type AuditType =
   | "exclude"

@@ -85,7 +85,6 @@ import type {
   PerformanceReportModel,
   ReviewModel,
   ItemDetailModel,
-  RolesModel,
   BoundaryModel,
   BorderlineConfig,
   StudentReviewModel,
@@ -364,7 +363,6 @@ export class SupabaseDataProvider implements DataProvider {
     }
     this.realMembers = data ?? [];
   }
-  getRoles(): RolesModel { return this.inner.getRoles(); }
   listTestCentres(): TestCentreSummary[] { return this.inner.listTestCentres(); }
   getConfig(): ConfigModel { return this.inner.getConfig(); }
   getScoringConfig(): ScoringConfig { return this.inner.getScoringConfig(); }
@@ -655,27 +653,6 @@ export class SupabaseDataProvider implements DataProvider {
     await this.fetchMembers();
     this.bump();
   }
-  createRole(name: string): void {
-    this.inner.createRole(name);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "roles", p_value: this.inner.getRoles() });
-  }
-  renameRole(roleId: string, name: string): void {
-    this.inner.renameRole(roleId, name);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "roles", p_value: this.inner.getRoles() });
-  }
-  deleteRole(roleId: string): void {
-    this.inner.deleteRole(roleId);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "roles", p_value: this.inner.getRoles() });
-  }
-  setCapability(roleId: string, capabilityId: string, granted: boolean): void {
-    this.inner.setCapability(roleId, capabilityId, granted);
-    this.bump();
-    this.rpc("set_workspace_setting", { p_key: "roles", p_value: this.inner.getRoles() });
-  }
-
   // role → permission matrix (migration 0036). Read delegates to the hydrated
   // inner map; the write mutates the inner map (which applies the admin gate + the
   // admin-locked lockout guard), bumps, and persists via the definer RPC (the DB
