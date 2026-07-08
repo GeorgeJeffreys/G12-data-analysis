@@ -350,7 +350,10 @@ export class SupabaseDataProvider implements DataProvider {
    *  flagged `isCurrent` by the session id, so displayed identity = authenticated
    *  identity. NOT the mock member list. */
   getMembers(): MembersModel {
-    return buildMembersModel(this.realMembers, this.user.id);
+    // Roles are the DYNAMIC role rows (0040) — the same ids the roster resolves each
+    // member to (role_id) and the Roles × actions grid counts by — so the Users
+    // dropdown lists them and each row's value matches. NOT the legacy enum tiers.
+    return buildMembersModel(this.realMembers, this.user.id, this.inner.getRoles());
   }
 
   /** Load the real roster via the SECURITY DEFINER list_members RPC. */

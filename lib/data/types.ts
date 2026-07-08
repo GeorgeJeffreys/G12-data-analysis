@@ -30,6 +30,13 @@ export interface CurrentUser {
    * pre-hydration), it falls back to the seeded role id derived from `role`.
    */
   roleId?: string | null;
+  /**
+   * The membership's dynamic role display name (migration 0042 — resolved from
+   * `role_id → roles.name`). Drives the account-menu label so it shows the real
+   * role (incl. a custom role), not the enum-derived tier label. Absent in the
+   * in-memory demo, where the label falls back to `role`.
+   */
+  roleName?: string | null;
 }
 
 // Document/certificate generation is NOT a per-sitting pipeline step: certificates
