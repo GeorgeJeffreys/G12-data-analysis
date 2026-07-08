@@ -89,8 +89,8 @@ describe("incident review — base scores are untouched by the layer", () => {
   });
 });
 
-describe("incident review — commit is admin-only and explicit", () => {
-  it("an admin can apply and revert; a lower role cannot", () => {
+describe("incident review — commit gated on the `adjust` permission, explicit", () => {
+  it("apply/revert works, and denial follows the matrix (not the role)", () => {
     const p = new InMemoryDataProvider();
     const id = liveId(p);
     p.loadSampleIncidentRows(id);
@@ -104,15 +104,29 @@ describe("incident review — commit is admin-only and explicit", () => {
     p.unapplyIncidentAdjustments(id);
     expect(p.getIncidentReview(id)!.applied).toBe(false);
 
-    // A viewer cannot commit and sees canApply=false.
+    // Under the DEFAULT matrix a team member (viewer) holds `adjust`, so they can
+    // now commit — the P2 behaviour change (this used to be admin-only).
     const v = new InMemoryDataProvider();
     v.setCurrentUser(VIEWER);
     const vid = liveId(v);
     v.loadSampleIncidentRows(vid);
-    const vReview = v.getIncidentReview(vid)!;
-    expect(vReview.canApply).toBe(false);
+    expect(v.getIncidentReview(vid)!.canApply).toBe(true);
     v.applyIncidentAdjustments(vid);
-    expect(v.getIncidentReview(vid)!.applied).toBe(false); // no-op
+    expect(v.getIncidentReview(vid)!.applied).toBe(true);
+
+    // The gate reads the MATRIX: ungrant `adjust` from team_member and the same
+    // viewer is denied (canApply=false, apply is a no-op).
+    const d = new InMemoryDataProvider();
+    d.setCurrentUser(VIEWER);
+    d.applyRolePermissions([
+      { tier: "team_member", permission: "view", granted: true },
+      { tier: "team_member", permission: "clean", granted: true },
+      // adjust intentionally omitted → not granted
+    ]);
+    const did = liveId(d);
+    expect(d.getIncidentReview(did)!.canApply).toBe(false);
+    d.applyIncidentAdjustments(did);
+    expect(d.getIncidentReview(did)!.applied).toBe(false); // no-op
   });
 
   it("a viewer can still VIEW the review surface (all roles)", () => {

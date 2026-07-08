@@ -59,10 +59,26 @@ describe("Incident step page — config-driven by default", () => {
     expect(html).toContain("Apply adjustments"); // admin commit control
   });
 
-  it("a lower role sees the surface but cannot commit (Admin only)", async () => {
+  it("a team member sees the commit control under the default matrix (`adjust`)", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
     p.loadSampleIncidentRows(id);
+    p.setCurrentUser(VIEWER); // team_member holds `adjust` by default
+    activeProvider = p;
+    const html = await renderStep(id);
+    expect(html).toContain("Adjusted");
+    expect(html).toContain("Apply adjustments");
+  });
+
+  it("without the `adjust` permission the surface is read-only (Admin only)", async () => {
+    const p = new InMemoryDataProvider();
+    const id = p.listCycles()[0]!.id;
+    p.loadSampleIncidentRows(id); // seeded as the default admin
+    // Ungrant `adjust` from team_member (matrix-driven denial), then view as one.
+    p.applyRolePermissions([
+      { tier: "team_member", permission: "view", granted: true },
+      { tier: "team_member", permission: "clean", granted: true },
+    ]);
     p.setCurrentUser(VIEWER);
     activeProvider = p;
     const html = await renderStep(id);
