@@ -1,7 +1,9 @@
 /**
- * Settings › Roles page — the editable permission matrix render.
- * Admin sees editable toggles across the three fixed tiers; a lower role sees the
- * same matrix read-only. The admin × workspace_admin cell is always-on & locked.
+ * Settings › Roles page — the admin surface for configurable permissions (R2).
+ * Three sections: A · Permissions (create/edit/delete), B · Roles × permissions
+ * (grant grid), C · Capability catalogue (read-only reference). Admin sees the
+ * editing controls; a lower role sees everything read-only. The Admin ×
+ * Workspace-administration grant is always-on & locked.
  */
 import { describe, it, expect, vi } from "vitest";
 import { createElement as e } from "react";
@@ -28,39 +30,36 @@ async function render(): Promise<string> {
 
 const VIEWER: CurrentUser = { id: "v", name: "Vic", initials: "V", role: "viewer" };
 
-describe("Roles & permissions matrix page", () => {
-  it("renders the three fixed tiers, permission groups, and the immediate-effect copy", async () => {
+describe("Roles & permissions admin page", () => {
+  it("renders all three sections for an admin", async () => {
     activeProvider = new InMemoryDataProvider();
     const html = await render();
-    // The three canonical tier labels are the columns.
+    // A · Permissions — the section, the create control, a permission summary.
+    expect(html).toContain("Permissions");
+    expect(html).toContain("New permission");
+    expect(html).toContain("capabilities:"); // e.g. "1 capability: …" / "N capabilities: …"
+    // B · Roles × permissions — the tier columns + the lockout note.
     expect(html).toContain("G12 team member");
     expect(html).toContain("Data analyst");
     expect(html).toContain("Admin");
-    // Rows are the admin-editable PERMISSIONS, with their capability labels.
-    expect(html).toContain("Cut scores");
-    expect(html).toContain("Overrides");
-    expect(html).toContain("Audit access");
-    expect(html).toContain("Workspace administration");
-    expect(html).toContain("System"); // the system-permission badge
-    expect(html).toContain("Set cut scores"); // a capability sub-label
-    // The intro describes live editing.
-    expect(html).toContain("Changes take effect immediately");
-    // No custom-role machinery remains.
+    expect(html).toContain("must keep workspace administration");
+    // C · Capability catalogue — the model explainer + a capability key.
+    expect(html).toContain("Capability catalogue");
+    expect(html).toContain("Capabilities are the fixed operations the app enforces");
+    expect(html).toContain("override.marks_exclusions"); // a catalogue key
+    // System permission is labelled; no custom-role machinery remains.
+    expect(html).toContain("System");
     expect(html).not.toContain("Add role");
     expect(html).not.toContain("Data Scientist");
   });
 
-  it("shows the admin lockout note for the workspace_admin cell", async () => {
-    activeProvider = new InMemoryDataProvider();
-    const html = await render();
-    expect(html).toContain("must retain workspace administration");
-  });
-
-  it("a non-admin sees the matrix read-only", async () => {
+  it("a non-admin sees everything read-only (no create/edit controls)", async () => {
     const p = new InMemoryDataProvider();
     p.setCurrentUser(VIEWER);
     activeProvider = p;
     const html = await render();
     expect(html).toContain("read-only for your role");
+    expect(html).not.toContain("New permission");
+    expect(html).not.toContain(">Edit<");
   });
 });
