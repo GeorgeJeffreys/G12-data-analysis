@@ -1,26 +1,24 @@
 "use client";
 
 /**
- * Settings › Roles & permissions — the REAL, editable permission matrix.
+ * Settings › Roles & permissions — grant admin-defined PERMISSIONS to the three
+ * fixed canonical tiers.
  *
- * Rows = permissions (grouped via PERMISSION_GROUPS); columns = the three fixed
- * canonical tiers (team_member / analyst / admin). Each cell is a live toggle that
- * writes through `provider.setRolePermission`, which changes what the role can do
- * across the app (P2 enforces on this same map). The three roles are FIXED — only
- * their permissions are editable; there is no custom-role machinery any more.
+ * Rows = permissions (admin-editable bundles of capabilities, `getPermissions()`);
+ * columns = the tiers (team_member / analyst / admin); cells = live grant toggles
+ * that write through `setRoleGrant`. Enforcement resolves role → granted
+ * permissions → capabilities, so a toggle changes what the tier can do across the
+ * app immediately. Each permission lists the capabilities it bundles.
  *
  * Editing is gated on `workspace_admin`; everyone else sees it read-only. The
- * admin × workspace_admin cell (and any ADMIN_LOCKED_PERMISSIONS) is always-on and
- * disabled so the workspace can never lock itself out — the RPC refuses it too.
+ * Workspace-administration system permission can never be un-granted from admin
+ * (always-on & disabled) — the RPC refuses it too.
+ *
+ * (Composing permissions — create / edit which capabilities a permission bundles —
+ * arrives with the permission editor; this surface grants the existing set.)
  */
-import { Fragment } from "react";
 import { useProvider, useProviderData } from "@/lib/data/context";
-import {
-  PERMISSION_GROUPS,
-  can,
-  isAdminLocked,
-  type Permission,
-} from "@/lib/auth/permissions";
+import { can, guardsWorkspaceAdmin, type Permission } from "@/lib/auth/permissions";
 import { ROLE_TIERS, ROLE_TIER_LABEL, type RoleTier } from "@/lib/auth/roles";
 import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
@@ -29,10 +27,13 @@ import { settingsSubnav } from "@/lib/ui/subnav";
 
 export default function RolesPage() {
   const provider = useProvider();
-  const map = useProviderData((p) => p.getRolePermissions());
+  const permissions = useProviderData((p) => p.getPermissions());
+  const grants = useProviderData((p) => p.getRoleGrants());
+  const capabilities = useProviderData((p) => p.getCapabilities());
   const members = useProviderData((p) => p.getMembers().members);
   const canEdit = can(provider.getCurrentUser().role, "workspace_admin");
 
+  const capLabel = new Map(capabilities.map((c) => [c.key, c.label]));
   const memberCount = (tier: RoleTier) => members.filter((m) => m.roleId === tier).length;
 
   return (
@@ -42,7 +43,7 @@ export default function RolesPage() {
       subnav={settingsSubnav("roles")}
     >
       <div style={{ display: "flex", flexDirection: "column", padding: "26px 30px", gap: 18, flex: 1 }}>
-        <div style={{ maxWidth: 660 }}>
+        <div style={{ maxWidth: 680 }}>
           <div className="hf-h1">Roles &amp; permissions</div>
           <div className="hf-sub" style={{ marginTop: 7 }}>
             Grant each role the permissions it needs. Changes take effect immediately across the app.
@@ -58,7 +59,7 @@ export default function RolesPage() {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  <th className="hf-th" style={{ minWidth: 260 }}>Permission</th>
+                  <th className="hf-th" style={{ minWidth: 300 }}>Permission</th>
                   {ROLE_TIERS.map((tier) => (
                     <th key={tier} className="hf-th" style={{ textAlign: "center", width: 150 }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
@@ -72,59 +73,60 @@ export default function RolesPage() {
                 </tr>
               </thead>
               <tbody>
-                {PERMISSION_GROUPS.map((grp) => (
-                  <Fragment key={grp.group}>
-                    <tr>
-                      <td colSpan={1 + ROLE_TIERS.length} style={{ padding: "9px 12px 7px", background: H.canvas, borderBottom: `1px solid ${H.line}` }}>
-                        <span className="hf-lbl" style={{ fontSize: 9.5 }}>{grp.group}</span>
-                      </td>
-                    </tr>
-                    {grp.items.map((item) => (
-                      <tr key={item.id} className="hf-hover">
-                        <td className="hf-td" style={{ fontSize: 12.5, fontWeight: 500 }}>{item.label}</td>
-                        {ROLE_TIERS.map((tier) => (
-                          <PermissionCell
-                            key={tier}
-                            tier={tier}
-                            permission={item.id}
-                            granted={map[tier].has(item.id)}
-                            canEdit={canEdit}
-                            onToggle={() => provider.setRolePermission(tier, item.id, !map[tier].has(item.id))}
-                          />
-                        ))}
-                      </tr>
+                {permissions.map((perm) => (
+                  <tr key={perm.id} className="hf-hover">
+                    <td className="hf-td">
+                      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                        <span style={{ fontSize: 12.5, fontWeight: 600 }}>
+                          {perm.name}
+                          {perm.isSystem && <span style={{ marginLeft: 7, fontSize: 9, fontWeight: 700, color: H.ink3, textTransform: "uppercase", letterSpacing: 0.3 }}>System</span>}
+                        </span>
+                        <span style={{ fontSize: 10.5, color: H.ink3 }}>
+                          {perm.capabilities.map((c) => capLabel.get(c) ?? c).join(" · ")}
+                        </span>
+                      </div>
+                    </td>
+                    {ROLE_TIERS.map((tier) => (
+                      <GrantCell
+                        key={tier}
+                        perm={perm}
+                        tier={tier}
+                        granted={(grants[tier] ?? []).includes(perm.id)}
+                        canEdit={canEdit}
+                        onToggle={() => provider.setRoleGrant(tier, perm.id, !(grants[tier] ?? []).includes(perm.id))}
+                      />
                     ))}
-                  </Fragment>
+                  </tr>
                 ))}
               </tbody>
             </table>
           </div>
         </Card>
         <div className="hf-sub" style={{ fontSize: 12 }}>
-          The Admin role always keeps workspace administration (managing users, roles, centres &amp; deletion),
-          so the workspace can never be locked out — that cell is fixed on.
+          The Admin role always keeps Workspace administration (managing users, permissions, centres &amp;
+          deletion), so the workspace can never be locked out — that grant is fixed on.
         </div>
       </div>
     </Shell>
   );
 }
 
-/** One matrix cell. Locked (admin × an admin-locked permission) → always-on and
- *  disabled; read-only for non-admins; otherwise a live toggle. */
-function PermissionCell({
+/** One grant cell. The Workspace-administration system permission × admin is
+ *  always-on and disabled; read-only for non-admins; otherwise a live toggle. */
+function GrantCell({
+  perm,
   tier,
-  permission,
   granted,
   canEdit,
   onToggle,
 }: {
+  perm: Permission;
   tier: RoleTier;
-  permission: Permission;
   granted: boolean;
   canEdit: boolean;
   onToggle: () => void;
 }) {
-  const locked = tier === "admin" && isAdminLocked(permission);
+  const locked = tier === "admin" && guardsWorkspaceAdmin(perm);
   const interactive = canEdit && !locked;
   const title = locked
     ? "Always on — the Admin role must retain workspace administration."

@@ -38,7 +38,8 @@ import type {
   DistinctionOverrideRow,
   DocumentSettingsRow,
   WorkspaceSettingRow,
-  RolePermissionRow,
+  PermissionRow,
+  RoleGrantRow,
   ElementLabelRow,
   ImportBatchRow,
   MemberRole,
@@ -200,9 +201,10 @@ export interface DecisionState {
   workspace: Record<string, unknown>;
   /** Per-subject A–E element labels (0014); absent when the table is empty. */
   elementLabels?: ElementLabelsConfig;
-  /** The editable role → permission matrix (0036). Empty on a pre-migration or
-   *  fresh DB — the provider then keeps the ROLE_PERMISSION_DEFAULTS in place. */
-  rolePermissions: { tier: string; permission: string; granted: boolean }[];
+  /** Configurable permissions + role grants (0039). Empty on a pre-migration or
+   *  fresh DB — the provider then keeps the seeded defaults in place. */
+  permissions: { id: string; name: string; description: string | null; capabilities: string[]; is_system: boolean }[];
+  roleGrants: { tier: string; permission_id: string }[];
 }
 
 /** Group element-label rows (already sort_order-ordered) into the config shape. */
@@ -348,12 +350,11 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   const elementLabelRows = await sel<ElementLabelRow>(
     supabase.from("element_labels").select("*").order("sort_order", { ascending: true }),
   );
-  // 0036 — editable role → permission matrix (workspace-wide). `sel` tolerates a
-  // pre-migration DB (missing table → []), so hydrate never crashes before the
-  // migration is run; an empty result keeps the ROLE_PERMISSION_DEFAULTS in place.
-  const rolePermissionRows = await sel<RolePermissionRow>(
-    supabase.from("role_permissions").select("*"),
-  );
+  // 0039 — configurable permissions + role grants (workspace-wide). `sel` tolerates
+  // a pre-migration DB (missing table → []), so hydrate never crashes before the
+  // migration is run; empty results keep the seeded defaults in place.
+  const permissionRows = await sel<PermissionRow>(supabase.from("permissions").select("*"));
+  const roleGrantRows = await sel<RoleGrantRow>(supabase.from("role_grants").select("*"));
   const cleanExclusionRows = await sel<CleanExclusionRow>(
     supabase.from("clean_exclusions").select("*").eq("cycle_id", cycleId),
   );
@@ -716,7 +717,8 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     docSettings: (docRow?.settings as Record<string, unknown> | undefined) ?? null,
     workspace: Object.fromEntries(workspace.map((w) => [w.key, w.value])),
     elementLabels: elementLabelRows.length ? groupElementLabels(elementLabelRows) : undefined,
-    rolePermissions: rolePermissionRows.map((r) => ({ tier: r.tier, permission: r.permission, granted: r.granted })),
+    permissions: permissionRows.map((r) => ({ id: r.id, name: r.name, description: r.description, capabilities: r.capabilities ?? [], is_system: r.is_system })),
+    roleGrants: roleGrantRows.map((r) => ({ tier: r.tier, permission_id: r.permission_id })),
   };
 
   const subjectCodeToAssessmentId = new Map<string, string>();

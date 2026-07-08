@@ -32,7 +32,7 @@ vi.mock("@/lib/data/context", () => ({
 }));
 
 // The toggle is identical on every pipeline page; only the page actions differ.
-const SUBNAV = cyclesSubnav("c1", "pipeline");
+const SUBNAV = cyclesSubnav("c1", "pipeline", { audit: true });
 const CRUMB = [{ label: "Sittings", href: "/" }, { label: "May 2026", href: "/cycles/c1" }, { label: "Cut scores" }];
 
 function renderHeader(actions?: ReactNode): string {

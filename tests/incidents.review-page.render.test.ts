@@ -55,11 +55,9 @@ describe("Incident Adjustments review page", () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
     p.loadSampleIncidentRows(id); // seeded as the default admin
-    // Ungrant `adjust` from team_member (matrix-driven denial), then view as one.
-    p.applyRolePermissions([
-      { tier: "team_member", permission: "view", granted: true },
-      { tier: "team_member", permission: "clean", granted: true },
-    ]);
+    // Revoke the Adjustments permission from team_member (grant-driven denial),
+    // then view as one.
+    p.setRoleGrant("team_member", "perm-adjust", false);
     p.setCurrentUser(VIEWER);
     activeProvider = p;
     const html = await render(id);

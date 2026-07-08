@@ -13,8 +13,10 @@
  *    another user excluded). An override re-runs the FULL engine (incl. the D3
  *    safeguard) through the same path as the original action and is itself audited.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { useProviderData, useProvider } from "@/lib/data/context";
+import { can } from "@/lib/auth/permissions";
 import { H } from "@/lib/ui/tokens";
 import { CycleShell } from "@/components/shell/CycleShell";
 import { Button, Avatar, Badge, type BadgeTone } from "@/components/ui/primitives";
@@ -59,12 +61,26 @@ function when(iso: string): { time: string; day: string } {
 
 export default function AuditPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
+  const router = useRouter();
   const [view, setView] = useState<"history" | "overrides">("history");
   const [filter, setFilter] = useState<AuditFilter>("all");
   const [search, setSearch] = useState("");
   const model = useProviderData((p) => p.getAuditLog(cycleId, filter, search), [cycleId, filter, search]);
   const cycleName = useProviderData((p) => p.getCycle(cycleId)?.name, [cycleId]) ?? "Sitting";
   const { zoom, setZoom, scrollRef, zoomWrapStyle } = useTableZoom();
+
+  // The whole audit surface is gated on `audit.view` (0039).
+  const canAudit = useProviderData((p) => can(p.getCurrentUser?.()?.role ?? "viewer", "audit.view"));
+  useEffect(() => {
+    if (!canAudit) router.replace("/access-denied");
+  }, [canAudit, router]);
+  if (!canAudit) {
+    return (
+      <CycleShell cycleId={cycleId} cycleName={cycleName} page="Audit log" area="audit">
+        <div style={{ padding: 32, color: H.ink3, fontSize: 13 }}>Redirecting…</div>
+      </CycleShell>
+    );
+  }
 
   return (
     <CycleShell

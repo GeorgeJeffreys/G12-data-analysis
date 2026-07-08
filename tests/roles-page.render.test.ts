@@ -36,12 +36,14 @@ describe("Roles & permissions matrix page", () => {
     expect(html).toContain("G12 team member");
     expect(html).toContain("Data analyst");
     expect(html).toContain("Admin");
-    // Group headers + a couple of permission labels from PERMISSION_GROUPS.
-    expect(html).toContain("Grading");
-    expect(html).toContain("Administration");
-    expect(html).toContain("Set cut scores");
-    expect(html).toContain("Manage users, roles, centres &amp; deletion");
-    // The intro now describes live editing (no longer "MOCK").
+    // Rows are the admin-editable PERMISSIONS, with their capability labels.
+    expect(html).toContain("Cut scores");
+    expect(html).toContain("Overrides");
+    expect(html).toContain("Audit access");
+    expect(html).toContain("Workspace administration");
+    expect(html).toContain("System"); // the system-permission badge
+    expect(html).toContain("Set cut scores"); // a capability sub-label
+    // The intro describes live editing.
     expect(html).toContain("Changes take effect immediately");
     // No custom-role machinery remains.
     expect(html).not.toContain("Add role");

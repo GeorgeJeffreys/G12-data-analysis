@@ -1,12 +1,12 @@
 /**
- * P3 — editing the matrix changes live enforcement. Toggling a permission via
- * `setRolePermission` immediately changes `can()` for that tier AND the provider
- * gates that read the map (P2). The admin-locked cell can never be ungranted from
- * the UI/provider (the RPC refuses it too, as defence in depth).
+ * Editing role grants changes live enforcement (0039). Granting/revoking a
+ * PERMISSION to a tier via `setRoleGrant` immediately changes the tier's resolved
+ * capabilities AND the provider gates that read them. The Workspace-administration
+ * grant can never be revoked from admin (the RPC refuses it too).
  */
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { can } from "@/lib/auth/permissions";
+import { can, guardsWorkspaceAdmin, SEED_PERMISSION_IDS } from "@/lib/auth/permissions";
 import type { CurrentUser } from "@/lib/data/types";
 
 const CYCLE = "may-2026";
@@ -14,17 +14,21 @@ const ADMIN: CurrentUser = { id: "a", name: "Admin", initials: "A", role: "lead_
 const ANALYST: CurrentUser = { id: "n", name: "Ana", initials: "AN", role: "analyst" };
 
 const firstAssessment = (p: InMemoryDataProvider) => p.getGrades(CYCLE)!.assessments[0]!.id;
+const resolved = (p: InMemoryDataProvider) => {
+  // Re-resolve from the provider's live permissions + grants for assertions.
+  const perms = new Map(p.getPermissions().map((x) => [x.id, x]));
+  const capsFor = (tier: "team_member" | "analyst" | "admin") =>
+    new Set(p.getRoleGrants()[tier].flatMap((id) => perms.get(id)?.capabilities ?? []));
+  return { team_member: capsFor("team_member"), analyst: capsFor("analyst"), admin: capsFor("admin") };
+};
 
-describe("toggling a permission changes can() and enforcement for that tier", () => {
-  it("ungranting analyst `boundaries` disables cut-score editing for an analyst", () => {
+describe("granting/revoking a permission changes enforcement for that tier", () => {
+  it("revoking the Cut-scores permission from analyst disables cut-score editing", () => {
     const p = new InMemoryDataProvider(); // default user is admin
+    expect(resolved(p).analyst.has("boundaries")).toBe(true);
 
-    // Baseline: analyst holds `boundaries` by default.
-    expect(can("analyst", "boundaries", p.getRolePermissions())).toBe(true);
-
-    // Admin ungrants it.
-    p.setRolePermission("analyst", "boundaries", false);
-    expect(can("analyst", "boundaries", p.getRolePermissions())).toBe(false);
+    p.setRoleGrant("analyst", SEED_PERMISSION_IDS.boundaries, false);
+    expect(resolved(p).analyst.has("boundaries")).toBe(false);
 
     // Enforcement follows: as an analyst, setBoundary is now a no-op.
     p.setCurrentUser(ANALYST);
@@ -35,35 +39,45 @@ describe("toggling a permission changes can() and enforcement for that tier", ()
 
     // Admin grants it back → analyst can edit again.
     p.setCurrentUser(ADMIN);
-    p.setRolePermission("analyst", "boundaries", true);
+    p.setRoleGrant("analyst", SEED_PERMISSION_IDS.boundaries, true);
     p.setCurrentUser(ANALYST);
     p.setBoundary(CYCLE, aid, { cuts: [5, 3, 1] });
     expect(JSON.stringify(p.getBoundaries(CYCLE, aid)!.cuts)).not.toBe(before); // changed
   });
 
-  it("granting team_member `signoff` lets a team member lock the sitting", () => {
+  it("granting the Sign-off permission to team_member lets a team member lock", () => {
     const p = new InMemoryDataProvider();
-    expect(can("team_member", "signoff", p.getRolePermissions())).toBe(false);
-    p.setRolePermission("team_member", "signoff", true);
+    expect(resolved(p).team_member.has("signoff")).toBe(false);
+    p.setRoleGrant("team_member", SEED_PERMISSION_IDS.signoff, true);
 
     p.setCurrentUser({ id: "t", name: "Tam", initials: "T", role: "reviewer" });
     p.lockCycle(CYCLE);
     expect(p.getCycle(CYCLE)!.locked).toBe(true);
   });
+
+  it("a newly composed permission takes effect once granted", () => {
+    const p = new InMemoryDataProvider();
+    p.createPermission("Cut scores for team", "", ["boundaries"]);
+    const perm = p.getPermissions().find((x) => x.name === "Cut scores for team")!;
+    expect(resolved(p).team_member.has("boundaries")).toBe(false);
+    p.setRoleGrant("team_member", perm.id, true);
+    expect(resolved(p).team_member.has("boundaries")).toBe(true);
+  });
 });
 
-describe("the admin-locked cell can never be ungranted", () => {
-  it("refuses ungranting admin/workspace_admin (provider no-op)", () => {
+describe("the Workspace-administration grant can never be revoked from admin", () => {
+  it("refuses revoking it from admin (provider no-op)", () => {
     const p = new InMemoryDataProvider();
-    p.setRolePermission("admin", "workspace_admin", false);
-    expect(p.getRolePermissions().admin.has("workspace_admin")).toBe(true);
-    expect(can("admin", "workspace_admin", p.getRolePermissions())).toBe(true);
+    const wsId = p.getPermissions().find((x) => guardsWorkspaceAdmin(x))!.id;
+    p.setRoleGrant("admin", wsId, false);
+    expect(p.getRoleGrants().admin).toContain(wsId);
+    expect(can("lead_admin", "workspace_admin")).toBe(true);
   });
 
-  it("a non-admin cannot edit the matrix at all", () => {
+  it("a non-admin cannot edit grants at all", () => {
     const p = new InMemoryDataProvider();
     p.setCurrentUser(ANALYST);
-    p.setRolePermission("team_member", "boundaries", true);
-    expect(p.getRolePermissions().team_member.has("boundaries")).toBe(false);
+    p.setRoleGrant("team_member", SEED_PERMISSION_IDS.boundaries, true);
+    expect(resolved(p).team_member.has("boundaries")).toBe(false);
   });
 });

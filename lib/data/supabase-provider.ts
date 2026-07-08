@@ -25,7 +25,7 @@
  */
 import type { Database } from "@/lib/types/database";
 import { storageRoleForTier, type RoleTier } from "@/lib/auth/roles";
-import type { Permission, RolePermissionMap } from "@/lib/auth/permissions";
+import type { Capability, CapabilityDef, Permission, RoleGrants } from "@/lib/auth/permissions";
 import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-directory";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
@@ -254,9 +254,9 @@ export class SupabaseDataProvider implements DataProvider {
     for (const o of d.distinctionOverrides) p.overrideDistinctionCap(cid, o.studentId, o.reason);
     if (d.docSettings) p.setDocumentSettings(cid, d.docSettings as Partial<DocSettings>);
     this.applyWorkspace(p, d.workspace);
-    // 0036 — apply the persisted role → permission matrix over the seeded defaults
-    // (empty rows = fresh/pre-migration DB → defaults stand).
-    p.applyRolePermissions(d.rolePermissions);
+    // 0039 — apply the persisted permissions + role grants over the seeded defaults
+    // (empty = fresh/pre-migration DB → defaults stand).
+    p.applyConfigurablePermissions(d.permissions, d.roleGrants);
     if (d.elementLabels) p.setElementLabels(d.elementLabels);
     if (d.locked) p.lockCycle(cid); // last — freezes further edits
   }
@@ -653,15 +653,32 @@ export class SupabaseDataProvider implements DataProvider {
     await this.fetchMembers();
     this.bump();
   }
-  // role → permission matrix (migration 0036). Read delegates to the hydrated
-  // inner map; the write mutates the inner map (which applies the admin gate + the
-  // admin-locked lockout guard), bumps, and persists via the definer RPC (the DB
-  // re-checks both server-side).
-  getRolePermissions(): RolePermissionMap { return this.inner.getRolePermissions(); }
-  setRolePermission(tier: RoleTier, permission: Permission, granted: boolean): void {
-    this.inner.setRolePermission(tier, permission, granted);
+  // configurable permissions (migration 0039). Reads delegate to the hydrated
+  // inner state; writes mutate the inner state (which applies the admin gate + the
+  // Workspace-administration lockout guard), bump, and persist via the definer RPCs
+  // (the DB re-checks + re-guards server-side), then re-hydrate to pick up DB ids.
+  getCapabilities(): CapabilityDef[] { return this.inner.getCapabilities(); }
+  getPermissions(): Permission[] { return this.inner.getPermissions(); }
+  getRoleGrants(): RoleGrants { return this.inner.getRoleGrants(); }
+  createPermission(name: string, description: string, capabilities: Capability[]): void {
+    this.inner.createPermission(name, description, capabilities);
     this.bump();
-    this.rpc("set_role_permission", { p_tier: tier, p_permission: permission, p_granted: granted });
+    void this.rpcThenRehydrate("create_permission", { p_name: name, p_description: description, p_capabilities: capabilities });
+  }
+  updatePermission(id: string, name: string, description: string, capabilities: Capability[]): void {
+    this.inner.updatePermission(id, name, description, capabilities);
+    this.bump();
+    void this.rpcThenRehydrate("update_permission", { p_id: id, p_name: name, p_description: description, p_capabilities: capabilities });
+  }
+  deletePermission(id: string): void {
+    this.inner.deletePermission(id);
+    this.bump();
+    void this.rpcThenRehydrate("delete_permission", { p_id: id });
+  }
+  setRoleGrant(tier: RoleTier, permissionId: string, granted: boolean): void {
+    this.inner.setRoleGrant(tier, permissionId, granted);
+    this.bump();
+    this.rpc("set_role_grant", { p_tier: tier, p_permission_id: permissionId, p_granted: granted });
   }
 
   // technical errors / student-review — legacy surface, no DB backing; local only.

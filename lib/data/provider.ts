@@ -87,7 +87,7 @@ import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/imp
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
-import type { Permission, RolePermissionMap, RoleTier } from "@/lib/auth/permissions";
+import type { Capability, CapabilityDef, Permission, RoleGrants, RoleTier } from "@/lib/auth/permissions";
 
 /** One row of the optional technical-errors spreadsheet (columns: student, question, error). */
 export interface TechnicalErrorRow {
@@ -284,16 +284,22 @@ export interface DataProvider {
   getDocuments(cycleId: string): DocumentsModel | null;
 
   // settings: users. The three FIXED canonical tiers are the only assignable
-  // roles (see getMembers().roles); their PERMISSIONS are edited via the matrix
-  // below, not a custom-role editor.
+  // roles (see getMembers().roles); which permissions each tier holds is managed
+  // via the configurable-permissions API below, not a custom-role editor.
   getMembers(): MembersModel;
 
-  // settings: role → permission matrix (the editable authorization source of
-  // truth, migration 0036). `getRolePermissions` returns the effective map both
-  // the client `can()` and the Roles matrix UI read; `setRolePermission` toggles
-  // one cell (admin-only, with the admin-locked lockout guard).
-  getRolePermissions(): RolePermissionMap;
-  setRolePermission(tier: RoleTier, permission: Permission, granted: boolean): void;
+  // settings: configurable permissions (migration 0039). Enforcement resolves
+  // role → granted permissions → their capabilities. `getCapabilities` is the
+  // fixed code catalogue; `getPermissions` are the admin-editable bundles;
+  // `getRoleGrants` is tier → permission ids. The setters are admin-only and
+  // enforce the Workspace-administration lockout guard (client mirror of the RPC).
+  getCapabilities(): CapabilityDef[];
+  getPermissions(): Permission[];
+  getRoleGrants(): RoleGrants;
+  createPermission(name: string, description: string, capabilities: Capability[]): void;
+  updatePermission(id: string, name: string, description: string, capabilities: Capability[]): void;
+  deletePermission(id: string): void;
+  setRoleGrant(tier: RoleTier, permissionId: string, granted: boolean): void;
 
   // settings: test centres (top-level scoping dimension — migration 0010)
   /** Every test centre (active + inactive), for the management list. */
