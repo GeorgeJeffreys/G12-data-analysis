@@ -55,7 +55,7 @@ import type { ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 import { SUBJECT_CATALOG, isSurveyAssessment } from "./subject-catalog";
 import { isTechnicalIncidentStatus } from "./result-status";
-import { isEssaySubject, reservedEssayMax } from "./essays";
+import { isEssaySubject, reservedEssayMax, ESSAY_ITEM_MAX } from "./essays";
 import type {
   AssembleScoreAnalysisArgs,
   AssembleItemAnalysisArgs,
@@ -167,6 +167,9 @@ import {
   type EssayMarksModel,
   type EssayStudentMark,
   type EssaySubjectRef,
+  type EssayUploadContext,
+  type EssaySubjectContext,
+  type EssayRosterEntry,
   type AdjustmentsModel,
   type AdjustmentIncident,
   type DiagnosticsModel,
@@ -3055,6 +3058,47 @@ export class InMemoryDataProvider implements DataProvider {
       unmatchedIds: st.unmatchedIds,
       preview,
     };
+  }
+
+  /**
+   * Read-only context that drives the essay-marks template + the pre-write
+   * validation report. For each essay subject we list the participants who sat it
+   * (distinct response participants), keyed on the SAME id the parser/matcher
+   * consume (`matchEssayStudent`), and flag any whose sitting is already excluded
+   * on the Clean tab (cohort exclusion OR per-subject row removal) so validation
+   * can report "flagged, not applied" instead of silently applying a mark to a
+   * removed sitting. Nothing here writes.
+   */
+  getEssayContext(cycleId: string): EssayUploadContext | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const essayIds = new Set(this.essaySubjectIds());
+    const cohortExcluded = this.cohortExcludedSet();
+    const labelOf = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    const subjects: EssaySubjectContext[] = this.seed.liveCycle.assessments
+      .filter((a) => essayIds.has(a.id))
+      .map((a) => {
+        const removed = this.cleanRowSet(a.id);
+        const seen = new Set<string>();
+        const participants: EssayRosterEntry[] = [];
+        for (const r of a.responses) {
+          if (seen.has(r.p)) continue;
+          seen.add(r.p);
+          participants.push({
+            participantId: r.p,
+            name: labelOf(r.p),
+            excluded: cohortExcluded.has(r.p) || !!removed?.has(r.p),
+          });
+        }
+        participants.sort((x, y) => x.name.localeCompare(y.name));
+        return {
+          assessmentId: a.id,
+          // Only essay subjects reach here; the non-English one is Arabic.
+          code: /english/i.test(a.name) ? "ESL" : "AFL",
+          name: a.name,
+          participants,
+        };
+      });
+    return { cycleId, essayItemMax: ESSAY_ITEM_MAX, subjects };
   }
 
   // ── incident log → alterations triage (Part 3) ────────────────────────────

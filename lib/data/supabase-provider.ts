@@ -90,6 +90,7 @@ import type {
   StudentReviewModel,
   DistinctionSafeguardModel,
   EssayMarksModel,
+  EssayUploadContext,
   AdjustmentsModel,
   IncidentConfigModel,
   IncidentReviewModel,
@@ -378,6 +379,7 @@ export class SupabaseDataProvider implements DataProvider {
   getCompareCycles(cycleIds?: string[]): CompareCyclesModel { return this.inner.getCompareCycles(cycleIds); }
   getNewCycle(): NewCycleModel { return this.inner.getNewCycle(); }
   getEssayMarks(cycleId: string): EssayMarksModel | null { return this.inner.getEssayMarks(cycleId); }
+  getEssayContext(cycleId: string): EssayUploadContext | null { return this.inner.getEssayContext(cycleId); }
   getAdjustments(cycleId: string): AdjustmentsModel | null { return this.inner.getAdjustments(cycleId); }
   getCgj(cycleId: string): CgjModel | null { return this.inner.getCgj(cycleId); }
   getComposition(cycleId: string): CompositionModel | null { return this.inner.getComposition(cycleId); }

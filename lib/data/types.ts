@@ -570,6 +570,36 @@ export interface EssayMarksModel {
   preview: { headers: string[]; rows: (string | number | null)[][] };
 }
 
+// --- Essay marks: upload context (template + pre-write validation) -----------
+/** One roster participant for an essay subject, as the template pre-populates it. */
+export interface EssayRosterEntry {
+  /** The identifier the parser/matcher consumes (P-A internal id / ParticipantID). */
+  participantId: string;
+  /** Human label for the template + review table. */
+  name: string;
+  /** True when this participant's sitting is already excluded on the Clean tab. */
+  excluded: boolean;
+}
+/** An essay subject with its roster, for the template builder + validator. */
+export interface EssaySubjectContext {
+  assessmentId: string;
+  /** File sheet code — AFL (Arabic) / ESL (English). */
+  code: "AFL" | "ESL";
+  name: string;
+  participants: EssayRosterEntry[];
+}
+/**
+ * Everything the client needs to build the essay-marks template and validate an
+ * uploaded file BEFORE writing: the essay subjects, their current rosters, and
+ * the max mark per essay cell. Read-only — this never touches a persistence path.
+ */
+export interface EssayUploadContext {
+  cycleId: string;
+  /** Max mark for a single essay entry (each `essay_mark` cell is 0..this). */
+  essayItemMax: number;
+  subjects: EssaySubjectContext[];
+}
+
 // --- Adjustments: incident triage → alterations ------------------------------
 export interface AdjustmentIncident {
   id: string;
