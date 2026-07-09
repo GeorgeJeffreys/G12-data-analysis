@@ -73,7 +73,12 @@ export function validateEssayRows(
     }
 
     const id = row.participantId.trim().toLowerCase();
-    const entry = subject.participants.find((p) => p.participantId.trim().toLowerCase() === id);
+    // Match on EITHER the internal participant id OR the real Student ID
+    // (qm_participant_id, e.g. A-A-260506) — the masterfile joins on Student ID,
+    // mirroring the provider's matcher which accepts both.
+    const entry = subject.participants.find(
+      (p) => p.participantId.trim().toLowerCase() === id || (p.studentId ?? "").trim().toLowerCase() === id,
+    );
     if (!entry) {
       results.push({
         row,
