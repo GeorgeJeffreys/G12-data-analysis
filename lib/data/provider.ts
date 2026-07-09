@@ -74,6 +74,7 @@ import type {
   StudentReviewModel,
   DistinctionSafeguardModel,
   EssayMarksModel,
+  EssayUploadContext,
   AdjustmentsModel,
   CompositionModel,
   DiagnosticsModel,
@@ -459,6 +460,12 @@ export interface DataProvider {
 
   // essay marks (English/Arabic only — optional, non-blocking upload at Ingest)
   getEssayMarks(cycleId: string): EssayMarksModel | null;
+  /**
+   * Read-only context for the essay-marks template + pre-write validation: the
+   * essay subjects, their current rosters (with Clean-tab exclusion flags), and
+   * the per-cell max mark. Never writes; null when the cycle carries no data.
+   */
+  getEssayContext(cycleId: string): EssayUploadContext | null;
   uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void;
   loadSampleEssayMarks(cycleId: string): void;
   clearEssayMarks(cycleId: string): void;
