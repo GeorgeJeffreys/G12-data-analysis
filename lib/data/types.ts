@@ -264,6 +264,12 @@ export interface RawColumnMeta {
   major: string | null;
   sub: string | null;
   demand: string | null;
+  /**
+   * The item's maximum score. `0` marks an unscored stimulus / instruction /
+   * welcome page (the "41st item" that is counted but sits outside the scored
+   * denominator — see docs/diagnostics/2026-07-clean-count-and-cr-flow.md).
+   */
+  maxScore: number;
   /** Configured A–E letter for this item's major element (Settings → Element labels). */
   elLetter?: string | null;
   /** Configured display label for this item's major element. */
@@ -291,6 +297,12 @@ export interface RawDataModel {
   assessments: AssessmentRef[];
   participants: number;
   items: number;
+  /**
+   * Items that count toward marks (`maxScore ≥ 1`). `items - scoredItems` is the
+   * number of unscored stimulus/instruction items — the source of the Clean tab's
+   * "41 total vs 40 scored" split.
+   */
+  scoredItems: number;
   /** Number of major elements present (varies by subject). */
   elementsCount: number;
   subElementsCount: number;
@@ -343,6 +355,14 @@ export interface DataCleaningModel {
    * inspector shows as struck cohort removals.
    */
   cohortExcludedRows: string[];
+  /**
+   * Item (column) ids soft-deleted at the Clean stage (`setCleanRemoval` col
+   * targets). Kept VISIBLE in `columns` and struck through — like excluded rows —
+   * so a column removal reads as "still here, just excluded" and can be reversed
+   * in place. The exclusion propagates to scoring/denominator through the same
+   * parity-safe path item-review exclusions use; the raw file is never touched.
+   */
+  excludedCols: string[];
 }
 
 /**

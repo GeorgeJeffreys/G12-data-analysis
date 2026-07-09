@@ -1212,6 +1212,7 @@ export class InMemoryDataProvider implements DataProvider {
         major: it.major,
         sub: it.sub,
         demand: it.demand,
+        maxScore: it.maxScore ?? 1,
         elLetter: resolved?.letter ?? null,
         elLabel: resolved?.label ?? null,
       };
@@ -1294,6 +1295,7 @@ export class InMemoryDataProvider implements DataProvider {
       assessments: refs,
       participants: this.participantsIn(a).size,
       items: a.items.length,
+      scoredItems: a.items.filter((it) => (it.maxScore ?? 1) >= 1).length,
       elementsCount: byElement.length,
       subElementsCount,
       demand: this.demandCounts(a),
@@ -1324,18 +1326,17 @@ export class InMemoryDataProvider implements DataProvider {
       fail: checks.filter((c) => c.status === "fail").length,
     };
     const { columns, rows } = this.rawMatrix(a);
-    // Apply the non-destructive clean-stage removals: drop removed columns (and
-    // their cells) from the CLEANED view. Removed ROWS stay VISIBLE and are struck
-    // through instead of vanishing, so a per-subject removal reads as "still here,
-    // just excluded from this subject" and can be reversed in place. `rawMatrix`
-    // itself is untouched, so getRawData still shows the full raw file.
+    // Apply the non-destructive clean-stage removals. Removed COLUMNS and ROWS both
+    // stay VISIBLE and are struck through instead of vanishing, so a removal reads
+    // as "still here, just excluded" and can be reversed in place. `rawMatrix`
+    // itself is untouched, so getRawData still shows the full raw file. The
+    // exclusion (of either kind) reaches scoring through `excludedSet`, not through
+    // this view — so keeping columns visible here is presentational only.
     const remRows = this.cleanRows.get(`${cycleId}:${assessmentId}`);
     const remCols = this.cleanCols.get(`${cycleId}:${assessmentId}`);
-    const colKeep = columns.map((c, i) => ({ c, i })).filter((x) => !remCols?.has(x.c.id));
-    const cleanedColumns = colKeep.map((x) => x.c);
-    const cleanedRows = rows.map((r) =>
-      remCols && remCols.size ? { ...r, cells: colKeep.map((x) => r.cells[x.i] ?? null) } : r,
-    );
+    const cleanedColumns = columns;
+    const cleanedRows = rows;
+    const excludedCols = columns.filter((c) => remCols?.has(c.id)).map((c) => c.id);
     // Struck rows have two scopes, both kept visible: PER-SUBJECT removals (this
     // sitting only — `setCleanRemoval`) and COHORT-WIDE exclusions (every subject —
     // `excludeParticipantFromCohort`, incl. seeded staff/test accounts). The union
@@ -1357,6 +1358,7 @@ export class InMemoryDataProvider implements DataProvider {
       excludedRows,
       subjectExcludedRows,
       cohortExcludedRows,
+      excludedCols,
     };
   }
 

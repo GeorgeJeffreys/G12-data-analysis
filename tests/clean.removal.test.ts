@@ -56,9 +56,12 @@ describe("Clean-stage removals", () => {
     p.setCleanRemoval(cycleId, assessmentId, { cols: [col] }, true);
 
     const after = p.getDataCleaning(cycleId, assessmentId)!;
-    expect(after.columns.length).toBe(before.columns.length - 1);
-    expect(after.columns.some((c) => c.id === col)).toBe(false);
-    // Cells stay aligned to the (now-shorter) column list.
+    // A column removal keeps the column VISIBLE and struck (reversible in place),
+    // exactly like a row removal — not dropped from the view.
+    expect(after.columns.length).toBe(before.columns.length);
+    expect(after.columns.some((c) => c.id === col)).toBe(true);
+    expect(after.excludedCols).toContain(col);
+    // Cells stay aligned to the (still-full) column list.
     expect(after.rows[0]!.cells.length).toBe(after.columns.length);
 
     // Raw-scores view drops the removed item from the scored max.
@@ -93,15 +96,17 @@ describe("Clean-stage removals", () => {
 
     // Restore just the row.
     p.setCleanRemoval(cycleId, assessmentId, { rows: [row] }, false);
-    let mid = p.getDataCleaning(cycleId, assessmentId)!;
+    const mid = p.getDataCleaning(cycleId, assessmentId)!;
     expect(mid.rowsAfter).toBe(before.rowsAfter);
-    expect(mid.columns.length).toBe(before.columns.length - 1); // column still gone
+    expect(mid.excludedCols).toContain(col); // column still struck (visible)
+    expect(mid.columns.length).toBe(before.columns.length); // kept visible, not dropped
 
     // Revert all restores everything.
     p.clearCleanRemovals(cycleId, assessmentId);
     const reverted = p.getDataCleaning(cycleId, assessmentId)!;
     expect(reverted.rowsAfter).toBe(before.rowsAfter);
     expect(reverted.columns.length).toBe(before.columns.length);
+    expect(reverted.excludedCols).toEqual([]);
   });
 
   // ── Task 2: a Clean change must propagate to every downstream computation ──
@@ -179,6 +184,17 @@ describe("Clean-stage removals", () => {
       items: items.filter((i) => i.itemId !== "qX"),
     }).groups.find((g) => g.level === "subject")!;
     expect(cleaned.alpha).not.toBeNull();
+  });
+
+  it("getRawData exposes the scored-vs-total item split (the 41-vs-40 answer)", () => {
+    const { p, cycleId, assessmentId } = setup();
+    const raw = p.getRawData(cycleId, assessmentId)!;
+    // Applicable Math (first subject): 41 items total, 40 scored (one maxScore-0
+    // stimulus/instruction item). scoredItems is the mark denominator's item count.
+    expect(raw.scoredItems).toBeLessThanOrEqual(raw.items);
+    expect(raw.scoredItems).toBe(raw.columns.filter((c) => c.maxScore >= 1).length);
+    // At least one unscored stimulus item exists in the sample data for this subject.
+    expect(raw.items - raw.scoredItems).toBeGreaterThan(0);
   });
 
   it("does not change scores when nothing is removed (parity-safe default)", () => {
