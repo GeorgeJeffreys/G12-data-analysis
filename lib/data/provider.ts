@@ -144,8 +144,21 @@ export interface EssayUploadRow {
   participantId: string;
   /** Subject sheet code: AFL (Arabic 1st Language) or ESL (English 2nd Language). */
   subjectCode: "AFL" | "ESL";
-  /** The essay's final mark out of 20 (the TotalScore column). */
+  /**
+   * The mark this row contributes /20. For the per-essay template flow this is a
+   * single essay's mark (the provider averages a student's rows). For the
+   * reconciling masterfile flow this is the ONE already-reconciled subject essay
+   * /20 (`round_half_up(essay_1/2 + essay_2/2)`) — a single row per student, so
+   * the provider's averaging is identity and the value reaches the engine as-is.
+   */
   totalScore: number;
+  /**
+   * How many essays this row represents, for the "pending" disclosure only. The
+   * masterfile flow sets it to the true essay count (2) even though it emits ONE
+   * reconciled row; the per-essay flow omits it (each row = one essay). Never used
+   * as the averaging divisor.
+   */
+  essayCount?: number;
 }
 
 export interface SetBoundaryInput {

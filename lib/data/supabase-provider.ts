@@ -715,10 +715,12 @@ export class SupabaseDataProvider implements DataProvider {
     const translated = rows.map((r) => ({ ...r, participantId: this.qmToUuid.get(r.participantId) ?? r.participantId }));
     this.inner.uploadEssayMarks(cycleId, fileName, translated);
     this.bump();
+    // Send the FULL merged set (all languages) so the full-cycle-replace RPC keeps
+    // separately-uploaded languages intact. The inner provider merges per subject.
     void this.rpcThenRehydrate("upsert_essay_marks", {
       p_cycle: cycleId,
       p_file_ref: fileName,
-      p_marks: this.aggregateEssays(translated),
+      p_marks: this.inner.essayMarksForPersistence(cycleId),
     });
   }
   loadSampleEssayMarks(cycleId: string): void {
@@ -1046,25 +1048,5 @@ export class SupabaseDataProvider implements DataProvider {
     }
     await this.rehydrate();
     return data;
-  }
-
-  // helper: average essay rows to one final mark per participant+subject
-  private aggregateEssays(rows: EssayUploadRow[]): { participant_id: string; assessment_id: string; mark: number; essays_counted: number }[] {
-    const acc = new Map<string, { participant: string; assessment: string; sum: number; n: number }>();
-    for (const r of rows) {
-      const assessment = this.subjectToAssessment.get(r.subjectCode);
-      if (!assessment) continue;
-      const key = `${r.participantId}|${assessment}`;
-      const e = acc.get(key) ?? { participant: r.participantId, assessment, sum: 0, n: 0 };
-      e.sum += r.totalScore;
-      e.n += 1;
-      acc.set(key, e);
-    }
-    return [...acc.values()].map((e) => ({
-      participant_id: e.participant,
-      assessment_id: e.assessment,
-      mark: Math.round((e.sum / e.n) * 100) / 100, // CONFIRM: mean of per-essay TotalScores
-      essays_counted: e.n,
-    }));
   }
 }

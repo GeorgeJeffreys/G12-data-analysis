@@ -2938,12 +2938,18 @@ export class InMemoryDataProvider implements DataProvider {
    * marking team aggregates differently.
    */
   private buildEssayState(rows: EssayUploadRow[], sample: boolean, fileName: string | null) {
-    const agg = new Map<string, { participantId: string; subjectCode: string; sum: number; count: number }>();
+    // `count` is the number of per-essay rows summed (the averaging divisor);
+    // `essays` is the number of essays represented (for the pending disclosure),
+    // which the reconciling masterfile flow supplies via `row.essayCount` even
+    // though it emits ONE already-reconciled row per student. They coincide for
+    // the per-essay template flow (each row = one essay, essayCount omitted → 1).
+    const agg = new Map<string, { participantId: string; subjectCode: string; sum: number; count: number; essays: number }>();
     for (const r of rows) {
       const k = `${r.participantId}|${r.subjectCode}`;
-      const e = agg.get(k) ?? { participantId: r.participantId, subjectCode: r.subjectCode, sum: 0, count: 0 };
+      const e = agg.get(k) ?? { participantId: r.participantId, subjectCode: r.subjectCode, sum: 0, count: 0, essays: 0 };
       e.sum += r.totalScore;
       e.count += 1;
+      e.essays += r.essayCount ?? 1;
       agg.set(k, e);
     }
     const marks: EssayMark[] = [];
@@ -2960,24 +2966,87 @@ export class InMemoryDataProvider implements DataProvider {
         continue;
       }
       marks.push({ participantId: stud.id, assessmentId: a.id, mark: e.count ? e.sum / e.count : 0 });
-      essayCounts.set(`${stud.id}|${a.id}`, e.count);
+      essayCounts.set(`${stud.id}|${a.id}`, e.essays);
     }
     return { uploaded: true, sample, fileName, marks, essayCounts, unmatchedIds: [...unmatched] };
   }
 
+  /** Essay subjects (assessment ids) touched by an upload's rows, matched or not. */
+  private essaySubjectsTouched(rows: EssayUploadRow[]): Set<string> {
+    const touched = new Set<string>();
+    for (const r of rows) {
+      const a = this.essayAssessmentForCode(r.subjectCode);
+      if (a) touched.add(a.id);
+    }
+    return touched;
+  }
+
+  /**
+   * Upsert essay marks, merging PER SUBJECT so each language file can be uploaded
+   * separately: the incoming file fully replaces the marks for the subject(s) it
+   * covers and leaves every other subject's marks intact. Re-uploading the same
+   * language file replaces that subject's marks → idempotent, never duplicated.
+   */
   uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void {
     if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
-    const st = this.buildEssayState(rows, false, fileName);
+    const incoming = this.buildEssayState(rows, false, fileName);
+    const touched = this.essaySubjectsTouched(rows);
+    const prev = this.essayMarksByCycle.get(cycleId);
+    const st = prev && prev.uploaded ? this.mergeEssayState(prev, incoming, touched) : incoming;
     this.essayMarksByCycle.set(cycleId, st);
     const students = new Set(st.marks.map((m) => m.participantId)).size;
     this.audit(
       "upload",
       "Added essay-marks file",
-      `${fileName} — ${st.marks.length} subject marks across ${students} students (${st.unmatchedIds.length} unmatched IDs)`,
+      `${fileName} — ${st.marks.length} subject marks across ${students} students (${incoming.unmatchedIds.length} unmatched IDs)`,
       cycleId,
     );
     this.bump();
+  }
+
+  /** Merge an incoming essay state onto the previous one, replacing only the
+   *  subjects the incoming file covers (keyed on assessment id in the map keys). */
+  private mergeEssayState(
+    prev: ReturnType<InMemoryDataProvider["buildEssayState"]>,
+    incoming: ReturnType<InMemoryDataProvider["buildEssayState"]>,
+    touched: Set<string>,
+  ): ReturnType<InMemoryDataProvider["buildEssayState"]> {
+    const keptMarks = prev.marks.filter((m) => !touched.has(m.assessmentId));
+    const marks = [...keptMarks, ...incoming.marks];
+    const essayCounts = new Map<string, number>();
+    for (const m of keptMarks) {
+      const key = `${m.participantId}|${m.assessmentId}`;
+      const v = prev.essayCounts.get(key);
+      if (v != null) essayCounts.set(key, v);
+    }
+    for (const [k, v] of incoming.essayCounts) essayCounts.set(k, v);
+    const unmatchedIds = [...new Set([...prev.unmatchedIds, ...incoming.unmatchedIds])];
+    return {
+      uploaded: true,
+      sample: prev.sample && incoming.sample,
+      fileName: incoming.fileName,
+      marks,
+      essayCounts,
+      unmatchedIds,
+    };
+  }
+
+  /**
+   * The merged essay marks for persistence (Supabase RPC): one row per
+   * (participant, assessment) with the stored mark and the essay count. Reads the
+   * already-merged in-memory state so the full-cycle-replace RPC receives EVERY
+   * language's marks (keeping separate-language uploads intact in the database).
+   */
+  essayMarksForPersistence(cycleId: string): { participant_id: string; assessment_id: string; mark: number; essays_counted: number }[] {
+    const st = this.essayMarksByCycle.get(cycleId);
+    if (!st) return [];
+    return st.marks.map((m) => ({
+      participant_id: m.participantId,
+      assessment_id: m.assessmentId,
+      mark: Math.round(m.mark * 100) / 100,
+      essays_counted: st.essayCounts.get(`${m.participantId}|${m.assessmentId}`) ?? 1,
+    }));
   }
 
   /**
@@ -3073,7 +3142,9 @@ export class InMemoryDataProvider implements DataProvider {
     if (cycleId !== this.seed.liveCycle.id) return null;
     const essayIds = new Set(this.essaySubjectIds());
     const cohortExcluded = this.cohortExcludedSet();
-    const labelOf = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
+    const byId = new Map(this.seed.liveCycle.participants.map((p) => [p.id, p]));
+    const labelOf = (id: string) => byId.get(id)?.label ?? id;
+    const studentIdOf = (id: string) => byId.get(id)?.studentId ?? id;
     const subjects: EssaySubjectContext[] = this.seed.liveCycle.assessments
       .filter((a) => essayIds.has(a.id))
       .map((a) => {
@@ -3085,6 +3156,7 @@ export class InMemoryDataProvider implements DataProvider {
           seen.add(r.p);
           participants.push({
             participantId: r.p,
+            studentId: studentIdOf(r.p),
             name: labelOf(r.p),
             excluded: cohortExcluded.has(r.p) || !!removed?.has(r.p),
           });

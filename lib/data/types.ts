@@ -575,6 +575,12 @@ export interface EssayMarksModel {
 export interface EssayRosterEntry {
   /** The identifier the parser/matcher consumes (P-A internal id / ParticipantID). */
   participantId: string;
+  /**
+   * The real external Student ID (`qm_participant_id`, e.g. `A-A-260506`) — the
+   * masterfile join key. Mirrors the provider's matcher, which accepts either the
+   * internal id OR this Student ID; validation matches the uploaded file on it.
+   */
+  studentId: string;
   /** Human label for the template + review table. */
   name: string;
   /** True when this participant's sitting is already excluded on the Clean tab. */
