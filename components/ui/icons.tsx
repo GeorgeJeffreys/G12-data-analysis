@@ -20,6 +20,7 @@ export type IconName =
   | "mail"
   | "dots"
   | "trash"
+  | "filter"
   | "eye";
 
 export function Icon({
@@ -149,6 +150,12 @@ export function Icon({
       return (
         <svg viewBox="0 0 16 16" style={st}>
           <path d="M3 4.5h10M6 4.5V3h4v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5" {...p} />
+        </svg>
+      );
+    case "filter":
+      return (
+        <svg viewBox="0 0 16 16" style={st}>
+          <path d="M2.5 4h11L9.5 9v3.5l-3 1.5V9z" {...p} />
         </svg>
       );
     default:

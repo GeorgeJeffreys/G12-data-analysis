@@ -34,9 +34,9 @@ export function cyclesSubnav(
   ];
 }
 
-export function analyticsSubnav(active: "trends" | "compare"): SubnavItem[] {
+export function analyticsSubnav(active: "overall" | "compare"): SubnavItem[] {
   return [
-    { label: "Trends", href: "/analytics", on: active === "trends" },
+    { label: "Overall", href: "/analytics", on: active === "overall" },
     { label: "Compare cycles", href: "/analytics/compare", on: active === "compare" },
   ];
 }
