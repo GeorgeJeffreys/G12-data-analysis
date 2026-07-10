@@ -1,145 +1,116 @@
 /**
- * Reconciling essay-masterfile parser (prompt 03) — the REAL double-marking file
- * (CSV, one per language), reconciled per the SIGNED-OFF policy. The parser MUST
- * reproduce the independently hand-computed oracle table EXACTLY under
- * `ESSAY_ROUND_STAGE='sum'`.
+ * Essay workbook parser (prompt 03). Reads the marking team's moderated
+ * `Adjusted scores (USE THESE)` column directly (never recomputed), routes each
+ * sheet to its subject by name, joins on the QM email. Reproduces the acceptance
+ * oracle for `ESSAY_MARK_ROUNDING='half_up'`.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
-  parseMasterfileMatrix,
-  reconcileMasterfile,
+  parseEssayMasterfile,
+  extractSheet,
+  sheetSubjectCode,
   inferEssayLanguage,
+  roundEssayMark,
   roundHalfUp,
-  masterfileToUploadRows,
-  ESSAY_ROUND_STAGE,
+  ESSAY_MARK_ROUNDING,
   ESSAY_ITEM_MAX,
 } from "@/lib/data/parse-essay-masterfile";
 
 const FIX = join(__dirname, "fixtures", "essays");
-const masterCsv = () => readFileSync(join(FIX, "FEB26_English_Essay_master__with_QM_ID.csv"), "utf-8");
-const anomalyCsv = () => readFileSync(join(FIX, "feb26-english-essay-master-anomalies.csv"), "utf-8");
+const workbookFile = () =>
+  new File([readFileSync(join(FIX, "FEB26_essay_master_workbook.xlsx"))], "FEB26_essay_master_workbook.xlsx");
 
-/** Student ID → QM email crosswalk, loaded from the fixture. */
-function loadCrosswalk(): Map<string, string> {
-  const text = readFileSync(join(FIX, "essay-studentid-to-email-crosswalk.csv"), "utf-8");
-  return new Map(
-    text.trim().split(/\r?\n/).slice(1).map((l) => l.split(",").map((c) => c.trim())).map((c) => [c[0]!, c[1]!]),
-  );
-}
+/** Acceptance oracle: student → email, English /20, Arabic /20 (half_up rounding). */
+const ORACLE: Record<string, { email: string; en: number; ar: number; enRaw: number; arRaw: number }> = {
+  afraa: { email: "afraa.abdullah.alsama@gmail.com", en: 19, ar: 17, enRaw: 19.0, arRaw: 16.75 },
+  abed: { email: "abed.alahmad@alsamaproject.com", en: 15, ar: 15, enRaw: 15.25, arRaw: 14.5 },
+  amal: { email: "amal.alkhalaf.alsama@gmail.com", en: 13, ar: 15, enRaw: 12.5, arRaw: 15.0 },
+  dalal: { email: "dalal.hasan.alsama@gmail.com", en: 19, ar: 15, enRaw: 19.25, arRaw: 15.25 },
+  elaph: { email: "elaph.hawran.alsama@gmail.com", en: 16, ar: 19, enRaw: 16.0, arRaw: 18.5 },
+  "fatima.alissa": { email: "fatima.alissa.alsama@gmail.com", en: 15, ar: 14, enRaw: 15.0, arRaw: 14.0 },
+  "fatima.aljasem": { email: "fatima.aljasem.alsama@gmail.com", en: 17, ar: 15, enRaw: 17.0, arRaw: 15.0 },
+  hussien: { email: "hussien.diab@alsamaproject.com", en: 18, ar: 16, enRaw: 18.25, arRaw: 15.75 },
+  louay: { email: "louay.alkadro@alsamaproject.com", en: 13, ar: 14, enRaw: 13.0, arRaw: 13.5 },
+  marah: { email: "marah.fadel0@gmail.com", en: 16, ar: 16, enRaw: 15.5, arRaw: 16.25 },
+  maram: { email: "maram.alkhoder.alsama@gmail.com", en: 18, ar: 16, enRaw: 18.25, arRaw: 15.75 },
+  marwa: { email: "marwa.alomar@alsamaproject.com", en: 17, ar: 16, enRaw: 17.25, arRaw: 16.0 },
+  "nour.alissa": { email: "nour.alissa@alsamaproject.com", en: 16, ar: 14, enRaw: 16.0, arRaw: 13.75 },
+  "nour.zaqzaq": { email: "nour.zaqzaq@alsamaproject.com", en: 16, ar: 16, enRaw: 16.25, arRaw: 16.0 },
+  oula: { email: "oula.abed.alkhalaf.2007@gmail.com", en: 17, ar: 13, enRaw: 16.75, arRaw: 13.0 },
+  safa: { email: "safa.alomarii21@gmail.com", en: 17, ar: 18, enRaw: 16.75, arRaw: 17.5 },
+  wissal: { email: "wissal.algaber.alsama@gmail.com", en: 19, ar: 15, enRaw: 18.5, arRaw: 15.25 },
+};
 
-/** The signed-off oracle (ROUND_SUM) + the rejected ROUND_EACH, from the fixture. */
-function loadOracle(): { studentId: string; e1: number; e2: number; roundSum: number; roundEach: number }[] {
-  const text = readFileSync(join(FIX, "essay-reconciled-english.csv"), "utf-8");
-  return text
-    .trim()
-    .split("\n")
-    .slice(1)
-    .map((line) => line.split(","))
-    .map((c) => ({ studentId: c[0]!, e1: Number(c[2]), e2: Number(c[3]), roundSum: Number(c[4]), roundEach: Number(c[5]) }));
-}
-
-describe("round_half_up", () => {
-  it("rounds up on a 0.5", () => {
+describe("rounding", () => {
+  it("ESSAY_MARK_ROUNDING defaults to half_up; roundEssayMark applies round_half_up", () => {
+    expect(ESSAY_MARK_ROUNDING).toBe("half_up");
+    expect(ESSAY_ITEM_MAX).toBe(20);
+    expect(roundHalfUp(15.25)).toBe(15);
+    expect(roundHalfUp(18.5)).toBe(19);
     expect(roundHalfUp(15.5)).toBe(16);
-    expect(roundHalfUp(12.5)).toBe(13);
-    expect(roundHalfUp(18.0)).toBe(18);
-    expect(roundHalfUp(16.49)).toBe(16);
+    expect(roundEssayMark(16.75)).toBe(17);
+    expect(roundEssayMark(12.5)).toBe(13);
   });
 });
 
-describe("inferEssayLanguage", () => {
-  it("maps the real filenames to a subject code by the language word", () => {
-    expect(inferEssayLanguage("[INTERNAL] FEB26 marking masterfile [AFL ESL] (English Essay master).csv")).toBe("ESL");
-    expect(inferEssayLanguage("[INTERNAL] FEB26 marking masterfile [AFL ESL] (Arabic Essay master).csv")).toBe("AFL");
-    expect(inferEssayLanguage("اللغة العربية.csv")).toBe("AFL");
+describe("sheet / filename routing", () => {
+  it("routes sheet names and filenames to subject codes", () => {
+    expect(sheetSubjectCode("English Essay master")).toBe("ESL");
+    expect(sheetSubjectCode("Arabic Essay master")).toBe("AFL");
+    expect(sheetSubjectCode("اللّغة العربيّة")).toBe("AFL");
+    expect(sheetSubjectCode("Sheet1")).toBeNull();
+    expect(inferEssayLanguage("something English master.csv")).toBe("ESL");
     expect(inferEssayLanguage("random.csv")).toBeNull();
   });
 });
 
-describe("reconcile masterfile — signed-off oracle (ROUND_SUM)", () => {
-  it("the policy constant is 'sum'", () => {
-    expect(ESSAY_ROUND_STAGE).toBe("sum");
-    expect(ESSAY_ITEM_MAX).toBe(20);
-  });
+describe("workbook → Adjusted extraction + oracle (half_up)", () => {
+  it("routes both sheets and reproduces the acceptance oracle for every student", async () => {
+    const result = await parseEssayMasterfile(workbookFile());
+    expect(result.subjectsSeen.sort()).toEqual(["AFL", "ESL"]);
 
-  it("reproduces all 17 hand-computed ROUND_SUM values exactly", async () => {
-    const matrix = await parseMasterfileMatrix(masterCsv());
-    const result = reconcileMasterfile(matrix, "ESL");
-    expect(result.anomalies).toHaveLength(0);
-    expect(result.reconciled).toHaveLength(17);
+    const en = new Map(result.students.filter((s) => s.subjectCode === "ESL").map((s) => [s.studentName, s]));
+    const ar = new Map(result.students.filter((s) => s.subjectCode === "AFL").map((s) => [s.studentName, s]));
+    expect(en.size).toBe(17);
+    expect(ar.size).toBe(17);
 
-    const byId = new Map(result.reconciled.map((s) => [s.studentId, s]));
-    for (const o of loadOracle()) {
-      const got = byId.get(o.studentId);
-      expect(got, `missing ${o.studentId}`).toBeTruthy();
-      // approved per-essay marks read from Moderated-else-Final, ignoring Average/Total
-      expect(got!.essays).toEqual([o.e1, o.e2]);
-      // the authoritative signed-off value
-      expect(got!.subjectEssay, `ROUND_SUM ${o.studentId}`).toBe(o.roundSum);
-      expect(got!.subjectEssaySum).toBe(o.roundSum);
-      // the rejected alternative is computed but not used
-      expect(got!.subjectEssayEach).toBe(o.roundEach);
+    for (const [name, o] of Object.entries(ORACLE)) {
+      const e = en.get(name)!;
+      expect(e, `English ${name}`).toBeTruthy();
+      expect(e.adjustedRaw).toBe(o.enRaw); // read directly, not recomputed
+      expect(e.subjectEssay, `English ${name} /20`).toBe(o.en);
+      expect(e.email).toBe(o.email); // QM email carried, lower-cased
+
+      const a = ar.get(name)!;
+      expect(a.adjustedRaw).toBe(o.arRaw);
+      expect(a.subjectEssay, `Arabic ${name} /20`).toBe(o.ar);
     }
   });
 
-  it("the three students where rounding matters use the SUM value, not EACH", async () => {
-    const matrix = await parseMasterfileMatrix(masterCsv());
-    const byId = new Map(reconcileMasterfile(matrix, "ESL").reconciled.map((s) => [s.studentId, s]));
-    // E-H-100108 → 18 (not 19), L-K-051006 → 13 (not 14), S-O-300503 → 17 (not 18)
-    expect(byId.get("E-H-100108")!.subjectEssay).toBe(18);
-    expect(byId.get("L-K-051006")!.subjectEssay).toBe(13);
-    expect(byId.get("S-O-300503")!.subjectEssay).toBe(17);
-    // and their EACH values differ, proving the fixture exercises the divergence
-    expect(byId.get("E-H-100108")!.subjectEssayEach).toBe(19);
-    expect(byId.get("L-K-051006")!.subjectEssayEach).toBe(14);
-    expect(byId.get("S-O-300503")!.subjectEssayEach).toBe(18);
-  });
-
-  it("Moderated final score overrides Final scores when present", async () => {
-    // In the fixture, A-A-260506/EE01 has Moderated=17 with a deliberately wrong
-    // Final=99; the parser must take the Moderated value.
-    const matrix = await parseMasterfileMatrix(masterCsv());
-    const s = reconcileMasterfile(matrix, "ESL").reconciled.find((x) => x.studentId === "A-A-260506")!;
-    expect(s.essays[0]).toBe(17); // Moderated won, not 99
-  });
-
-  it("reads the QM email column (matched by name, appended at the end) as the join key", async () => {
-    const matrix = await parseMasterfileMatrix(masterCsv());
-    const byId = new Map(reconcileMasterfile(matrix, "ESL").reconciled.map((s) => [s.studentId, s]));
-    const crosswalk = loadCrosswalk();
-    // every student carries the crosswalk email, lower-cased, on the reconciled row
-    for (const [studentId, email] of crosswalk) {
-      expect(byId.get(studentId)!.email).toBe(email.toLowerCase());
-    }
-  });
-
-  it("emits ONE reconciled upload row per student keyed on the QM email, with the /20 and essay count", async () => {
-    const matrix = await parseMasterfileMatrix(masterCsv());
-    const rows = masterfileToUploadRows(reconcileMasterfile(matrix, "ESL"));
-    expect(rows).toHaveLength(17);
-    // keyed on the QM email — NOT the Alsama Student ID
-    const r = rows.find((x) => x.participantId === "abed.alahmad@alsamaproject.com")!;
-    expect(r).toBeTruthy();
-    expect(r.subjectCode).toBe("ESL");
-    expect(r.totalScore).toBe(16); // the reconciled /20, ready for the engine
-    expect(r.essayCount).toBe(2);
-    // the Student ID is never used as the key
-    expect(rows.some((x) => x.participantId === "A-A-260506")).toBe(false);
+  it("ignores Dim/Total/Average/Final/Moderated junk columns (only Adjusted is read)", async () => {
+    // The fixture fills Total=88, Average=77, Moderated=88, Final=99 on every anchor
+    // row; the oracle values come only from Adjusted, so those must be ignored.
+    const result = await parseEssayMasterfile(workbookFile());
+    const abed = result.students.find((s) => s.subjectCode === "ESL" && s.studentName === "abed")!;
+    expect(abed.subjectEssay).toBe(15); // from Adjusted 15.25, not 88/77/99
   });
 });
 
-describe("reconcile masterfile — anomalies are flagged, never dropped", () => {
-  it("surfaces a 1-essay student and an essay with no approved mark; keeps the good one", async () => {
-    const matrix = await parseMasterfileMatrix(anomalyCsv());
-    const result = reconcileMasterfile(matrix, "ESL");
-    // good.student reconciles (16, 14) → 8 + 7 = 15
-    expect(result.reconciled.map((s) => s.studentId)).toEqual(["X-3-000003"]);
-    expect(result.reconciled[0]!.subjectEssay).toBe(15);
+describe("extractSheet — forward-fill + missing Adjusted", () => {
+  const HEADER = ["Student ID", "Student name", "Total score", "Adjusted scores (USE THESE)", "QM email"];
 
-    const reasons = new Map(result.anomalies.map((a) => [a.studentId, a.reason]));
-    expect(reasons.get("X-1-000001")).toMatch(/found 1/i);
-    expect(reasons.get("X-2-000002")).toMatch(/no approved mark/i);
+  it("forward-fills a blank Student ID onto the anchor row and takes the single Adjusted", () => {
+    const matrix = [
+      HEADER,
+      ["S1", "one", "88", "17.25", "one@x.com"],
+      ["", "", "66", "", ""], // detail row → same student
+      ["S2", "two", "88", "", "two@x.com"], // no Adjusted → subjectEssay null
+    ];
+    const out = extractSheet(matrix, "ESL");
+    expect(out).toHaveLength(2);
+    expect(out[0]).toMatchObject({ studentLabel: "S1", email: "one@x.com", adjustedRaw: 17.25, subjectEssay: 17 });
+    expect(out[1]).toMatchObject({ studentLabel: "S2", email: "two@x.com", adjustedRaw: null, subjectEssay: null });
   });
 });

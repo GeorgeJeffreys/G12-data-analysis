@@ -1,17 +1,16 @@
 /**
- * Masterfile flow end-to-end through the provider (prompt 03): reconcile → validate
- * against the roster (join on the QM email) → apply via the EXISTING uploadEssayMarks
- * at HALF weight → idempotent re-upload → each language uploaded separately merges.
- * Anomalies (off-roster email, ≠2 essays) are reported and excluded, never dropped.
+ * Essay workbook flow end-to-end through the provider (prompt 03): extract the
+ * Adjusted /20 → validate against the roster (join on QM email) → apply via the
+ * EXISTING uploadEssayMarks at FULL weight → idempotent re-upload → each subject
+ * merges. Off-roster email / no-Adjusted are reported and excluded, never dropped.
  *
- * In the seed the roster's join key (studentId) is a P-code, so the tests feed that
- * value in the QM email column — the join matches on it exactly as production
- * matches on the email. The Student ID column carries a distinct label to prove it
- * is never the join key.
+ * In the seed the roster's join key (studentId) is a P-code, so tests feed that
+ * value in the QM email column; the join matches on it exactly as production
+ * matches on the email. The Student ID column carries a distinct label.
  */
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { reconcileMasterfile, type EssaySubjectCode } from "@/lib/data/parse-essay-masterfile";
+import { extractSheet, type EssaySubjectCode } from "@/lib/data/parse-essay-masterfile";
 import { validateEssayMasterfile } from "@/lib/data/validate-essay-masterfile";
 import seedJson from "@/lib/data/seed.generated.json";
 
@@ -22,136 +21,94 @@ const CYCLE = seed.liveCycle.id;
 const english = seed.liveCycle.assessments.find((a) => /english/i.test(a.name))!;
 const arabic = seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name))!;
 
-const HEADER = [
-  "Marker A", "Student name", "Student ID", "Essay ID", "Marker",
-  "Dim1", "Dim2", "Dim3", "Dim4", "Dim5", "Total score", "Average", "Flag",
-  "Moderated final score", "Final scores:", "note", "QM Participant ID (email)",
-];
+const HEADER = ["Student ID", "Student name", "Total score", "Adjusted scores (USE THESE)", "QM email"];
+type Row = { email: string; adjusted: number };
 
-type Row = { email: string; essays: number[] };
-
-/** Build a masterfile row matrix: two marker rows per essay, approved on Final. */
-function buildMatrix(students: Row[]): string[][] {
-  const rows: string[][] = [HEADER];
-  students.forEach((s, si) => {
-    s.essays.forEach((mark, i) => {
-      const eid = `EE0${i + 1}.png`;
-      // Student ID column is a DISTINCT label (never the join key); Average/Total bogus.
-      rows.push(["M1", "name", `LABEL-${si}`, eid, "One", "3", "4", "3", "4", "3", "88", "77", "", "", String(mark), "ok", s.email]);
-      rows.push(["M2", "name", `LABEL-${si}`, eid, "Two", "4", "3", "4", "3", "4", "66", "", "", "", "", "", s.email]);
-    });
-  });
-  return rows;
+function extract(code: EssaySubjectCode, students: Row[]) {
+  const matrix = [HEADER, ...students.map((s, i) => [`L-${i}`, "name", "88", String(s.adjusted), s.email])];
+  return { students: extractSheet(matrix, code), subjectsSeen: [code], skippedSheets: [] as string[] };
 }
 
-/** Roster join keys (the studentId = QM email in prod) for an essay subject. */
 function rosterIds(p: InMemoryDataProvider, assessmentId: string): string[] {
   const ctx = p.getEssayContext(CYCLE)!;
-  return ctx.subjects.find((s) => s.assessmentId === assessmentId)!.participants
-    .filter((x) => !x.excluded)
-    .map((x) => x.studentId);
+  return ctx.subjects.find((s) => s.assessmentId === assessmentId)!.participants.filter((x) => !x.excluded).map((x) => x.studentId);
 }
 
-function applyMasterfile(p: InMemoryDataProvider, code: EssaySubjectCode, students: Row[]) {
-  const result = reconcileMasterfile(buildMatrix(students), code);
-  const report = validateEssayMasterfile(result, p.getEssayContext(CYCLE)!);
-  p.uploadEssayMarks(CYCLE, `${code}.csv`, report.valid);
+function apply(p: InMemoryDataProvider, code: EssaySubjectCode, students: Row[]) {
+  const report = validateEssayMasterfile(extract(code, students), p.getEssayContext(CYCLE)!);
+  p.uploadEssayMarks(CYCLE, `${code}.xlsx`, report.valid);
   return report;
 }
 
-describe("masterfile → provider, join on the QM email", () => {
-  it("reconciled /20 lands on the subject at half weight (halved exactly once)", () => {
+describe("workbook → provider, join on QM email, full weight", () => {
+  it("the Adjusted /20 lands on the subject at full weight (not halved again)", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
-    // essays 17 + 14 → round_half_up(8.5 + 7) = round_half_up(15.5) = 16
-    const report = applyMasterfile(p, "ESL", [{ email: id, essays: [17, 14] }]);
+    const report = apply(p, "ESL", [{ email: id, adjusted: 15.25 }]); // half_up → 15
     expect(report.validCount).toBe(1);
 
-    const cell = p.getComposition(CYCLE)!.students.find((s) => s.participantId === id)!
+    const pid = p.getEssayContext(CYCLE)!.subjects.find((s) => s.assessmentId === english.id)!.participants[0]!.participantId;
+    const cell = p.getComposition(CYCLE)!.students.find((s) => s.participantId === pid)!
       .subjects.find((s) => s.assessmentId === english.id)!;
-    // reserved half-weighted max = 20; the reconciled /20 enters the numerator as-is.
-    expect(cell.essay).toBe(16);
-
-    const model = p.getEssayMarks(CYCLE)!;
-    const st = model.students.find((s) => s.participantId === id)!;
-    expect(st.marks[english.id]).toBe(16);
-    expect(st.essayCounts[english.id]).toBe(2); // true essay count preserved for disclosure
+    expect(cell.essay).toBe(15); // full weight into the reserved 20
   });
 
-  it("re-uploading the same language is idempotent (no duplicate marks)", () => {
+  it("re-uploading the same subject is idempotent (no duplicate marks)", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
-    applyMasterfile(p, "ESL", [{ email: id, essays: [18, 16] }]); // → round(9+8)=17
+    apply(p, "ESL", [{ email: id, adjusted: 18.5 }]); // → 19
     const first = p.getEssayMarks(CYCLE)!;
-    applyMasterfile(p, "ESL", [{ email: id, essays: [18, 16] }]);
+    apply(p, "ESL", [{ email: id, adjusted: 18.5 }]);
     const second = p.getEssayMarks(CYCLE)!;
     expect(second.matchedCount).toBe(first.matchedCount);
-    expect(second.students.find((s) => s.participantId === id)!.marks[english.id]).toBe(17);
+    expect(second.students.find((s) => s.participantId === id)!.marks[english.id]).toBe(19);
   });
 
-  it("each language uploads separately and merges — English is kept when Arabic is added", () => {
+  it("English and Arabic apply separately and merge — English survives an Arabic upload", () => {
     const p = new InMemoryDataProvider();
     const eid = rosterIds(p, english.id)[0]!;
     const aid = rosterIds(p, arabic.id)[0]!;
-    applyMasterfile(p, "ESL", [{ email: eid, essays: [20, 20] }]); // English → 20
-    applyMasterfile(p, "AFL", [{ email: aid, essays: [10, 10] }]); // Arabic → 10
+    apply(p, "ESL", [{ email: eid, adjusted: 20 }]);
+    apply(p, "AFL", [{ email: aid, adjusted: 10 }]);
     const model = p.getEssayMarks(CYCLE)!;
-    // English mark survived the later Arabic upload
     expect(model.students.find((s) => s.participantId === eid)!.marks[english.id]).toBe(20);
     expect(model.students.find((s) => s.participantId === aid)!.marks[arabic.id]).toBe(10);
   });
 });
 
-describe("pending disclosure clears per language once applied (Task 6)", () => {
-  // Mirror the card's per-subject pending computation: roster (non-excluded)
-  // participants that do not yet have a mark for that subject.
+describe("pending disclosure clears per subject once applied", () => {
   function pendingFor(p: InMemoryDataProvider, assessmentId: string): number {
     const ctx = p.getEssayContext(CYCLE)!;
     const model = p.getEssayMarks(CYCLE)!;
     const withMark = new Set(model.students.filter((s) => s.marks[assessmentId] != null).map((s) => s.participantId));
-    const roster = ctx.subjects.find((s) => s.assessmentId === assessmentId)!.participants.filter((x) => !x.excluded);
-    return roster.filter((x) => !withMark.has(x.participantId)).length;
+    return ctx.subjects.find((s) => s.assessmentId === assessmentId)!.participants.filter((x) => !x.excluded && !withMark.has(x.participantId)).length;
   }
 
-  it("applying English clears English pending while Arabic stays pending", () => {
+  it("applying English clears English pending, Arabic stays pending", () => {
     const p = new InMemoryDataProvider();
     const englishRoster = rosterIds(p, english.id);
-    const arabicPendingBefore = pendingFor(p, arabic.id);
-    expect(pendingFor(p, english.id)).toBe(englishRoster.length);
-
-    // Apply every English student, leaving Arabic untouched.
-    applyMasterfile(p, "ESL", englishRoster.map((email) => ({ email, essays: [15, 15] })));
+    const arabicBefore = pendingFor(p, arabic.id);
+    apply(p, "ESL", englishRoster.map((email) => ({ email, adjusted: 15 })));
     expect(pendingFor(p, english.id)).toBe(0);
-    expect(pendingFor(p, arabic.id)).toBe(arabicPendingBefore); // unchanged
+    expect(pendingFor(p, arabic.id)).toBe(arabicBefore);
   });
 });
 
-describe("masterfile anomalies — reported and excluded, never silently dropped", () => {
+describe("anomalies reported and excluded, never silently dropped", () => {
   it("an off-roster email is rejected and not applied", () => {
     const p = new InMemoryDataProvider();
-    const report = applyMasterfile(p, "ESL", [{ email: "nobody@nowhere.com", essays: [12, 12] }]);
+    const report = apply(p, "ESL", [{ email: "nobody@nowhere.com", adjusted: 12 }]);
     expect(report.validCount).toBe(0);
     expect(report.rejectedCount).toBe(1);
     expect(report.rows[0]!.reason).toMatch(/not in the .* roster/i);
     expect(p.getEssayMarks(CYCLE)!.matchedCount).toBe(0);
   });
 
-  it("a student with only 1 essay is reported (≠2 essays) and excluded", () => {
-    const p = new InMemoryDataProvider();
-    const id = rosterIds(p, english.id)[0]!;
-    const report = applyMasterfile(p, "ESL", [{ email: id, essays: [15] }]);
-    expect(report.validCount).toBe(0);
-    // the ≠2-essays anomaly is surfaced (keyed on the Student ID label from the file)
-    const anomaly = report.rows.find((r) => r.reason?.match(/found 1/i))!;
-    expect(anomaly).toBeTruthy();
-    expect(anomaly.status).toBe("rejected");
-  });
-
   it("a flagged (Clean-excluded) sitting is not applied", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
     p.setCleanRemoval(CYCLE, english.id, { rows: [id] }, true);
-    const report = applyMasterfile(p, "ESL", [{ email: id, essays: [15, 15] }]);
+    const report = apply(p, "ESL", [{ email: id, adjusted: 15 }]);
     expect(report.flaggedCount).toBe(1);
     expect(report.validCount).toBe(0);
   });
