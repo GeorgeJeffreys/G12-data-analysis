@@ -21,25 +21,28 @@ import { OVSlicerDropdowns, OVActiveSlice, OVAccordion, defaultFinalSlice, sanit
 const KEY = "g12_overall_slice";
 
 export default function OverallPage() {
-  const analytics = useProviderData((p) => p.getOverallAnalytics());
+  // `universe` = the full programme (every centre) — drives the slicer menus,
+  // the active-slice readout totals, and the persisted-slice reconciliation, so
+  // the menus stay stable regardless of what's selected.
+  const universe = useProviderData((p) => p.getOverallAnalytics());
 
   // Future years (no data yet) — the four years after the latest live year.
   const futureYears = useMemo(() => {
-    const last = analytics.years[analytics.years.length - 1] ?? new Date().getFullYear();
+    const last = universe.years[universe.years.length - 1] ?? new Date().getFullYear();
     return [1, 2, 3, 4].map((i) => last + i);
-  }, [analytics.years]);
+  }, [universe.years]);
 
   // Persisted slice, reconciled against the current read-model on load.
-  const [slice, setSlice] = useState<FinalSlice>(() => defaultFinalSlice(analytics));
+  const [slice, setSlice] = useState<FinalSlice>(() => defaultFinalSlice(universe));
   useEffect(() => {
     try {
       const raw = localStorage.getItem(KEY);
-      setSlice(sanitizeSlice(raw ? JSON.parse(raw) : null, analytics));
+      setSlice(sanitizeSlice(raw ? JSON.parse(raw) : null, universe));
     } catch {
-      setSlice(defaultFinalSlice(analytics));
+      setSlice(defaultFinalSlice(universe));
     }
     // Reconcile once against the loaded model; re-run if the model's dimensions change.
-  }, [analytics.years.join(","), analytics.centres.join(","), analytics.subjects.map((s) => s.key).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [universe.years.join(","), universe.centres.join(","), universe.subjects.map((s) => s.key).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     try {
@@ -49,7 +52,13 @@ export default function OverallPage() {
     }
   }, [slice]);
 
-  const legacy = finalToLegacy(slice, analytics);
+  // The sections read a read-model RE-POOLED for the selected centres, so a
+  // centre subset re-slices participation / perf / awardDist — not just the
+  // per-centre columns. Recompute-on-change is cheap (the data is tiny).
+  const centreKey = [...slice.centres].sort().join(",");
+  const analytics = useProviderData((p) => p.getOverallAnalytics({ centres: slice.centres }), [centreKey]);
+
+  const legacy = finalToLegacy(slice, universe);
 
   return (
     <Shell active="Analytics" crumb={[{ label: "Analytics" }, { label: "Overall" }]} subnav={analyticsSubnav("overall")}>
@@ -62,9 +71,9 @@ export default function OverallPage() {
                 Programme performance over time — reach, outcomes, and consistency across partner centres. Expand any section; every collapsed card still answers its question at a glance.
               </div>
             </div>
-            <OVActiveSlice slice={slice} analytics={analytics} />
+            <OVActiveSlice slice={slice} analytics={universe} />
           </div>
-          <OVSlicerDropdowns slice={slice} setSlice={setSlice} analytics={analytics} futureYears={futureYears} />
+          <OVSlicerDropdowns slice={slice} setSlice={setSlice} analytics={universe} futureYears={futureYears} />
           <OVAccordion analytics={analytics} slice={legacy} />
         </div>
       </div>

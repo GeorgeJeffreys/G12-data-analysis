@@ -1286,6 +1286,13 @@ export interface CentreSubjectSpread {
   sd: number;
 }
 
+/** Optional filter for `getOverallAnalytics`. `centres` re-pools every figure
+ *  from just the named centres (the cells are filtered by centre name before
+ *  `computeOverallAnalytics` re-runs). Empty/omitted = the full programme view. */
+export interface OverallAnalyticsFilter {
+  centres?: string[];
+}
+
 export interface OverallAnalytics {
   /** Live years present, ascending. */
   years: number[];

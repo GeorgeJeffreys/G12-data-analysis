@@ -66,6 +66,7 @@ import type {
   AnalyticsCompare,
   AnalyticsTrends,
   OverallAnalytics,
+  OverallAnalyticsFilter,
   CompareCyclesModel,
   AuditFilter,
   AuditModel,
@@ -407,11 +408,15 @@ export class SupabaseDataProvider implements DataProvider {
    * (fresh/pre-seed DB), it falls back to the inner in-memory demo so the page
    * still renders — mirroring getAnalyticsTrends' clearly-labelled priors.
    */
-  getOverallAnalytics(): OverallAnalytics {
-    if (this.overall.cells.length === 0) return this.inner.getOverallAnalytics();
+  getOverallAnalytics(filter?: OverallAnalyticsFilter): OverallAnalytics {
+    if (this.overall.cells.length === 0) return this.inner.getOverallAnalytics(filter);
     const g = this.inner.getGradingDefaults();
+    // A centre subset re-pools every figure from just those cells; the full
+    // subject list is kept so the sections can still offer every subject to pick.
+    const sel = filter?.centres;
+    const cells = sel && sel.length ? this.overall.cells.filter((c) => sel.includes(c.centre)) : this.overall.cells;
     return computeOverallAnalytics({
-      cells: this.overall.cells,
+      cells,
       subjects: this.overall.subjects,
       awards: overallAwardBands(g.awardLevels),
       plevels: overallPLevels(g.performanceLevels),

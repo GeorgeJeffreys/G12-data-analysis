@@ -46,9 +46,13 @@ export interface CentreSel {
   sel: string[];
 }
 export interface LegacySlice {
+  /** Single sitting lens: "February" | "May" | "Combined". */
   exam: string;
   year: number | "trend";
   centre: CentreSel;
+  /** The selected subject keys (≥1). Sections show/aggregate over exactly these. */
+  subjects: string[];
+  /** Convenience: the single subject when exactly one is selected, else null. */
   subject: string | null;
   /** Sorted selected LIVE years — threaded so sections pick cur/prev dynamically. */
   years: number[];
