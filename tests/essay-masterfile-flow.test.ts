@@ -1,8 +1,13 @@
 /**
  * Masterfile flow end-to-end through the provider (prompt 03): reconcile → validate
- * against the roster (join on Student ID) → apply via the EXISTING uploadEssayMarks
+ * against the roster (join on the QM email) → apply via the EXISTING uploadEssayMarks
  * at HALF weight → idempotent re-upload → each language uploaded separately merges.
- * Anomalies (unknown Student ID, ≠2 essays) are reported and excluded, never dropped.
+ * Anomalies (off-roster email, ≠2 essays) are reported and excluded, never dropped.
+ *
+ * In the seed the roster's join key (studentId) is a P-code, so the tests feed that
+ * value in the QM email column — the join matches on it exactly as production
+ * matches on the email. The Student ID column carries a distinct label to prove it
+ * is never the join key.
  */
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
@@ -20,24 +25,26 @@ const arabic = seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name))!;
 const HEADER = [
   "Marker A", "Student name", "Student ID", "Essay ID", "Marker",
   "Dim1", "Dim2", "Dim3", "Dim4", "Dim5", "Total score", "Average", "Flag",
-  "Moderated final score", "Final scores:", "note",
+  "Moderated final score", "Final scores:", "note", "QM Participant ID (email)",
 ];
 
+type Row = { email: string; essays: number[] };
+
 /** Build a masterfile row matrix: two marker rows per essay, approved on Final. */
-function buildMatrix(students: { studentId: string; essays: number[] }[]): string[][] {
+function buildMatrix(students: Row[]): string[][] {
   const rows: string[][] = [HEADER];
-  for (const s of students) {
+  students.forEach((s, si) => {
     s.essays.forEach((mark, i) => {
       const eid = `EE0${i + 1}.png`;
-      // marker 1 carries the Final score; Average/Total are bogus (must be ignored)
-      rows.push(["M1", "name", s.studentId, eid, "One", "3", "4", "3", "4", "3", "88", "77", "", "", String(mark), "ok"]);
-      rows.push(["M2", "name", s.studentId, eid, "Two", "4", "3", "4", "3", "4", "66", "", "", "", "", ""]);
+      // Student ID column is a DISTINCT label (never the join key); Average/Total bogus.
+      rows.push(["M1", "name", `LABEL-${si}`, eid, "One", "3", "4", "3", "4", "3", "88", "77", "", "", String(mark), "ok", s.email]);
+      rows.push(["M2", "name", `LABEL-${si}`, eid, "Two", "4", "3", "4", "3", "4", "66", "", "", "", "", "", s.email]);
     });
-  }
+  });
   return rows;
 }
 
-/** Roster Student IDs for an essay subject, from the read-only upload context. */
+/** Roster join keys (the studentId = QM email in prod) for an essay subject. */
 function rosterIds(p: InMemoryDataProvider, assessmentId: string): string[] {
   const ctx = p.getEssayContext(CYCLE)!;
   return ctx.subjects.find((s) => s.assessmentId === assessmentId)!.participants
@@ -45,19 +52,19 @@ function rosterIds(p: InMemoryDataProvider, assessmentId: string): string[] {
     .map((x) => x.studentId);
 }
 
-function applyMasterfile(p: InMemoryDataProvider, code: EssaySubjectCode, students: { studentId: string; essays: number[] }[]) {
+function applyMasterfile(p: InMemoryDataProvider, code: EssaySubjectCode, students: Row[]) {
   const result = reconcileMasterfile(buildMatrix(students), code);
   const report = validateEssayMasterfile(result, p.getEssayContext(CYCLE)!);
   p.uploadEssayMarks(CYCLE, `${code}.csv`, report.valid);
   return report;
 }
 
-describe("masterfile → provider, join on Student ID", () => {
+describe("masterfile → provider, join on the QM email", () => {
   it("reconciled /20 lands on the subject at half weight (halved exactly once)", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
     // essays 17 + 14 → round_half_up(8.5 + 7) = round_half_up(15.5) = 16
-    const report = applyMasterfile(p, "ESL", [{ studentId: id, essays: [17, 14] }]);
+    const report = applyMasterfile(p, "ESL", [{ email: id, essays: [17, 14] }]);
     expect(report.validCount).toBe(1);
 
     const cell = p.getComposition(CYCLE)!.students.find((s) => s.participantId === id)!
@@ -74,9 +81,9 @@ describe("masterfile → provider, join on Student ID", () => {
   it("re-uploading the same language is idempotent (no duplicate marks)", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
-    applyMasterfile(p, "ESL", [{ studentId: id, essays: [18, 16] }]); // → round(9+8)=17
+    applyMasterfile(p, "ESL", [{ email: id, essays: [18, 16] }]); // → round(9+8)=17
     const first = p.getEssayMarks(CYCLE)!;
-    applyMasterfile(p, "ESL", [{ studentId: id, essays: [18, 16] }]);
+    applyMasterfile(p, "ESL", [{ email: id, essays: [18, 16] }]);
     const second = p.getEssayMarks(CYCLE)!;
     expect(second.matchedCount).toBe(first.matchedCount);
     expect(second.students.find((s) => s.participantId === id)!.marks[english.id]).toBe(17);
@@ -86,8 +93,8 @@ describe("masterfile → provider, join on Student ID", () => {
     const p = new InMemoryDataProvider();
     const eid = rosterIds(p, english.id)[0]!;
     const aid = rosterIds(p, arabic.id)[0]!;
-    applyMasterfile(p, "ESL", [{ studentId: eid, essays: [20, 20] }]); // English → 20
-    applyMasterfile(p, "AFL", [{ studentId: aid, essays: [10, 10] }]); // Arabic → 10
+    applyMasterfile(p, "ESL", [{ email: eid, essays: [20, 20] }]); // English → 20
+    applyMasterfile(p, "AFL", [{ email: aid, essays: [10, 10] }]); // Arabic → 10
     const model = p.getEssayMarks(CYCLE)!;
     // English mark survived the later Arabic upload
     expect(model.students.find((s) => s.participantId === eid)!.marks[english.id]).toBe(20);
@@ -113,16 +120,16 @@ describe("pending disclosure clears per language once applied (Task 6)", () => {
     expect(pendingFor(p, english.id)).toBe(englishRoster.length);
 
     // Apply every English student, leaving Arabic untouched.
-    applyMasterfile(p, "ESL", englishRoster.map((studentId) => ({ studentId, essays: [15, 15] })));
+    applyMasterfile(p, "ESL", englishRoster.map((email) => ({ email, essays: [15, 15] })));
     expect(pendingFor(p, english.id)).toBe(0);
     expect(pendingFor(p, arabic.id)).toBe(arabicPendingBefore); // unchanged
   });
 });
 
 describe("masterfile anomalies — reported and excluded, never silently dropped", () => {
-  it("an unknown Student ID is rejected and not applied", () => {
+  it("an off-roster email is rejected and not applied", () => {
     const p = new InMemoryDataProvider();
-    const report = applyMasterfile(p, "ESL", [{ studentId: "A-A-999999", essays: [12, 12] }]);
+    const report = applyMasterfile(p, "ESL", [{ email: "nobody@nowhere.com", essays: [12, 12] }]);
     expect(report.validCount).toBe(0);
     expect(report.rejectedCount).toBe(1);
     expect(report.rows[0]!.reason).toMatch(/not in the .* roster/i);
@@ -132,18 +139,19 @@ describe("masterfile anomalies — reported and excluded, never silently dropped
   it("a student with only 1 essay is reported (≠2 essays) and excluded", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
-    const report = applyMasterfile(p, "ESL", [{ studentId: id, essays: [15] }]);
+    const report = applyMasterfile(p, "ESL", [{ email: id, essays: [15] }]);
     expect(report.validCount).toBe(0);
-    const anomaly = report.rows.find((r) => r.studentId === id)!;
+    // the ≠2-essays anomaly is surfaced (keyed on the Student ID label from the file)
+    const anomaly = report.rows.find((r) => r.reason?.match(/found 1/i))!;
+    expect(anomaly).toBeTruthy();
     expect(anomaly.status).toBe("rejected");
-    expect(anomaly.reason).toMatch(/found 1/i);
   });
 
   it("a flagged (Clean-excluded) sitting is not applied", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
     p.setCleanRemoval(CYCLE, english.id, { rows: [id] }, true);
-    const report = applyMasterfile(p, "ESL", [{ studentId: id, essays: [15, 15] }]);
+    const report = applyMasterfile(p, "ESL", [{ email: id, essays: [15, 15] }]);
     expect(report.flaggedCount).toBe(1);
     expect(report.validCount).toBe(0);
   });

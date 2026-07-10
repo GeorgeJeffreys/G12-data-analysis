@@ -18,8 +18,16 @@ import {
 } from "@/lib/data/parse-essay-masterfile";
 
 const FIX = join(__dirname, "fixtures", "essays");
-const masterCsv = () => readFileSync(join(FIX, "feb26-english-essay-master.csv"), "utf-8");
+const masterCsv = () => readFileSync(join(FIX, "FEB26_English_Essay_master__with_QM_ID.csv"), "utf-8");
 const anomalyCsv = () => readFileSync(join(FIX, "feb26-english-essay-master-anomalies.csv"), "utf-8");
+
+/** Student ID → QM email crosswalk, loaded from the fixture. */
+function loadCrosswalk(): Map<string, string> {
+  const text = readFileSync(join(FIX, "essay-studentid-to-email-crosswalk.csv"), "utf-8");
+  return new Map(
+    text.trim().split(/\r?\n/).slice(1).map((l) => l.split(",").map((c) => c.trim())).map((c) => [c[0]!, c[1]!]),
+  );
+}
 
 /** The signed-off oracle (ROUND_SUM) + the rejected ROUND_EACH, from the fixture. */
 function loadOracle(): { studentId: string; e1: number; e2: number; roundSum: number; roundEach: number }[] {
@@ -97,14 +105,28 @@ describe("reconcile masterfile — signed-off oracle (ROUND_SUM)", () => {
     expect(s.essays[0]).toBe(17); // Moderated won, not 99
   });
 
-  it("emits ONE reconciled upload row per student carrying the /20 and true essay count", async () => {
+  it("reads the QM email column (matched by name, appended at the end) as the join key", async () => {
+    const matrix = await parseMasterfileMatrix(masterCsv());
+    const byId = new Map(reconcileMasterfile(matrix, "ESL").reconciled.map((s) => [s.studentId, s]));
+    const crosswalk = loadCrosswalk();
+    // every student carries the crosswalk email, lower-cased, on the reconciled row
+    for (const [studentId, email] of crosswalk) {
+      expect(byId.get(studentId)!.email).toBe(email.toLowerCase());
+    }
+  });
+
+  it("emits ONE reconciled upload row per student keyed on the QM email, with the /20 and essay count", async () => {
     const matrix = await parseMasterfileMatrix(masterCsv());
     const rows = masterfileToUploadRows(reconcileMasterfile(matrix, "ESL"));
     expect(rows).toHaveLength(17);
-    const r = rows.find((x) => x.participantId === "A-A-260506")!;
+    // keyed on the QM email — NOT the Alsama Student ID
+    const r = rows.find((x) => x.participantId === "abed.alahmad@alsamaproject.com")!;
+    expect(r).toBeTruthy();
     expect(r.subjectCode).toBe("ESL");
     expect(r.totalScore).toBe(16); // the reconciled /20, ready for the engine
     expect(r.essayCount).toBe(2);
+    // the Student ID is never used as the key
+    expect(rows.some((x) => x.participantId === "A-A-260506")).toBe(false);
   });
 });
 

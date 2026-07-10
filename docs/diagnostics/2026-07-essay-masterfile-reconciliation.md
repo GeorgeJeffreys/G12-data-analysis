@@ -17,6 +17,11 @@ off by George**. Encoded as named, explicit rules — never silent guesses.
   5-9 Dim1..Dim5 · 10 Total score · 11 Average · 12 Flag ·
   13 Moderated final score · 14 Final scores:` — cols 15+ are tracking/warning
   junk, ignored. The UTF-8 BOM is stripped.
+- **New join column `QM Participant ID (email)`** — G12 populate the participant's
+  Questionmark email here (QM has no numeric student id; the email *is* the
+  participant key). Matched by **header name, not position** (it is appended at the
+  end but may sit anywhere); if absent, every row is rejected — a missing join key
+  is never guessed.
 - **Two rows per essay** (markers M1/M2). The approved fields are populated on the
   **first** row of the pair. **Two essays per student** (`EE01.png`, `EE02.png`).
 
@@ -32,11 +37,18 @@ off by George**. Encoded as named, explicit rules — never silent guesses.
    decision is **final**. The rejected alternative `'each'` (round each /10 first)
    is computed for the record (`subjectEssayEach`) but **never used**; the two
    differ for exactly **3 of 17** students.
-5. **Join participants on `Student ID`** (e.g. `A-A-260506`) — always, never name.
-   The roster context now exposes each participant's real Student ID
-   (`qm_participant_id`) and both the validator and the provider matcher accept it.
+5. **Join on the `QM Participant ID (email)` column — case-insensitive EXACT
+   email.** The Alsama `Student ID` (`A-A-260506`) is **not** in the Questionmark
+   export, so it is a human label only — never the join key. The email is matched
+   against the roster participant's canonical key (`qm_participant_id` = the email,
+   surfaced as the context's `studentId`; the provider matcher and the qm→uuid map
+   both lower-case, so the whole chain is case-insensitive). A **blank email** or an
+   **email not in the subject's roster** → **rejected** with a clear reason, never
+   guessed. The review screen shows the matched participant (email + name) beside
+   every row so a human signs off before apply. (Optional DOB-vs-`DDMMYY` warning is
+   not implemented — the email is authoritative; noted as a future cheap hardening.)
 6. **Anomalies are flagged, never silently dropped:** a student without exactly 2
-   essays, an essay with no approved mark, an unknown Student ID, or an already
+   essays, an essay with no approved mark, a blank/off-roster email, or an already
    Clean-excluded sitting → surfaced in the review report and excluded from apply.
 
 ### Round-stage: `'sum'` vs the rejected `'each'` (for the record)
@@ -68,6 +80,11 @@ in the parser/policy — and `lib/engine/*` is not edited.
 ## Integration notes
 - **Accept filter widened** to `.csv,text/csv,.xlsx,.xls` so the masterfile is
   selectable (it was greyed out at `.xlsx` only).
+- **Email join + review sign-off:** the parser keys the reconciled row on the QM
+  email; `validateEssayMasterfile` joins it to the roster, surfaces the matched
+  participant (email + name) and the computed /20 in the review table, and rejects
+  blank/off-roster emails. All 17 test-file rows match (join oracle +
+  `essay-studentid-to-email-crosswalk.csv`).
 - **Per-language merge:** `uploadEssayMarks` now merges **per subject** — an
   uploaded language fully replaces that subject's marks and leaves the other
   language intact, so English and Arabic can be uploaded separately. Re-uploading a

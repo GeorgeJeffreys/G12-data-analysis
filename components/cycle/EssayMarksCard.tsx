@@ -38,6 +38,8 @@ import type { EssayMarksModel, EssayUploadContext } from "@/lib/data/types";
 type ReviewRow = {
   id: string;
   subject: string | null;
+  /** The matched participant (email + name) a human signs off on, when joined. */
+  matched: string | null;
   status: "valid" | "rejected" | "flagged";
   reason: string | null;
   value: number | null;
@@ -89,13 +91,13 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
         const result = await parseEssayMasterfile(file); // subject inferred from filename
         const report = validateEssayMasterfile(result, context);
         if (result.reconciled.length === 0 && result.anomalies.length === 0) {
-          setError("No essays found in that file. Expected Student ID / Essay ID / Moderated-or-Final columns.");
+          setError("No essays found in that file. Expected Student ID / Essay ID / QM email / Moderated-or-Final columns.");
           return;
         }
         const roundNote = "reconciled: round_half_up(essay₁/2 + essay₂/2)";
         setStaged({
           fileName: file.name,
-          summary: `${report.subjectName ?? report.subjectCode} · ${roundNote}`,
+          summary: `${report.subjectName ?? report.subjectCode} · joined on QM email · ${roundNote}`,
           valid: report.valid,
           validCount: report.validCount,
           rejectedCount: report.rejectedCount,
@@ -103,6 +105,7 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
           rows: report.rows.map((r) => ({
             id: r.studentId,
             subject: report.subjectName,
+            matched: r.matchedEmail ? `${r.matchedEmail}${r.matchedName ? ` — ${r.matchedName}` : ""}` : null,
             status: r.status,
             reason: r.reason,
             value: r.subjectEssay,
@@ -126,6 +129,7 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
           rows: report.results.map((r) => ({
             id: r.row.participantId,
             subject: r.subjectName ?? r.row.subjectCode,
+            matched: r.participantName,
             status: r.status,
             reason: r.reason,
             value: r.status === "valid" ? r.row.totalScore : null,
@@ -228,7 +232,12 @@ function PendingNote({ total, bySubject }: { total: number; bySubject: { name: s
 
 /** Review-before-apply: the row-by-row validation report; nothing is written yet. */
 function ReviewPanel({ staged, onApply, onCancel }: { staged: Staged; onApply: () => void; onCancel: () => void }) {
-  const problems = staged.rows.filter((r) => r.status !== "valid");
+  // Show valid rows FIRST (matched participant + computed /20 to sign off on),
+  // then the problems, so a human confirms every join before applying.
+  const ordered = [
+    ...staged.rows.filter((r) => r.status === "valid"),
+    ...staged.rows.filter((r) => r.status !== "valid"),
+  ];
   return (
     <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
@@ -242,30 +251,30 @@ function ReviewPanel({ staged, onApply, onCancel }: { staged: Staged; onApply: (
         <span className="hf-sub" style={{ fontSize: 11 }}>Nothing is written until you apply.</span>
       </div>
 
-      {problems.length > 0 && (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
-          <thead><tr>
-            <th className="hf-th" style={{ padding: "7px 12px" }}>Student ID</th>
-            <th className="hf-th" style={{ padding: "7px 12px" }}>Subject</th>
-            <th className="hf-th" style={{ padding: "7px 12px" }}>Status</th>
-            <th className="hf-th" style={{ padding: "7px 12px" }}>Reason</th>
-          </tr></thead>
-          <tbody>
-            {problems.slice(0, 20).map((r, i) => (
-              <tr key={i}>
-                <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.id}</td>
-                <td className="hf-td" style={{ padding: "7px 12px", color: H.ink2 }}>{r.subject}</td>
-                <td className="hf-td" style={{ padding: "7px 12px" }}>
-                  <Badge tone={r.status === "rejected" ? "bad" : "warn"}>{r.status}</Badge>
-                </td>
-                <td className="hf-td" style={{ padding: "7px 12px", color: H.ink2 }}>{r.reason}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-      {problems.length > 20 && (
-        <div className="hf-sub" style={{ fontSize: 11, padding: "6px 14px" }}>…and {problems.length - 20} more.</div>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+        <thead><tr>
+          <th className="hf-th" style={{ padding: "7px 12px" }}>Student ID</th>
+          <th className="hf-th" style={{ padding: "7px 12px" }}>Matched participant (QM email)</th>
+          <th className="hf-th" style={{ padding: "7px 12px" }}>Essay /20</th>
+          <th className="hf-th" style={{ padding: "7px 12px" }}>Status</th>
+          <th className="hf-th" style={{ padding: "7px 12px" }}>Reason</th>
+        </tr></thead>
+        <tbody>
+          {ordered.slice(0, 40).map((r, i) => (
+            <tr key={i}>
+              <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.id}</td>
+              <td className="hf-td" style={{ padding: "7px 12px", color: r.matched ? H.ink2 : H.bad }}>{r.matched ?? "— no match —"}</td>
+              <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.value ?? "—"}</td>
+              <td className="hf-td" style={{ padding: "7px 12px" }}>
+                <Badge tone={r.status === "valid" ? "good" : r.status === "rejected" ? "bad" : "warn"}>{r.status}</Badge>
+              </td>
+              <td className="hf-td" style={{ padding: "7px 12px", color: H.ink2 }}>{r.reason}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {ordered.length > 40 && (
+        <div className="hf-sub" style={{ fontSize: 11, padding: "6px 14px" }}>…and {ordered.length - 40} more.</div>
       )}
 
       <div style={{ display: "flex", gap: 9, alignItems: "center", padding: "10px 14px", borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
