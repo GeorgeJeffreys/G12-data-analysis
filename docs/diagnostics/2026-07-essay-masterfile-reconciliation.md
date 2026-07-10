@@ -1,5 +1,13 @@
 # Essay marks — masterfile ingest & signed-off reconciliation (prompt 03)
 
+> **SUPERSEDED (2026-07-10).** The halve/sum reconciliation and the
+> Moderated/Final per-essay logic described below are **no longer used**. The team
+> now moderates the essays themselves and the app reads their single per-student
+> **`Adjusted scores (USE THESE)`** column directly from a two-sheet workbook,
+> joining on the QM email. See `2026-07-essay-workbook-adjusted.md` and
+> `lib/data/parse-essay-masterfile.ts`. This file is kept for history only.
+
+
 **Date:** 2026-07-09
 **Scope:** Ingest the marking team's REAL double-marking masterfile (CSV, one file
 per language) and reconcile it to a per-subject essay score per a policy **signed

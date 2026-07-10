@@ -1,25 +1,22 @@
 "use client";
 
 /**
- * Essay-marks entry — the single upload/enter surface for offline-marked essays
+ * Essay-marks entry — the single upload surface for offline-marked essays
  * (English & Arabic only). Lives on the Upload screen (step 1) as the optional
- * "Essay marks" card, alongside the QM exports. Keyed on the real Student ID via
- * the provider — marks fold into the scored subject totals at HALF weight through
- * the existing post-engine essay-marks layer (never as responses).
+ * "Essay marks" card. Marks fold into the scored subject totals at FULL weight
+ * through the existing post-engine essay-marks layer (never as responses).
  *
- * Primary flow: upload the marking team's REAL double-marking masterfile — a CSV,
- * ONE FILE PER LANGUAGE (English / Arabic). It is reconciled per the SIGNED-OFF
- * policy (`lib/data/parse-essay-masterfile.ts`): approved mark per essay =
- * Moderated-else-Final, halve each /20 to /10, sum, `round_half_up` the sum → the
- * subject essay /20. The subject/language is inferred from the FILE NAME. Each
- * language can be uploaded separately; the provider merges per subject.
+ * Upload the marking team's essay WORKBOOK — an `.xlsx` with two sheets
+ * (`English Essay master`, `Arabic Essay master`), or a single-language file. The
+ * parser (`lib/data/parse-essay-masterfile.ts`) reads the moderated
+ * `Adjusted scores (USE THESE)` column DIRECTLY (never recomputed), routes each
+ * sheet to its subject by name, and joins on the QM email column. Validation
+ * (`validate-essay-masterfile.ts`) rejects blank / off-roster emails and students
+ * with no Adjusted value, and shows the matched participant beside each row.
  *
- * Legacy flow (kept): a pre-populated `.xlsx` template with one row per essay,
- * consumed by `parseEssayMarks` + `validateEssayRows`.
- *
- * Both flows: upload → REVIEW the row-by-row valid/rejected/flagged report → apply.
- * Nothing is written until the operator confirms; only valid rows reach the
- * existing `uploadEssayMarks` (which upserts idempotently — a re-upload of a
+ * Flow: upload → REVIEW the row-by-row valid/rejected report → apply. Nothing is
+ * written until the operator confirms; only valid rows reach the existing
+ * `uploadEssayMarks` (which upserts idempotently per subject — a re-upload of a
  * language replaces that subject's marks and never duplicates).
  */
 import { useRef, useState } from "react";
@@ -27,9 +24,7 @@ import { useProvider, useProviderData } from "@/lib/data/context";
 import { H } from "@/lib/ui/tokens";
 import { Button, Badge } from "@/components/ui/primitives";
 import { Icon, Mark } from "@/components/ui/icons";
-import { parseEssayMarks } from "@/lib/data/parse-essays";
-import { validateEssayRows } from "@/lib/data/validate-essays";
-import { parseEssayMasterfile } from "@/lib/data/parse-essay-masterfile";
+import { parseEssayMasterfile, ESSAY_MARK_ROUNDING } from "@/lib/data/parse-essay-masterfile";
 import { validateEssayMasterfile } from "@/lib/data/validate-essay-masterfile";
 import type { EssayUploadRow } from "@/lib/data/provider";
 import type { EssayMarksModel, EssayUploadContext } from "@/lib/data/types";
@@ -85,54 +80,30 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
         setError("No cycle roster to validate against — ingest the raw export first.");
         return;
       }
-      const isCsv = /\.csv$/i.test(file.name) || file.type === "text/csv";
-      if (isCsv) {
-        // Real masterfile: reconcile per the signed-off policy, then validate.
-        const result = await parseEssayMasterfile(file); // subject inferred from filename
+      {
+        // Essay workbook (two sheets) or single-language file. Read the moderated
+        // `Adjusted scores (USE THESE)` column directly, join on the QM email.
+        const result = await parseEssayMasterfile(file);
         const report = validateEssayMasterfile(result, context);
-        if (result.reconciled.length === 0 && result.anomalies.length === 0) {
-          setError("No essays found in that file. Expected Student ID / Essay ID / QM email / Moderated-or-Final columns.");
+        if (result.students.length === 0) {
+          setError("No essays found. Expected sheets named “English/Arabic Essay master” with an “Adjusted scores (USE THESE)” column and a QM email column.");
           return;
         }
-        const roundNote = "reconciled: round_half_up(essay₁/2 + essay₂/2)";
+        const subjects = report.subjectsSeen.length ? report.subjectsSeen.join(" & ") : result.subjectsSeen.join(" & ");
         setStaged({
           fileName: file.name,
-          summary: `${report.subjectName ?? report.subjectCode} · joined on QM email · ${roundNote}`,
+          summary: `${subjects} · joined on QM email · Adjusted (USE THESE), rounding: ${ESSAY_MARK_ROUNDING}`,
           valid: report.valid,
           validCount: report.validCount,
           rejectedCount: report.rejectedCount,
           flaggedCount: report.flaggedCount,
           rows: report.rows.map((r) => ({
-            id: r.studentId,
-            subject: report.subjectName,
+            id: r.studentLabel || r.email || r.studentName,
+            subject: r.subjectName ?? r.subjectCode,
             matched: r.matchedEmail ? `${r.matchedEmail}${r.matchedName ? ` — ${r.matchedName}` : ""}` : null,
             status: r.status,
             reason: r.reason,
-            value: r.subjectEssay,
-          })),
-        });
-      } else {
-        // Legacy per-essay template (.xlsx, one row per essay).
-        const rows = await parseEssayMarks(file);
-        if (rows.length === 0) {
-          setError("No essay rows found. Use a .csv masterfile, or an .xlsx with AFL / ESL sheets.");
-          return;
-        }
-        const report = validateEssayRows(rows, context);
-        setStaged({
-          fileName: file.name,
-          summary: report.subjectsSeen.length ? report.subjectsSeen.join(" · ") : null,
-          valid: report.valid,
-          validCount: report.validCount,
-          rejectedCount: report.rejectedCount,
-          flaggedCount: report.flaggedCount,
-          rows: report.results.map((r) => ({
-            id: r.row.participantId,
-            subject: r.subjectName ?? r.row.subjectCode,
-            matched: r.participantName,
-            status: r.status,
-            reason: r.reason,
-            value: r.status === "valid" ? r.row.totalScore : null,
+            value: r.subjectEssay ?? r.adjustedRaw,
           })),
         });
       }

@@ -152,17 +152,17 @@ export interface EssayUploadRow {
   subjectCode: "AFL" | "ESL";
   /**
    * The mark this row contributes /20. For the per-essay template flow this is a
-   * single essay's mark (the provider averages a student's rows). For the
-   * reconciling masterfile flow this is the ONE already-reconciled subject essay
-   * /20 (`round_half_up(essay_1/2 + essay_2/2)`) — a single row per student, so
-   * the provider's averaging is identity and the value reaches the engine as-is.
+   * single essay's mark (the provider averages a student's rows). For the essay
+   * WORKBOOK flow this is the ONE moderated subject essay /20 read directly from
+   * `Adjusted scores (USE THESE)` (after `ESSAY_MARK_ROUNDING`) — a single row per
+   * student, so the provider's averaging is identity and the value reaches the
+   * engine at full weight.
    */
   totalScore: number;
   /**
    * How many essays this row represents, for the "pending" disclosure only. The
-   * masterfile flow sets it to the true essay count (2) even though it emits ONE
-   * reconciled row; the per-essay flow omits it (each row = one essay). Never used
-   * as the averaging divisor.
+   * workbook flow emits ONE row per student (essayCount 1); the per-essay flow
+   * omits it (each row = one essay). Never used as the averaging divisor.
    */
   essayCount?: number;
 }

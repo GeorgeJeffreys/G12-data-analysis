@@ -14,7 +14,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as engine from "@/lib/engine";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { reconcileMasterfile } from "@/lib/data/parse-essay-masterfile";
+import { extractSheet } from "@/lib/data/parse-essay-masterfile";
 import { validateEssayMasterfile } from "@/lib/data/validate-essay-masterfile";
 import seedJson from "@/lib/data/seed.generated.json";
 import type { EssayUploadRow } from "@/lib/data/provider";
@@ -78,11 +78,10 @@ const seed = seedJson as unknown as {
 const CYCLE = seed.liveCycle.id;
 const english = seed.liveCycle.assessments.find((a) => /english/i.test(a.name))!;
 
-const HEADER = ["Student ID", "Essay ID", "Moderated final score", "Final scores:", "QM Participant ID (email)"];
-function matrix(students: { email: string; essays: number[] }[]): string[][] {
-  const rows: string[][] = [HEADER];
-  students.forEach((s, si) => s.essays.forEach((m, i) => rows.push([`L-${si}`, `EE0${i + 1}.png`, "", String(m), s.email])));
-  return rows;
+const HEADER = ["Student ID", "Student name", "Adjusted scores (USE THESE)", "QM email"];
+function sheet(students: { email: string; adjusted: number }[]) {
+  const matrix = [HEADER, ...students.map((s, i) => [`L-${i}`, "name", String(s.adjusted), s.email])];
+  return { students: extractSheet(matrix, "ESL"), subjectsSeen: ["ESL" as const], skippedSheets: [] as string[] };
 }
 
 /** Mirror of supabase-hydrate `classify(name).subjectCode` for the round-trip. */
@@ -100,9 +99,9 @@ describe("essay → score wiring survives the persistence round-trip", () => {
     const join = eng.participants[0]!.studentId; // seed join key (= QM email in prod)
     const pid = eng.participants[0]!.participantId;
 
-    // Apply: essays 17 + 14 → round_half_up(8.5 + 7) = 16.
-    const report = validateEssayMasterfile(reconcileMasterfile(matrix([{ email: join, essays: [17, 14] }]), "ESL"), ctx);
-    p.uploadEssayMarks(CYCLE, "english.csv", report.valid);
+    // Apply: moderated Adjusted 15.5 → half_up → 16.
+    const report = validateEssayMasterfile(sheet([{ email: join, adjusted: 15.5 }]), ctx);
+    p.uploadEssayMarks(CYCLE, "english.xlsx", report.valid);
 
     const cellApplied = p.getComposition(CYCLE)!.students.find((s) => s.participantId === pid)!
       .subjects.find((s) => s.assessmentId === english.id)!;
