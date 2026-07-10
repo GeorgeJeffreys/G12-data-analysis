@@ -93,6 +93,7 @@ import {
   type AnalyticsCompare,
   type AnalyticsTrends,
   type OverallAnalytics,
+  type OverallAnalyticsFilter,
   type CompareCyclesModel,
   type CompareCycleData,
   type CompareSubjectMetrics,
@@ -5665,7 +5666,7 @@ export class InMemoryDataProvider implements DataProvider {
   // is the demo best-of-two baseline) and clearly-labelled SYNTHETIC data for the
   // other centres/years, with `hasComparison` set honestly (only one real year
   // exists). The Supabase + seed path is where full multi-cell REAL data renders.
-  getOverallAnalytics(): OverallAnalytics {
+  getOverallAnalytics(filter?: OverallAnalyticsFilter): OverallAnalytics {
     const perfLevels = this.grading.performanceLevels;
     const awardLevels = this.grading.awardLevels;
     const liveId = this.seed.liveCycle.id;
@@ -5725,8 +5726,13 @@ export class InMemoryDataProvider implements DataProvider {
       }
     }
 
+    // A centre subset re-pools every figure from just those cells; the full
+    // subject list is kept so the sections can still offer every subject to pick.
+    const sel = filter?.centres;
+    const usedCells = sel && sel.length ? cells.filter((c) => sel.includes(c.centre)) : cells;
+
     return computeOverallAnalytics({
-      cells,
+      cells: usedCells,
       subjects,
       awards: overallAwardBands(awardLevels),
       plevels: overallPLevels(perfLevels),

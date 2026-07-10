@@ -66,6 +66,15 @@ describe("Overall analytics UI renders with live data", () => {
     expect(html).toContain("score statistics");
   });
 
+  it("§2 · subject selection drives the section — only selected subjects render as chips", () => {
+    const picked = analytics.subjects[0]!;
+    const dropped = analytics.subjects[1]!;
+    const slice = legacy({ subjects: [picked.key] });
+    const html = renderToStaticMarkup(e(S2Performance, { analytics, slice }));
+    expect(html).toContain(picked.short);
+    expect(html).not.toContain(`>${dropped.short}<`); // the dropped subject has no chip
+  });
+
   it("§3 · a single centre annotates the cohort-shape card", () => {
     const slice = legacy({ centres: [analytics.centres[0]!] });
     expect(slice.centre.mode).toBe("single");
