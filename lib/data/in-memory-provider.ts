@@ -48,6 +48,15 @@ import {
   type Role as RoleModel,
 } from "@/lib/auth/actions";
 import { rollupOverall, overallAwardsReconcile } from "./overall";
+import {
+  computeOverallAnalytics,
+  overallAwardBands,
+  overallPLevels,
+  subjectKeyOf,
+  type OACell,
+  type OASitting,
+  type OASittingStudent,
+} from "./overall-analytics";
 import { buildLiveCycleData } from "./build-live-cycle";
 import { doNextForStage } from "./pipeline-route";
 import type { CleanResponse } from "@/lib/ingest/types";
@@ -83,6 +92,7 @@ import {
   PIPELINE,
   type AnalyticsCompare,
   type AnalyticsTrends,
+  type OverallAnalytics,
   type CompareCyclesModel,
   type CompareCycleData,
   type CompareSubjectMetrics,
@@ -5543,6 +5553,183 @@ export class InMemoryDataProvider implements DataProvider {
     };
 
     return { metrics, columns: [liveCol, priorCol], awardLevels, priorsAreMock: true };
+  }
+
+  // ── Overall analytics (bird's-eye, over time × centres) ───────────────────
+  // Modelling many REAL cycles is out of scope for the in-memory seed (it holds a
+  // single live cycle), so — like getAnalyticsTrends — this returns REAL data for
+  // the one live cell (the live centre × year: May is the real sitting, February
+  // is the demo best-of-two baseline) and clearly-labelled SYNTHETIC data for the
+  // other centres/years, with `hasComparison` set honestly (only one real year
+  // exists). The Supabase + seed path is where full multi-cell REAL data renders.
+  getOverallAnalytics(): OverallAnalytics {
+    const perfLevels = this.grading.performanceLevels;
+    const awardLevels = this.grading.awardLevels;
+    const liveId = this.seed.liveCycle.id;
+
+    // Canonical subject list (union) keyed by a stable subject key.
+    const subjectsSeen = new Map<string, { key: string; name: string; short: string; rtl?: boolean }>();
+    for (const a of this.seed.liveCycle.assessments) {
+      const key = subjectKeyOf(a.shortName);
+      if (!subjectsSeen.has(key)) subjectsSeen.set(key, { key, name: a.name, short: a.shortName, rtl: a.rtl });
+    }
+    const subjects = [...subjectsSeen.values()];
+
+    const liveCentre = this.centreFor(this.effectiveCentreId(liveId, this.seed.liveCycle.testCentreId)).name;
+    const liveYearRaw = this.yearOf(this.seed.liveCycle.name);
+    const liveYear = /^\d{4}$/.test(liveYearRaw) ? Number(liveYearRaw) : 2026;
+
+    const cells: OACell[] = [];
+
+    // The live cell: REAL May grades + demo February baseline (best-of-two rollup).
+    const mayGrades = this.getGrades(liveId);
+    if (mayGrades && mayGrades.rows.length > 0) {
+      const febGrades = this.demoFebruaryGrades(mayGrades);
+      cells.push({
+        centre: liveCentre,
+        year: liveYear,
+        february: this.oaSittingFromLevels(febGrades, `feb|${liveYear}|${liveCentre}`),
+        may: this.oaSittingFromLiveScores(liveId, mayGrades),
+      });
+    }
+
+    // Clearly-labelled SYNTHETIC cells so the multi-year / multi-centre views
+    // render while real data accrues: a prior synthetic year at the live centre,
+    // plus two sample sibling centres across both years. Never real scoring — a
+    // deterministic level distribution per (centre, year, sitting) with a small
+    // year-on-year and centre bias, so spreads and improvement read meaningfully.
+    const rosterN = Math.max(10, mayGrades?.rows.length ?? 14);
+    const siblingCentres = ["Sample Centre B", "Sample Centre C"];
+    const yearBias = (year: number): number => (year < liveYear ? -1 : 0); // prior years read slightly weaker
+    const centreBias: Record<string, number> = { "Sample Centre B": 0, "Sample Centre C": -1 };
+
+    const addSynthCell = (centre: string, year: number, bias: number): void => {
+      cells.push({
+        centre,
+        year,
+        synthetic: true,
+        february: this.synthOASitting(`${centre}|${year}|feb`, rosterN, bias - 1, subjects), // Feb weaker → May improves
+        may: this.synthOASitting(`${centre}|${year}|may`, rosterN, bias, subjects),
+      });
+    };
+
+    // Prior synthetic year at the live centre.
+    addSynthCell(liveCentre, liveYear - 1, yearBias(liveYear - 1));
+    // Sibling centres across both years.
+    for (const c of siblingCentres) {
+      for (const year of [liveYear - 1, liveYear]) {
+        addSynthCell(c, year, yearBias(year) + (centreBias[c] ?? 0));
+      }
+    }
+
+    return computeOverallAnalytics({
+      cells,
+      subjects,
+      awards: overallAwardBands(awardLevels),
+      plevels: overallPLevels(perfLevels),
+      performanceLevels: perfLevels,
+      awardLevels,
+      starMap: this.grading.starMap,
+      // Only the live year carries any real data — comparison is not real yet.
+      realYears: [liveYear],
+    });
+  }
+
+  /** Representative score % for a performance level (demo/synthetic only), jittered
+   *  deterministically within the level's band. Never used for real scoring. */
+  private pctForLevel(level: string, seed: string): number {
+    const levels = this.grading.performanceLevels;
+    const cuts = this.grading.performanceCuts;
+    const idx = levels.indexOf(level);
+    const i = idx < 0 ? levels.length - 1 : idx;
+    const upper = i === 0 ? 100 : cuts[i - 1] ?? 100;
+    const lower = cuts[i] ?? 0;
+    const band = Math.max(1, upper - lower);
+    const mid = (upper + lower) / 2;
+    const jitter = ((hash32(seed) % 100) / 100 - 0.5) * band * 0.6;
+    return round(Math.max(0, Math.min(100, mid + jitter)), 1);
+  }
+
+  /** A live sitting → OASitting with REAL per-subject score percentages. */
+  private oaSittingFromLiveScores(cycleId: string, grades: GradesModel): OASitting {
+    const students: OASittingStudent[] = grades.rows.map((r) => {
+      const levels: Record<string, string> = {};
+      for (const a of grades.assessments) {
+        const lvl = r.grades[a.id]?.level;
+        if (lvl) levels[subjectKeyOf(a.shortName)] = lvl;
+      }
+      return { studentId: r.studentId, award: r.award, levels };
+    });
+    const scores: Record<string, number[]> = {};
+    for (const a of this.seed.liveCycle.assessments) {
+      const key = subjectKeyOf(a.shortName);
+      scores[key] = [...this.pctByParticipant(cycleId, a).values()].map((v) => round(v.pct, 1));
+    }
+    return { students, scores };
+  }
+
+  /** A (demo) GradesModel with levels but no real scores → OASitting whose scores
+   *  are synthesized from each cell's level (demo February baseline only). */
+  private oaSittingFromLevels(grades: GradesModel, seedTag: string): OASitting {
+    const students: OASittingStudent[] = grades.rows.map((r) => {
+      const levels: Record<string, string> = {};
+      for (const a of grades.assessments) {
+        const lvl = r.grades[a.id]?.level;
+        if (lvl) levels[subjectKeyOf(a.shortName)] = lvl;
+      }
+      return { studentId: r.studentId, award: r.award, levels };
+    });
+    const scores: Record<string, number[]> = {};
+    for (const a of grades.assessments) {
+      const key = subjectKeyOf(a.shortName);
+      const list: number[] = [];
+      for (const r of grades.rows) {
+        const lvl = r.grades[a.id]?.level;
+        if (lvl) list.push(this.pctForLevel(lvl, `${seedTag}|${r.studentId}|${key}`));
+      }
+      scores[key] = list;
+    }
+    return { students, scores };
+  }
+
+  /** A fully-synthetic sitting for a (centre, year): deterministic levels with a
+   *  small bias (better/worse), award derived by the real rule, scores from levels.
+   *  Clearly non-real — used only to populate the Overall views in the demo. */
+  private synthOASitting(
+    seedTag: string,
+    n: number,
+    bias: number,
+    subjects: { key: string; name: string; short: string }[],
+  ): OASitting {
+    const levels = this.grading.performanceLevels; // best → lowest
+    const L = levels.length;
+    const awardLevels = this.grading.awardLevels;
+    const students: OASittingStudent[] = [];
+    for (let i = 0; i < n; i++) {
+      const studentId = `${seedTag}-s${String(i + 1).padStart(2, "0")}`;
+      const lvlMap: Record<string, string> = {};
+      const subjectLevels: string[] = [];
+      for (const s of subjects) {
+        const h = hash32(`${seedTag}|${studentId}|${s.key}`) % 100;
+        // Base rank from the hash (0 best … L-1 lowest), then shift by bias
+        // (positive bias = better i.e. lower rank).
+        let rank = h < 15 ? 0 : h < 40 ? 1 : h < 75 ? 2 : 3;
+        rank = Math.max(0, Math.min(L - 1, rank - bias));
+        const lvl = levels[rank] ?? levels[L - 1]!;
+        lvlMap[s.key] = lvl;
+        subjectLevels.push(lvl);
+      }
+      const award = deriveAward(
+        { subjectLevels, d3Pass: true },
+        { performanceLevels: levels, awardLevels },
+      ).award;
+      students.push({ studentId, award, levels: lvlMap });
+    }
+    const scores: Record<string, number[]> = {};
+    for (const s of subjects) {
+      scores[s.key] = students.map((st) => this.pctForLevel(st.levels[s.key] ?? levels[L - 1]!, `${seedTag}|${st.studentId}|${s.key}`));
+    }
+    return { students, scores };
   }
 
   // ── compare cycles (per-subject, multi-cycle) ─────────────────────────────

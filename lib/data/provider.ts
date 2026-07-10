@@ -35,6 +35,7 @@ export interface SchemaHealth {
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
+  OverallAnalytics,
   CompareCyclesModel,
   AuditFilter,
   AuditModel,
@@ -354,6 +355,14 @@ export interface DataProvider {
   getOverrideView(cycleId: string): OverrideViewModel;
   getAnalyticsTrends(): AnalyticsTrends;
   getAnalyticsCompare(): AnalyticsCompare;
+  /**
+   * The "Overall" analytics read-model: a bird's-eye view of programme
+   * performance over time across partner centres, grouped by centre × year ×
+   * sitting × subject. Every figure is a roll-up of already-signed-off per-sitting
+   * outputs (best-of-two via `rollupOverall`; no scoring re-run). `hasComparison`
+   * is true only when ≥ 2 real years exist.
+   */
+  getOverallAnalytics(): OverallAnalytics;
   /**
    * Compare cycles › per-subject, multi-cycle comparison. `cycleIds` selects the
    * cycles (defaults to the two most recent). Read-only: every figure is an

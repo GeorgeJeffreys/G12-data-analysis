@@ -30,7 +30,15 @@ import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import { InMemoryDataProvider } from "./in-memory-provider";
 import { gzipText, GZIP_MARKER_HEADER, GZIP_MARKER_VALUE } from "@/lib/transport/gzip";
-import { hydrate, fetchSeedTestCentres, fetchSessionUser, type DecisionState } from "./supabase-hydrate";
+import {
+  hydrate,
+  fetchSeedTestCentres,
+  fetchSessionUser,
+  fetchOverallAnalytics,
+  type DecisionState,
+  type OverallAnalyticsProjection,
+} from "./supabase-hydrate";
+import { computeOverallAnalytics, overallAwardBands, overallPLevels } from "./overall-analytics";
 import { catalogNamesFor } from "./subject-catalog";
 import type { Seed } from "./seed-types";
 import type { GradingConfig } from "./grading";
@@ -52,6 +60,7 @@ import type { CanonicalModel } from "@/lib/ingest/qm";
 import type {
   AnalyticsCompare,
   AnalyticsTrends,
+  OverallAnalytics,
   CompareCyclesModel,
   AuditFilter,
   AuditModel,
@@ -142,6 +151,10 @@ export class SupabaseDataProvider implements DataProvider {
   /** The REAL member roster (auth.users ⋈ memberships), via the list_members RPC.
    *  Replaces the mock member list entirely in the live app. */
   private realMembers: MemberDirRow[] = [];
+  /** Multi-cycle Overall-analytics projection (every centre × year × sitting),
+   *  loaded additively alongside the single-live-cycle hydrate. Empty until the
+   *  first hydrate resolves — getOverallAnalytics then falls back to the demo. */
+  private overall: OverallAnalyticsProjection = { cells: [], subjects: [], years: [] };
 
   constructor(private supabase: DB) {
     this.inner = new InMemoryDataProvider(EMPTY_SEED, LOADING_USER, true);
@@ -220,6 +233,10 @@ export class SupabaseDataProvider implements DataProvider {
     const next = new InMemoryDataProvider(h.seed, this.user, true);
     this.replay(next, h.seed.liveCycle.id, h.decisions);
     this.inner = next;
+    // Additive: the Overall read-model spans every centre × year × sitting, which
+    // the single-live-cycle inner provider can't hold. Load its multi-cell
+    // projection from the persisted outputs; never blocks the main hydrate.
+    this.overall = await fetchOverallAnalytics(this.supabase).catch(() => ({ cells: [], subjects: [], years: [] }));
     await this.fetchMembers();
     this.cycleId = h.seed.liveCycle.id;
     this.qmToUuid = h.lookups.qmToUuid;
@@ -376,6 +393,27 @@ export class SupabaseDataProvider implements DataProvider {
   getOverrideView(cycleId: string): OverrideViewModel { return this.inner.getOverrideView(cycleId); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
   getAnalyticsCompare(): AnalyticsCompare { return this.inner.getAnalyticsCompare(); }
+  /**
+   * The Overall analytics read-model, computed from the LIVE multi-cycle
+   * projection (persisted grades + scores across every centre × year × sitting)
+   * via `computeOverallAnalytics`. When no persisted multi-cell data exists yet
+   * (fresh/pre-seed DB), it falls back to the inner in-memory demo so the page
+   * still renders — mirroring getAnalyticsTrends' clearly-labelled priors.
+   */
+  getOverallAnalytics(): OverallAnalytics {
+    if (this.overall.cells.length === 0) return this.inner.getOverallAnalytics();
+    const g = this.inner.getGradingDefaults();
+    return computeOverallAnalytics({
+      cells: this.overall.cells,
+      subjects: this.overall.subjects,
+      awards: overallAwardBands(g.awardLevels),
+      plevels: overallPLevels(g.performanceLevels),
+      performanceLevels: g.performanceLevels,
+      awardLevels: g.awardLevels,
+      starMap: g.starMap,
+      realYears: this.overall.years,
+    });
+  }
   getCompareCycles(cycleIds?: string[]): CompareCyclesModel { return this.inner.getCompareCycles(cycleIds); }
   getNewCycle(): NewCycleModel { return this.inner.getNewCycle(); }
   getEssayMarks(cycleId: string): EssayMarksModel | null { return this.inner.getEssayMarks(cycleId); }

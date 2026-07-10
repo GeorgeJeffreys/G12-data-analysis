@@ -1193,6 +1193,126 @@ export interface OverallGradesModel {
   note: string;
 }
 
+// --- Overall analytics (bird's-eye programme view over time × centres) -------
+/**
+ * The read-model behind the "Overall" analytics page — a bird's-eye view of
+ * programme performance over time across partner centres. It is computed on read
+ * from the persisted per-sitting outputs (`computeOverallAnalytics`), grouped by
+ * centre × year × sitting × subject, and honours the locked methodology:
+ *
+ *  1. Combined = best-of-two AWARD (per student × subject, higher performance
+ *     LEVEL across the two sittings, then the award rule on the rolled-up levels).
+ *     There is no numeric combined score — under Combined only level data exists.
+ *  2. Improvement = movement in performance-LEVEL rank (February → May, same
+ *     students): `gain` = average levels gained; `up` = % who moved up ≥1 level.
+ *  3. Pass = any award above the lowest band ("Record of Learning"). Per-subject
+ *     "pass" (a single sitting's score stats) = performance level ≥ Meets.
+ *  4. The app only knows who SAT (Questionmark exports) — no "registered" concept.
+ *  6. Score statistics (mean/median/high/low/SD) exist only per single sitting.
+ */
+
+/** One overall award band (ordinal ramp, best → worst), from the grading config.
+ *  The engine's internal lowest band ("No Award") is exposed here as "Record of
+ *  Learning". */
+export interface AwardBand {
+  key: "dist" | "adv" | "sec" | "rol";
+  name: string;
+  short: string;
+}
+
+/** One per-subject performance level (ordinal ramp, best → worst). */
+export interface PLevel {
+  key: "out" | "exc" | "meet" | "not";
+  name: string;
+  short: string;
+}
+
+/** Score statistics for ONE single sitting (February or May) of one subject.
+ *  These are raw-score percentages — they exist only per sitting, never under
+ *  Combined. `pass` is the per-subject pass rate (% at performance level ≥ Meets). */
+export interface SittingStats {
+  mean: number;
+  median: number;
+  high: number;
+  low: number;
+  sd: number;
+  pass: number;
+}
+
+/** One subject × year cell in the performance view. */
+export interface SubjectYear {
+  /** February single-sitting score stats; null when there is no February sitting. */
+  feb: SittingStats | null;
+  /** May single-sitting score stats; null when there is no May sitting. */
+  may: SittingStats | null;
+  /** Best-of-two performance-LEVEL distribution, as % (sums ~100). */
+  levels: Record<"out" | "exc" | "meet" | "not", number>;
+  /** February→May level movement (same students); null when < 2 sittings exist. */
+  change: { gain: number; up: number } | null;
+}
+
+/** Participation for one year (aggregated across the year's centres). Pass rates
+ *  are %, pass = overall award above the lowest band. */
+export interface ParticipationYear {
+  centres: number;
+  satFeb: number;
+  satMay: number;
+  both: number;
+  passFeb: number;
+  passMay: number;
+  passComb: number;
+}
+
+/** Overall (best-of-two) award distribution for one year/centre, as % (sums ~100). */
+export interface AwardDistYear {
+  dist: number;
+  adv: number;
+  sec: number;
+  rol: number;
+}
+
+/** Best / worst / mean of a per-centre headline metric across the year's centres. */
+export interface CentreSpreadYear {
+  best: number;
+  worst: number;
+  mean: number;
+}
+
+/** Per-subject spread of a per-centre metric across the year's centres. */
+export interface CentreSubjectSpread {
+  mean: number;
+  best: number;
+  worst: number;
+  sd: number;
+}
+
+export interface OverallAnalytics {
+  /** Live years present, ascending. */
+  years: number[];
+  /** Centre names present. */
+  centres: string[];
+  /** Subjects present (union across cells), each with a stable key. */
+  subjects: { key: string; name: string; short: string; rtl?: boolean }[];
+  /** Award bands, ordinal ramp best → worst (from the grading config). */
+  awards: AwardBand[];
+  /** Performance levels, ordinal ramp best → worst. */
+  plevels: PLevel[];
+  /** Participation per year: `[year]`. */
+  participation: Record<number, ParticipationYear>;
+  /** Performance per subject/year: `[subjectKey][year]`. */
+  perf: Record<string, Record<number, SubjectYear>>;
+  /** Overall (best-of-two) award distribution per year: `[year]`. */
+  awardDist: Record<number, AwardDistYear>;
+  /** Overall award distribution per centre, for the latest year: `[centreName]`. */
+  awardByCentre: Record<string, AwardDistYear>;
+  /** Best/worst/mean pass rate across centres per year: `[year]`. */
+  centreAwardSpread: Record<number, CentreSpreadYear>;
+  /** Per-subject best/worst/mean/SD across centres per year: `[subjectKey][year]`. */
+  centreSubjectSpread: Record<string, Record<number, CentreSubjectSpread>>;
+  /** True iff ≥ 2 REAL years exist (drives whether real comparison is shown). */
+  hasComparison: boolean;
+}
+
 export type DuplicateStrategy = "keep_latest" | "keep_first" | "exclude";
 
 // --- Settings → grading defaults --------------------------------------------
