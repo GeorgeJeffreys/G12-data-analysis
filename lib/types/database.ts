@@ -450,6 +450,44 @@ export interface IncidentRowRow {
   created_at: string;
 }
 
+// --- 0044: technical-incident export staging table --------------------------
+export interface ExamIncidentRow {
+  id: string;
+  cycle_id: string;
+  reference: string;
+  import_batch_id: string;
+  file_name: string | null;
+  exam_cycle: string;
+  subject_raw: string;
+  subject_key: string | null;
+  exam_date: string | null;
+  partner_center: string | null;
+  category: string | null;
+  issue: string | null;
+  code: string | null;
+  student_name: string | null;
+  student_email: string;
+  student_id_external: string | null;
+  time_started: string | null;
+  time_resolved: string | null;
+  duration_min: number | null;
+  action_taken: string | null;
+  questions_affected_count: number | null;
+  questions_affected_list: string[] | null;
+  status: string | null;
+  invigilator: string | null;
+  source_created_at: string | null;
+  imported_at: string;
+  /** Resolved sitting id (qm_result_id is TEXT); null when unmatched. */
+  matched_qm_result_id: string | null;
+  match_status: string;
+  flags: string[];
+  /** Always null until the §3 gate is passed (staging never adjusts). */
+  adjustment_type: string | null;
+  adjustment_magnitude: number | null;
+  adjustment_notes: string | null;
+}
+
 // --- Helper to describe a table to the Supabase client -----------------------
 type TableDef<Row, Insert, Update> = {
   Row: Row;
@@ -571,6 +609,7 @@ export interface Database {
       incident_settings: TableDef<IncidentSettingsRow, never, never>;
       incident_import_mappings: TableDef<IncidentImportMappingRow, never, never>;
       incident_rows: TableDef<IncidentRowRow, never, never>;
+      exam_incidents: TableDef<ExamIncidentRow, never, never>;
     };
     Views: Record<string, never>;
     Functions: {
@@ -655,6 +694,8 @@ export interface Database {
       set_incident_settings: { Args: { p_per_student_cap: number | null }; Returns: undefined };
       set_incident_mapping: { Args: { p_mapping: unknown }; Returns: undefined };
       import_incident_rows: { Args: { p_cycle: string; p_rows: unknown }; Returns: undefined };
+      upsert_exam_incidents: { Args: { p_cycle: string; p_batch: string; p_file_name: string | null; p_rows: unknown }; Returns: number };
+      clear_exam_incidents: { Args: { p_cycle: string }; Returns: undefined };
       clear_incident_rows: { Args: { p_cycle: string }; Returns: undefined };
       // 0017 — Incident Adjustments apply/commit (admin-only, explicit action).
       apply_incident_adjustments: { Args: { p_cycle: string }; Returns: undefined };

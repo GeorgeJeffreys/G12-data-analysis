@@ -215,6 +215,14 @@ import type {
 import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/import";
 import { computeStudentAdjustments } from "@/lib/incidents/apply";
 import {
+  classifySubjectName,
+  reconciliationFromRecords,
+  type ExamIncidentMatchContext,
+  type ExamIncidentRecord,
+  type ExamIncidentReconciliation,
+  type IncidentSittingEntry,
+} from "@/lib/incidents/exam-incident-match";
+import {
   CLEANED_DATA_COLUMNS,
   CLEANED_DATA_UNAVAILABLE,
   type CleanedDataColumn,
@@ -417,6 +425,11 @@ export class InMemoryDataProvider implements DataProvider {
     { uploaded: boolean; sample: boolean; fileName: string | null; incidents: AdjustmentIncident[] }
   >();
   private adjIncidentSeq = 0;
+  // Technical Incident Upload (0044): staged incident export records, cycle -> the
+  // upserted records keyed on `reference`. STAGING ONLY — no marks are adjusted.
+  // Batch provenance (id → file name) is kept alongside for the reconciliation.
+  private examIncidentsByCycle = new Map<string, Map<string, ExamIncidentRecord>>();
+  private examIncidentBatches = new Map<string, { cycleId: string; fileName: string }>();
   // CGJ (Centre Grade Judgement): the centre's EXPECTED level per student per
   // subject, keyed by cycle. Pure comparison input — never feeds scoring.
   // `expected` maps assessmentId → expected performance level (raw rows are
@@ -3089,6 +3102,96 @@ export class InMemoryDataProvider implements DataProvider {
     this.essayMarksByCycle.delete(cycleId);
     this.audit("upload", "Removed essay-marks file", "Essay marks cleared from subject totals", cycleId);
     this.bump();
+  }
+
+  // ── Technical Incident Upload (0044): staged export → exam_incidents ────────
+  /**
+   * The read-only context the pure matcher (`matchExamIncidents`) resolves rows
+   * against: the active cycle name, its scored subjects, every sitting keyed by
+   * (email, subjectCode) → qm_result_id, the staff/non-cohort emails (from the
+   * cohort_exclusions data), and the references already staged. Nothing here
+   * writes. The email is the participant's `studentId` (qm_participant_id),
+   * lowercased — the ONLY valid join key.
+   */
+  getExamIncidentMatchContext(cycleId: string): ExamIncidentMatchContext | null {
+    if (cycleId !== this.seed.liveCycle.id) return null;
+    const byId = new Map(this.seed.liveCycle.participants.map((p) => [p.id, p]));
+    const emailOf = (id: string) => (byId.get(id)?.studentId ?? id).trim().toLowerCase();
+    const nameOf = (id: string) => byId.get(id)?.label ?? id;
+
+    const subjects: { code: string; name: string }[] = [];
+    const sittings: IncidentSittingEntry[] = [];
+    for (const a of this.seed.liveCycle.assessments) {
+      const code = classifySubjectName(a.name);
+      if (!code) continue; // Life Skills / surveys → not an incident-matchable subject
+      subjects.push({ code, name: a.name });
+      const seen = new Set<string>();
+      for (const r of a.responses) {
+        if (seen.has(r.p)) continue;
+        seen.add(r.p);
+        sittings.push({
+          email: emailOf(r.p),
+          subjectCode: code,
+          // the real sitting id (qm_result_id) when carried; else the participant id
+          qmResultId: a.resultIdByParticipant?.[r.p] ?? r.p,
+          name: nameOf(r.p),
+        });
+      }
+    }
+    const staffEmails = [...this.cohortExcludedSet()].map(emailOf).filter(Boolean);
+    const existingReferences = [...(this.examIncidentsByCycle.get(cycleId)?.keys() ?? [])];
+    return { cycleId, activeCycleName: this.seed.liveCycle.name, subjects, sittings, staffEmails, existingReferences };
+  }
+
+  upsertExamIncidents(cycleId: string, batchId: string, fileName: string, records: readonly ExamIncidentRecord[]): void {
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
+    if (this.locked.has(cycleId)) return;
+    const map = this.examIncidentsByCycle.get(cycleId) ?? new Map<string, ExamIncidentRecord>();
+    let n = 0;
+    for (const rec of records) {
+      if (!rec.reference.trim()) continue; // never stage a keyless row (mirrors the RPC)
+      map.set(rec.reference, { ...rec, importBatchId: batchId });
+      n += 1;
+    }
+    this.examIncidentsByCycle.set(cycleId, map);
+    this.examIncidentBatches.set(batchId, { cycleId, fileName });
+    this.audit("upload", "Staged technical incidents", `${fileName} — ${n} incident(s) matched + staged`, cycleId);
+    this.bump();
+  }
+
+  getExamIncidentsForCycle(cycleId: string): ExamIncidentRecord[] {
+    return [...(this.examIncidentsByCycle.get(cycleId)?.values() ?? [])];
+  }
+
+  getExamIncidentReconciliation(cycleId: string, batchId: string): ExamIncidentReconciliation | null {
+    const batch = this.examIncidentBatches.get(batchId);
+    const records = this.getExamIncidentsForCycle(cycleId).filter((r) => r.importBatchId === batchId);
+    if (!batch && records.length === 0) return null;
+    return reconciliationFromRecords(records, { batchId, cycleId, fileName: batch?.fileName ?? "" });
+  }
+
+  clearExamIncidents(cycleId: string): void {
+    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
+    if (this.locked.has(cycleId)) return;
+    if (!this.examIncidentsByCycle.has(cycleId)) return;
+    this.examIncidentsByCycle.delete(cycleId);
+    this.audit("upload", "Removed staged incidents", "Technical incident staging cleared", cycleId);
+    this.bump();
+  }
+
+  /** Hydration setter (Supabase replay): load persisted staged records verbatim,
+   *  WITHOUT re-matching — the stored `match_status` / `matched_qm_result_id` are
+   *  authoritative. Not on the public interface (mirrors `essayMarksForPersistence`). */
+  hydrateExamIncidents(cycleId: string, records: readonly ExamIncidentRecord[]): void {
+    if (records.length === 0) return;
+    const map = new Map<string, ExamIncidentRecord>();
+    for (const rec of records) {
+      map.set(rec.reference, rec);
+      if (rec.importBatchId && !this.examIncidentBatches.has(rec.importBatchId)) {
+        this.examIncidentBatches.set(rec.importBatchId, { cycleId, fileName: "" });
+      }
+    }
+    this.examIncidentsByCycle.set(cycleId, map);
   }
 
   getEssayMarks(cycleId: string): EssayMarksModel | null {

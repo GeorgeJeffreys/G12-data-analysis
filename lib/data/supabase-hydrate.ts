@@ -32,6 +32,7 @@ import type {
   GradeSchemeRow,
   GradeRow,
   EssayMarkRow,
+  ExamIncidentRow,
   IncidentRow,
   AlterationRow,
   DistinctionStateRow,
@@ -71,6 +72,7 @@ import {
 import { subjectKeyOf, type OACell, type OASitting, type OASittingStudent } from "./overall-analytics";
 import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "@/lib/diagnostics";
 import type { EssayUploadRow, IncidentInput, IncidentDecisionInput } from "./provider";
+import type { ExamIncidentRecord, ExamIncidentMatchStatus } from "@/lib/incidents/exam-incident-match";
 import type { ValidationReport } from "@/lib/ingest/types";
 
 type DB = SupabaseBrowserClient;
@@ -225,6 +227,10 @@ export interface DecisionState {
    *  fresh DB — the provider then keeps the seeded defaults in place. */
   roles: { id: string; name: string; is_system: boolean; sort: number | null }[];
   roleActions: { role_id: string; action: string }[];
+  /** Staged technical-incident export records (0044). Loaded verbatim and replayed
+   *  WITHOUT re-matching — the stored `match_status` is authoritative. Empty on a
+   *  pre-migration DB (the `sel` reader swallows the missing-table error). */
+  examIncidents: ExamIncidentRecord[];
 }
 
 /** Group element-label rows (already sort_order-ordered) into the config shape. */
@@ -369,6 +375,12 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   // 0014 — per-subject A–E element labels (workspace-wide config table).
   const elementLabelRows = await sel<ElementLabelRow>(
     supabase.from("element_labels").select("*").order("sort_order", { ascending: true }),
+  );
+  // 0044 — staged technical-incident export records. `sel` tolerates a
+  // pre-migration DB (missing table → []), so hydrate never crashes before the
+  // migration is applied. Loaded verbatim; the stored match is authoritative.
+  const examIncidentRows = await sel<ExamIncidentRow>(
+    supabase.from("exam_incidents").select("*").eq("cycle_id", cycleId).order("imported_at", { ascending: true }),
   );
   // 0040 — dynamic roles + the role_id → action grid (workspace-wide). `sel`
   // tolerates a pre-migration DB (missing table → []), so hydrate never crashes
@@ -723,6 +735,40 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     })
     .filter((x): x is { participantId: string; reason: string } => x !== null);
 
+  // 0044 — staged incident export records, mapped verbatim from the DB rows
+  // (camelCase for the app). The stored match is authoritative; adjustment_* are
+  // carried through as null (staging never adjusts).
+  const examIncidents: ExamIncidentRecord[] = examIncidentRows.map((r) => ({
+    reference: r.reference,
+    importBatchId: r.import_batch_id,
+    examCycle: r.exam_cycle,
+    subjectRaw: r.subject_raw,
+    subjectKey: r.subject_key,
+    examDate: r.exam_date,
+    partnerCenter: r.partner_center ?? "",
+    category: r.category ?? "",
+    issue: r.issue ?? "",
+    code: r.code ?? "",
+    studentName: r.student_name ?? "",
+    studentEmail: r.student_email,
+    studentIdExternal: r.student_id_external ?? "",
+    timeStarted: r.time_started ?? "",
+    timeResolved: r.time_resolved ?? "",
+    durationMin: r.duration_min,
+    actionTaken: r.action_taken ?? "",
+    questionsAffectedCount: r.questions_affected_count,
+    questionsAffectedList: r.questions_affected_list,
+    status: r.status ?? "",
+    invigilator: r.invigilator ?? "",
+    sourceCreatedAt: r.source_created_at,
+    matchedQmResultId: r.matched_qm_result_id,
+    matchStatus: r.match_status as ExamIncidentMatchStatus,
+    flags: r.flags ?? [],
+    adjustmentType: null,
+    adjustmentMagnitude: null,
+    adjustmentNotes: null,
+  }));
+
   const decisions: DecisionState = {
     exclusions,
     cleanRemovals,
@@ -739,6 +785,7 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
     elementLabels: elementLabelRows.length ? groupElementLabels(elementLabelRows) : undefined,
     roles: roleRows.map((r) => ({ id: r.id, name: r.name, is_system: r.is_system, sort: r.sort })),
     roleActions: roleActionRows.map((r) => ({ role_id: r.role_id, action: r.action })),
+    examIncidents,
   };
 
   const subjectCodeToAssessmentId = new Map<string, string>();

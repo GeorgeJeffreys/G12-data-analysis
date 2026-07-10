@@ -86,6 +86,11 @@ import type {
 } from "./types";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
 import type { ResolvedIncidentRow, RosterParticipant } from "@/lib/incidents/import";
+import type {
+  ExamIncidentMatchContext,
+  ExamIncidentRecord,
+  ExamIncidentReconciliation,
+} from "@/lib/incidents/exam-incident-match";
 import type { GradingConfig } from "./grading";
 import type { ElementLabelsConfig } from "./element-labels";
 import type { ScoringConfig, QualityThresholds } from "@/lib/engine";
@@ -607,6 +612,25 @@ export interface DataProvider {
   applyIncidentAdjustments(cycleId: string): void;
   /** Un-apply (revert) a prior commit, so base scores stand alone. Admin only. */
   unapplyIncidentAdjustments(cycleId: string): void;
+
+  // Technical Incident Upload — ingest the real 20-column export, match by email
+  // within the active cycle, stage into `exam_incidents` (0044). STAGING ONLY: no
+  // marks are adjusted (§3 gate). Mirrors the essay masterfile upload trio.
+  /** Read-only context the pure matcher (`matchExamIncidents`) resolves rows
+   *  against: the active cycle name, its subjects, every sitting (email→
+   *  qm_result_id per subject), the staff/non-cohort emails, and the references
+   *  already staged (for the `duplicate` observation). Null when unknown. */
+  getExamIncidentMatchContext(cycleId: string): ExamIncidentMatchContext | null;
+  /** Upsert a batch of staged incident records by `reference` (cycle role). A
+   *  re-uploaded corrected file UPDATES rows, never duplicates. Never writes an
+   *  adjustment. */
+  upsertExamIncidents(cycleId: string, batchId: string, fileName: string, records: readonly ExamIncidentRecord[]): void;
+  /** All staged incident records for a cycle (most-recent batch last). */
+  getExamIncidentsForCycle(cycleId: string): ExamIncidentRecord[];
+  /** The reconciliation report for one import batch, rebuilt from staged rows. */
+  getExamIncidentReconciliation(cycleId: string, batchId: string): ExamIncidentReconciliation | null;
+  /** Clear a cycle's staged incidents (the "Remove" control). Cycle role. */
+  clearExamIncidents(cycleId: string): void;
 
   // audit-writing actions (UI-driven export / document generation)
   recordExport(cycleId: string, detail: string): void;
