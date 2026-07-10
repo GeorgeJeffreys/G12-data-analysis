@@ -28,6 +28,11 @@ import type { ActionDef, ActionKey, Role } from "@/lib/auth/actions";
 import { buildMembersModel, parseMemberKey, type MemberDirRow } from "./member-directory";
 import type { SupabaseBrowserClient } from "@/lib/supabase/client";
 import type { IncidentCodeInput, IncidentColumnMapping } from "@/lib/incidents/types";
+import type {
+  ExamIncidentMatchContext,
+  ExamIncidentRecord,
+  ExamIncidentReconciliation,
+} from "@/lib/incidents/exam-incident-match";
 import { InMemoryDataProvider } from "./in-memory-provider";
 import { gzipText, GZIP_MARKER_HEADER, GZIP_MARKER_VALUE } from "@/lib/transport/gzip";
 import {
@@ -276,6 +281,8 @@ export class SupabaseDataProvider implements DataProvider {
     // (empty = fresh/pre-migration DB → defaults stand).
     p.applyRolesAndActions(d.roles, d.roleActions);
     if (d.elementLabels) p.setElementLabels(d.elementLabels);
+    // 0044 — staged technical incidents loaded verbatim (no re-matching).
+    if (d.examIncidents.length) p.hydrateExamIncidents(cid, d.examIncidents);
     if (d.locked) p.lockCycle(cid); // last — freezes further edits
   }
 
@@ -418,6 +425,9 @@ export class SupabaseDataProvider implements DataProvider {
   getNewCycle(): NewCycleModel { return this.inner.getNewCycle(); }
   getEssayMarks(cycleId: string): EssayMarksModel | null { return this.inner.getEssayMarks(cycleId); }
   getEssayContext(cycleId: string): EssayUploadContext | null { return this.inner.getEssayContext(cycleId); }
+  getExamIncidentMatchContext(cycleId: string): ExamIncidentMatchContext | null { return this.inner.getExamIncidentMatchContext(cycleId); }
+  getExamIncidentsForCycle(cycleId: string): ExamIncidentRecord[] { return this.inner.getExamIncidentsForCycle(cycleId); }
+  getExamIncidentReconciliation(cycleId: string, batchId: string): ExamIncidentReconciliation | null { return this.inner.getExamIncidentReconciliation(cycleId, batchId); }
   getAdjustments(cycleId: string): AdjustmentsModel | null { return this.inner.getAdjustments(cycleId); }
   getCgj(cycleId: string): CgjModel | null { return this.inner.getCgj(cycleId); }
   getComposition(cycleId: string): CompositionModel | null { return this.inner.getComposition(cycleId); }
@@ -770,6 +780,50 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.clearEssayMarks(cycleId);
     this.bump();
     this.rpc("clear_essay_marks", { p_cycle: cycleId });
+  }
+
+  // technical incident upload (0044) — stage the matched export by `reference`.
+  // Optimistic local apply, then the upsert RPC + rehydrate (mirrors essay marks).
+  // STAGING ONLY: the adjustment_* fields are never sent (§3 gate).
+  upsertExamIncidents(cycleId: string, batchId: string, fileName: string, records: readonly ExamIncidentRecord[]): void {
+    this.inner.upsertExamIncidents(cycleId, batchId, fileName, records);
+    this.bump();
+    void this.rpcThenRehydrate("upsert_exam_incidents", {
+      p_cycle: cycleId,
+      p_batch: batchId,
+      p_file_name: fileName,
+      p_rows: records.map((r) => ({
+        reference: r.reference,
+        exam_cycle: r.examCycle,
+        subject_raw: r.subjectRaw,
+        subject_key: r.subjectKey,
+        exam_date: r.examDate,
+        partner_center: r.partnerCenter,
+        category: r.category,
+        issue: r.issue,
+        code: r.code,
+        student_name: r.studentName,
+        student_email: r.studentEmail,
+        student_id_external: r.studentIdExternal,
+        time_started: r.timeStarted,
+        time_resolved: r.timeResolved,
+        duration_min: r.durationMin,
+        action_taken: r.actionTaken,
+        questions_affected_count: r.questionsAffectedCount,
+        questions_affected_list: r.questionsAffectedList,
+        status: r.status,
+        invigilator: r.invigilator,
+        source_created_at: r.sourceCreatedAt,
+        matched_qm_result_id: r.matchedQmResultId,
+        match_status: r.matchStatus,
+        flags: r.flags,
+      })),
+    });
+  }
+  clearExamIncidents(cycleId: string): void {
+    this.inner.clearExamIncidents(cycleId);
+    this.bump();
+    this.rpc("clear_exam_incidents", { p_cycle: cycleId });
   }
 
   // incident log → alterations triage

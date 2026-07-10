@@ -24,6 +24,7 @@ import { StepIntro } from "@/components/ui/StepIntro";
 import { Button } from "@/components/ui/primitives";
 import { Icon } from "@/components/ui/icons";
 import { IncidentReviewSurface } from "@/components/incidents/IncidentReviewSurface";
+import { ExamIncidentUploadCard } from "@/components/incidents/ExamIncidentUploadCard";
 
 export default function AdjustmentsPage({ params }: { params: { cycleId: string } }) {
   const cycleId = params.cycleId;
@@ -59,7 +60,7 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
   return (
     <CycleShell {...shellProps}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-        <div className="hf-pad" style={{ padding: "14px 28px 0" }}>
+        <div className="hf-pad" style={{ padding: "14px 28px 0", display: "flex", flexDirection: "column", gap: 14 }}>
           <div className="hf-sub" style={{ maxWidth: 720 }}>
             Import the incident log and each incident is matched to a configured code
             (Settings › Incident adjustments); its mark alteration is computed from the
@@ -67,6 +68,9 @@ export default function AdjustmentsPage({ params }: { params: { cycleId: string 
             student’s <b>base + adjustment = adjusted</b> below before an admin commits
             it to Score. Base scores are untouched.
           </div>
+          {/* Technical incident export ingest (0043): matches by email + stages the
+              real 20-column export. Staging only — no marks are adjusted (§3 gate). */}
+          <ExamIncidentUploadCard cycleId={cycleId} />
         </div>
         <IncidentReviewSurface cycleId={cycleId} showImporter />
       </div>
