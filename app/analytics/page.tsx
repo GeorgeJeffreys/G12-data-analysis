@@ -1,139 +1,71 @@
 "use client";
 
 /**
- * Analytics › Trends — how each assessment has behaved across cycles. The latest
- * cycle's aggregates are REAL (computed from the provider/engine); prior cycles
- * are clearly-labelled MOCK (there is no real history yet).
+ * Analytics › Overall — the bird's-eye programme view over time × centres.
+ * Reproduces the finalised design (design/hfOverallFinal.jsx): a bar of four
+ * checkbox dropdowns (Time / Exam type / Partner centre / Subject) over a stacked
+ * collapsible accordion of four sections, each answering its focused question at
+ * a glance even when collapsed.
+ *
+ * Every figure comes from `getOverallAnalytics()` (the OverallAnalytics
+ * read-model). The checkbox slice is adapted, via `finalToLegacy`, into the
+ * shape the sections consume; degeneracy (single centre / single year /
+ * Combined-only levels) is handled by `sliceEffects`. Compare cycles is separate.
  */
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useProviderData } from "@/lib/data/context";
-import { H } from "@/lib/ui/tokens";
 import { Shell } from "@/components/shell/Shell";
-import { Button, Card } from "@/components/ui/primitives";
-import { Icon } from "@/components/ui/icons";
 import { analyticsSubnav } from "@/lib/ui/subnav";
-import { MockBanner, Spark, AwardOverTimeChart } from "@/components/ui/analytics";
-import type { KpiFormat } from "@/lib/data/types";
+import { OVSlicerDropdowns, OVActiveSlice, OVAccordion, defaultFinalSlice, sanitizeSlice, finalToLegacy, type FinalSlice } from "@/components/ui/overall/slicer";
 
-const round1 = (n: number) => Math.round(n * 10) / 10;
-function fmtKpi(v: number, f: KpiFormat): string {
-  if (f === "pct") return `${round1(v)}%`;
-  if (f === "intComma") return Math.round(v).toLocaleString();
-  return String(Math.round(v));
-}
-/** Signed delta vs the previous cycle, naming it explicitly. */
-function deltaVs(cur: number, prevVal: number | undefined, prevName: string | undefined) {
-  if (prevVal === undefined || prevName === undefined) return { text: "first sitting on record", color: H.ink3 };
-  const d = round1(cur - prevVal);
-  return { text: `${d >= 0 ? "+" : "−"}${Math.abs(d)} vs ${prevName}`, color: d < 0 ? H.bad : d > 0 ? H.good : H.ink2 };
-}
+const KEY = "g12_overall_slice";
 
-export default function TrendsPage() {
-  const model = useProviderData((p) => p.getAnalyticsTrends());
-  const [sel, setSel] = useState(model.currentIndex);
+export default function OverallPage() {
+  const analytics = useProviderData((p) => p.getOverallAnalytics());
 
-  const currentName = model.cycleNames[sel] ?? model.cycleLabels[sel] ?? "";
-  const prevName = sel > 0 ? model.cycleNames[sel - 1] : undefined;
-  const isCurrent = sel === model.currentIndex;
+  // Future years (no data yet) — the four years after the latest live year.
+  const futureYears = useMemo(() => {
+    const last = analytics.years[analytics.years.length - 1] ?? new Date().getFullYear();
+    return [1, 2, 3, 4].map((i) => last + i);
+  }, [analytics.years]);
+
+  // Persisted slice, reconciled against the current read-model on load.
+  const [slice, setSlice] = useState<FinalSlice>(() => defaultFinalSlice(analytics));
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(KEY);
+      setSlice(sanitizeSlice(raw ? JSON.parse(raw) : null, analytics));
+    } catch {
+      setSlice(defaultFinalSlice(analytics));
+    }
+    // Reconcile once against the loaded model; re-run if the model's dimensions change.
+  }, [analytics.years.join(","), analytics.centres.join(","), analytics.subjects.map((s) => s.key).join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(slice));
+    } catch {
+      /* ignore persistence failures (private mode, quota) */
+    }
+  }, [slice]);
+
+  const legacy = finalToLegacy(slice, analytics);
 
   return (
-    <Shell
-      active="Analytics"
-      crumb={[{ label: "Analytics" }, { label: "Trends" }]}
-      subnav={analyticsSubnav("trends")}
-      actions={<Button variant="ghost"><Icon name="download" />Export</Button>}
-    >
-      <div style={{ display: "flex", flexDirection: "column", padding: "24px 30px", gap: 18, flex: 1 }}>
-        <div style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="hf-h1">Trends across sittings</div>
-            <div className="hf-sub" style={{ marginTop: 6 }}>
-              How each assessment has behaved over the last {model.cycleNames.length} sittings ({model.cycleNames[0]} → {model.cycleNames[model.cycleNames.length - 1]}).
+    <Shell active="Analytics" crumb={[{ label: "Analytics" }, { label: "Overall" }]} subnav={analyticsSubnav("overall")}>
+      <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+        <div style={{ display: "flex", flexDirection: "column", padding: "20px 26px 40px", gap: 18, maxWidth: 1400, width: "100%", margin: "0 auto" }}>
+          <div className="hf-row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
+            <div>
+              <div className="hf-h1">Overall</div>
+              <div className="hf-sub" style={{ marginTop: 5, maxWidth: 640 }}>
+                Programme performance over time — reach, outcomes, and consistency across partner centres. Expand any section; every collapsed card still answers its question at a glance.
+              </div>
             </div>
+            <OVActiveSlice slice={slice} analytics={analytics} />
           </div>
-          {/* cycle selector: which cycle the figures below describe */}
-          <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <span className="hf-lbl">Showing</span>
-            <span className="hf-chip on" style={{ padding: 0, overflow: "hidden" }}>
-              <select
-                value={sel}
-                onChange={(e) => setSel(Number(e.target.value))}
-                aria-label="Sitting to show trends for"
-                style={{ border: "none", background: "transparent", font: "inherit", color: "inherit", padding: "5px 11px", cursor: "pointer", outline: "none", fontWeight: 700 }}
-              >
-                {model.cycleNames.map((name, i) => (
-                  <option key={name + i} value={i}>
-                    {name}{i === model.currentIndex ? " (current)" : ""}
-                  </option>
-                ))}
-              </select>
-            </span>
-          </label>
-        </div>
-
-        {/* which cycle, and what it's compared against */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: H.ink2, flexWrap: "wrap" }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, fontWeight: 700, color: H.ink }}>
-            <span style={{ width: 8, height: 8, borderRadius: 999, background: isCurrent ? H.pink : H.ink3 }} />
-            {currentName}
-          </span>
-          <span style={{ fontSize: 8.5, color: isCurrent ? H.good : H.ink3, border: `1px solid ${H.line2}`, borderRadius: 4, padding: "1px 6px", letterSpacing: 0.4 }}>
-            {isCurrent ? "CURRENT / LIVE" : "MOCK PRIOR"}
-          </span>
-          <span style={{ color: H.ink3 }}>·</span>
-          <span>{prevName ? <>compared against <b style={{ color: H.ink }}>{prevName}</b></> : "first sitting on record — no prior to compare"}</span>
-        </div>
-
-        {model.priorsAreMock && <MockBanner />}
-
-        {/* KPI row — values + deltas reflect the selected cycle */}
-        <div style={{ display: "flex", gap: 16 }}>
-          {model.kpis.map((k) => {
-            const cur = k.points[sel] ?? 0;
-            const d = deltaVs(cur, sel > 0 ? k.points[sel - 1] : undefined, prevName);
-            return (
-              <Card key={k.label} style={{ flex: 1, padding: "16px 18px" }}>
-                <div className="hf-lbl">{k.label}</div>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", marginTop: 8 }}>
-                  <div>
-                    <div className="hf-mono" style={{ fontSize: 24, fontWeight: 600, lineHeight: 1 }}>{fmtKpi(cur, k.format)}</div>
-                    <div className="hf-sub" style={{ fontSize: 11, marginTop: 5, color: d.color }}>{d.text}</div>
-                  </div>
-                  <Spark pts={k.points} w={96} h={36} highlight={sel} />
-                </div>
-              </Card>
-            );
-          })}
-        </div>
-
-        <div style={{ display: "flex", gap: 16, flex: 1, minHeight: 0, alignItems: "stretch", flexWrap: "wrap" }}>
-          {/* cohort mean by assessment */}
-          <Card style={{ flex: "1 1 360px", minWidth: 280, padding: "18px 20px", overflow: "auto" }}>
-            <div className="hf-lbl" style={{ marginBottom: 4 }}>Cohort mean by assessment</div>
-            <div className="hf-sub" style={{ fontSize: 11, marginBottom: 4 }}>% for {currentName}{prevName ? `, change vs ${prevName}` : ""}</div>
-            {model.byAssessment.map((m, i) => {
-              const cur = m.points[sel] ?? 0;
-              const prev = sel > 0 ? m.points[sel - 1] : undefined;
-              const dv = prev === undefined ? null : round1(cur - prev);
-              return (
-                <div key={m.name} style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 0", borderBottom: i < model.byAssessment.length - 1 ? `1px solid ${H.line}` : "none" }}>
-                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 600 }}>{m.name}</span>
-                  <Spark pts={m.points} w={104} h={28} color={H.ink2} highlight={sel} />
-                  <span className="hf-mono" style={{ width: 52, textAlign: "right", fontSize: 13, fontWeight: 600 }}>{round1(cur)}%</span>
-                  <span className="hf-mono" style={{ width: 44, textAlign: "right", fontSize: 11.5, color: dv === null ? H.ink3 : dv < 0 ? H.bad : H.good }}>
-                    {dv === null ? "—" : `${dv >= 0 ? "+" : "−"}${Math.abs(dv)}`}
-                  </span>
-                </div>
-              );
-            })}
-          </Card>
-
-          {/* award mix OVER TIME (every sitting) — distinct from Compare's two-cycle view */}
-          <Card style={{ flex: "1 1 340px", minWidth: 280, padding: "18px 20px" }}>
-            <div className="hf-lbl" style={{ marginBottom: 2 }}>Award mix over time</div>
-            <div className="hf-sub" style={{ fontSize: 11, marginBottom: 14 }}>% of cohort in each award level, every sitting ({model.cycleNames[0]} → {model.cycleNames[model.cycleNames.length - 1]})</div>
-            <AwardOverTimeChart series={model.awardOverTime} levels={model.awardLevels} highlightIndex={sel} />
-          </Card>
+          <OVSlicerDropdowns slice={slice} setSlice={setSlice} analytics={analytics} futureYears={futureYears} />
+          <OVAccordion analytics={analytics} slice={legacy} />
         </div>
       </div>
     </Shell>
