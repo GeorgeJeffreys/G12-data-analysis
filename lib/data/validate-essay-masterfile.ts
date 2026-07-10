@@ -1,22 +1,38 @@
 /**
  * Pre-write review for the reconciling essay masterfile (English/Arabic, one file
- * per language). Combines the parser's structural anomalies (a student without
- * exactly 2 essays, or an essay with no approved mark — surfaced, never dropped)
- * with the roster validation (`validateEssayRows`: unknown Student ID → rejected,
- * out-of-range mark → rejected, an already-excluded sitting → flagged) into a
- * single row-by-row report. NOTHING is written until the operator confirms; only
- * `valid` rows flow to `uploadEssayMarks`.
+ * per language). Joins each reconciled student to a roster participant on the
+ * `QM Participant ID (email)` column — case-insensitive EXACT email — and merges
+ * that with the parser's structural anomalies (≠2 essays, no approved mark) into a
+ * single row-by-row report.
  *
- * Pure + engine-free — no provider, no persistence.
+ * Rejection rules (row-by-row, nothing global, nothing guessed):
+ *  - blank email → REJECT (no join key);
+ *  - email not in the subject's roster → REJECT (never guess a participant);
+ *  - matched sitting already excluded on the Clean tab → FLAG (not applied);
+ *  - a structural anomaly from the parser → REJECT.
+ *
+ * The Alsama `Student ID` is a human label only — never the join key. Each row
+ * carries the MATCHED participant (email + name) so a human signs off before apply.
+ * NOTHING is written until the operator confirms; only `valid` rows flow to
+ * `uploadEssayMarks`. Pure + engine-free — no provider, no persistence.
  */
 import type { EssayUploadRow } from "./provider";
-import type { EssayUploadContext } from "./types";
-import { validateEssayRows, type EssayRowStatus } from "./validate-essays";
-import { masterfileToUploadRows, type EssayMasterfileResult, type EssaySubjectCode } from "./parse-essay-masterfile";
+import type { EssayUploadContext, EssaySubjectContext } from "./types";
+import type { EssayMasterfileResult, EssaySubjectCode } from "./parse-essay-masterfile";
+
+export type EssayRowStatus = "valid" | "rejected" | "flagged";
 
 export interface MasterfileReviewRow {
+  /** Alsama Student ID from the file — a human label (not the join key). */
   studentId: string;
+  /** Student name from the file. */
   studentName: string;
+  /** The QM email from the file (the join key), lower-cased; "" when blank. */
+  email: string;
+  /** The MATCHED roster participant's name, once joined — else null. */
+  matchedName: string | null;
+  /** The MATCHED roster participant's canonical email, once joined — else null. */
+  matchedEmail: string | null;
   status: EssayRowStatus;
   /** Reconciled subject essay /20 for a valid row, else null. */
   subjectEssay: number | null;
@@ -37,35 +53,59 @@ export interface MasterfileValidationReport {
   flaggedCount: number;
 }
 
+/** Case-insensitive exact-email lookup against a subject roster (email = qm id). */
+function findByEmail(subject: EssaySubjectContext, email: string) {
+  const e = email.trim().toLowerCase();
+  if (!e) return undefined;
+  return subject.participants.find(
+    (p) => (p.studentId ?? "").trim().toLowerCase() === e || p.participantId.trim().toLowerCase() === e,
+  );
+}
+
 /**
- * Reconcile → roster-validate → merge into one review report. `result` comes from
+ * Reconcile → email-join → merge into one review report. `result` comes from
  * `parseEssayMasterfile`/`reconcileMasterfile`; `context` from `getEssayContext`.
  */
 export function validateEssayMasterfile(
   result: EssayMasterfileResult,
   context: EssayUploadContext,
 ): MasterfileValidationReport {
-  const uploadRows = masterfileToUploadRows(result);
-  const roster = validateEssayRows(uploadRows, context);
-  const subjectName = context.subjects.find((s) => s.code === result.subjectCode)?.name ?? null;
-
-  // Index the roster verdict by the reconciled student's id (row.participantId).
-  const verdictById = new Map(roster.results.map((r) => [r.row.participantId, r]));
-  const reconciledById = new Map(result.reconciled.map((s) => [s.studentId, s]));
-
+  const subject = context.subjects.find((s) => s.code === result.subjectCode);
+  const subjectName = subject?.name ?? null;
   const rows: MasterfileReviewRow[] = [];
+  const valid: EssayUploadRow[] = [];
 
-  // Reconciled students: carry the roster verdict (valid / rejected / flagged).
   for (const s of result.reconciled) {
-    const v = verdictById.get(s.studentId);
-    rows.push({
+    const base = {
       studentId: s.studentId,
       studentName: s.studentName,
-      status: v?.status ?? "valid",
-      subjectEssay: v && v.status === "valid" ? s.subjectEssay : null,
+      email: s.email,
+      matchedName: null as string | null,
+      matchedEmail: null as string | null,
+      subjectEssay: null as number | null,
       essays: s.essays,
-      reason: v?.reason ?? null,
-    });
+    };
+
+    if (!subject) {
+      rows.push({ ...base, status: "rejected", reason: `"${result.subjectCode}" has no essay component in this cycle.` });
+      continue;
+    }
+    if (!s.email) {
+      rows.push({ ...base, status: "rejected", reason: "Blank QM Participant ID (email) — cannot join to a participant." });
+      continue;
+    }
+    const entry = findByEmail(subject, s.email);
+    if (!entry) {
+      rows.push({ ...base, status: "rejected", reason: `QM email "${s.email}" is not in the ${subject.name} roster.` });
+      continue;
+    }
+    const matched = { matchedName: entry.name, matchedEmail: entry.studentId ?? entry.participantId };
+    if (entry.excluded) {
+      rows.push({ ...base, ...matched, status: "flagged", reason: "Sitting is excluded on the Clean tab — mark not applied." });
+      continue;
+    }
+    rows.push({ ...base, ...matched, status: "valid", subjectEssay: s.subjectEssay, reason: null });
+    valid.push({ participantId: s.email, subjectCode: s.subjectCode, totalScore: s.subjectEssay, essayCount: s.essays.length });
   }
 
   // Structural anomalies from the parser are always rejected (never applied).
@@ -73,6 +113,9 @@ export function validateEssayMasterfile(
     rows.push({
       studentId: a.studentId,
       studentName: a.studentName,
+      email: "",
+      matchedName: null,
+      matchedEmail: null,
       status: "rejected",
       subjectEssay: null,
       essays: null,
@@ -81,9 +124,6 @@ export function validateEssayMasterfile(
   }
 
   rows.sort((x, y) => x.studentName.localeCompare(y.studentName) || x.studentId.localeCompare(y.studentId));
-
-  // Keep the reconciled context on the valid upload rows (essayCount already set).
-  const valid = roster.valid.filter((r) => reconciledById.has(r.participantId));
 
   return {
     subjectCode: result.subjectCode,
