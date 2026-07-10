@@ -36,6 +36,8 @@ import type {
   AlterationRow,
   DistinctionStateRow,
   DistinctionOverrideRow,
+  ScoreRunRow,
+  ParticipantScoreRow,
   DocumentSettingsRow,
   WorkspaceSettingRow,
   RoleRow,
@@ -58,7 +60,15 @@ import type {
   SeedTechnicalIncident,
 } from "./seed-types";
 import { isTechnicalIncidentStatus } from "./result-status";
-import { ENGINE_VERSION, type QualityRating } from "@/lib/engine";
+import {
+  ENGINE_VERSION,
+  deriveAward,
+  DEFAULT_SCORING_CONFIG,
+  performanceLabels,
+  awardLabels,
+  type QualityRating,
+} from "@/lib/engine";
+import { subjectKeyOf, type OACell, type OASitting, type OASittingStudent } from "./overall-analytics";
 import { buildAssessmentDiagnostics, cleanDiagResponses, type DiagResponse } from "@/lib/diagnostics";
 import type { EssayUploadRow, IncidentInput, IncidentDecisionInput } from "./provider";
 import type { ValidationReport } from "@/lib/ingest/types";
@@ -743,6 +753,193 @@ export async function hydrate(supabase: DB): Promise<Hydrated | null> {
   };
 
   return { seed, decisions, lookups };
+}
+
+// ── Overall analytics: multi-cycle projection ───────────────────────────────
+/**
+ * Page through a whole table in stable key order (no cycle filter), so a large
+ * table is never silently truncated by PostgREST's max-rows cap. Mirrors
+ * `selAllByCycle` but spans EVERY centre × year × sitting — the read-model needs
+ * all of them, not just the single live cycle.
+ */
+async function selAllRows<T>(supabase: DB, table: string, orderCols: readonly string[]): Promise<T[]> {
+  const PAGE = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; ) {
+    let q = supabase.from(table).select("*");
+    for (const col of orderCols) q = q.order(col, { ascending: true });
+    const page = await sel<T>(q.range(from, from + PAGE - 1));
+    if (page.length === 0) break;
+    out.push(...page);
+    from += page.length;
+  }
+  return out;
+}
+
+export interface OverallAnalyticsProjection {
+  cells: OACell[];
+  subjects: { key: string; name: string; short: string; rtl?: boolean }[];
+  years: number[];
+}
+
+/**
+ * Build the Overall-analytics multi-cell projection from the PERSISTED per-sitting
+ * outputs across EVERY centre × year × sitting — additive to the single-live-cycle
+ * hydrate above, and never touches it. It reads the signed-off grades (per-subject
+ * performance level + overall award) and per-subject score percentages, groups
+ * them by (centre, year) with their February / May sittings, and hands the result
+ * to `computeOverallAnalytics` (which does the best-of-two roll-up via the existing
+ * `rollupOverall` / `deriveAward`). Seeding at this persisted-output grain is
+ * sufficient — no raw responses or engine re-run required.
+ *
+ * Defensive: a pre-migration / empty database yields an empty projection, and the
+ * provider then falls back to the in-memory demo. Never throws — a missing table
+ * resolves to `[]` via `sel`.
+ */
+export async function fetchOverallAnalytics(supabase: DB): Promise<OverallAnalyticsProjection> {
+  const empty: OverallAnalyticsProjection = { cells: [], subjects: [], years: [] };
+  try {
+    const [cycles, years, centres, assessments, participants, grades, scoreRuns, scores] =
+      await Promise.all([
+        sel<ExamCycleRow>(supabase.from("exam_cycles").select("*")),
+        sel<ExamYearRow>(supabase.from("exam_years").select("*")),
+        sel<TestCentreRow>(supabase.from("test_centres").select("*")),
+        sel<AssessmentRow>(supabase.from("assessments").select("*")),
+        sel<ParticipantRow>(supabase.from("participants").select("*")),
+        selAllRows<GradeRow>(supabase, "grades", ["cycle_id", "participant_id"]),
+        selAllRows<ScoreRunRow>(supabase, "score_runs", ["cycle_id", "assessment_id", "computed_at"]),
+        selAllRows<ParticipantScoreRow>(supabase, "participant_scores", ["score_run_id"]),
+      ]);
+    if (cycles.length === 0) return empty;
+
+    const yearById = new Map(years.map((y) => [y.id, y] as const));
+    const centreNameById = new Map(centres.map((c) => [c.id, c.name] as const));
+    const assessmentById = new Map(assessments.map((a) => [a.id, a] as const));
+    const studentIdByParticipant = new Map(
+      participants.map((p) => [p.id, p.qm_participant_id || p.pseudonym_id || p.id] as const),
+    );
+
+    // Assessment id → canonical subject key + display, and the union subject list.
+    const subjectByKey = new Map<string, { key: string; name: string; short: string; rtl?: boolean }>();
+    const subjectKeyByAssessment = new Map<string, string>();
+    for (const a of assessments) {
+      const info = classify(a.name);
+      const key = subjectKeyOf(a.name);
+      subjectKeyByAssessment.set(a.id, key);
+      if (!subjectByKey.has(key)) {
+        subjectByKey.set(key, { key, name: a.name, short: info.shortName, ...(info.rtl ? { rtl: true } : {}) });
+      }
+    }
+
+    // Latest score_run per (cycle, assessment); then its participant scores → pct.
+    const latestRunByCycleAssessment = new Map<string, string>();
+    const latestRunTime = new Map<string, string>();
+    for (const r of scoreRuns) {
+      const key = `${r.cycle_id}|${r.assessment_id}`;
+      const prev = latestRunTime.get(key);
+      if (prev === undefined || r.computed_at > prev) {
+        latestRunTime.set(key, r.computed_at);
+        latestRunByCycleAssessment.set(key, r.id);
+      }
+    }
+    const scoresByRun = new Map<string, ParticipantScoreRow[]>();
+    for (const s of scores) {
+      (scoresByRun.get(s.score_run_id) ?? scoresByRun.set(s.score_run_id, []).get(s.score_run_id)!).push(s);
+    }
+
+    // Grades grouped by (cycle, participant).
+    const gradesByCycleParticipant = new Map<string, GradeRow[]>();
+    for (const g of grades) {
+      const key = `${g.cycle_id}|${g.participant_id}`;
+      (gradesByCycleParticipant.get(key) ?? gradesByCycleParticipant.set(key, []).get(key)!).push(g);
+    }
+
+    const perfLevels = performanceLabels(DEFAULT_SCORING_CONFIG);
+    const awards = awardLabels(DEFAULT_SCORING_CONFIG);
+    const assessmentsByCycle = new Map<string, AssessmentRow[]>();
+    for (const a of assessments) {
+      (assessmentsByCycle.get(a.cycle_id) ?? assessmentsByCycle.set(a.cycle_id, []).get(a.cycle_id)!).push(a);
+    }
+
+    /** Build one sitting's OASitting from its persisted grades + scores. */
+    const buildSitting = (cycleId: string): OASitting | null => {
+      const cycleAssessments = assessmentsByCycle.get(cycleId) ?? [];
+      // Which participants have any grade row in this cycle.
+      const participantIds = new Set<string>();
+      for (const g of grades) if (g.cycle_id === cycleId) participantIds.add(g.participant_id);
+      if (participantIds.size === 0) return null;
+
+      const students: OASittingStudent[] = [];
+      for (const pid of participantIds) {
+        const gRows = gradesByCycleParticipant.get(`${cycleId}|${pid}`) ?? [];
+        const levels: Record<string, string> = {};
+        let award = "";
+        const subjectLevels: string[] = [];
+        for (const g of gRows) {
+          if (g.scope === "overall") {
+            award = g.grade_label ?? "";
+          } else {
+            const key = subjectKeyByAssessment.get(g.scope);
+            if (key && g.grade_label) {
+              levels[key] = g.grade_label;
+              subjectLevels.push(g.grade_label);
+            }
+          }
+        }
+        // Derive the overall award when a graded sitting has per-subject levels but
+        // no persisted 'overall' row (never for the seed, which writes one).
+        if (!award && subjectLevels.length > 0) {
+          award = deriveAward(
+            { subjectLevels, d3Pass: true },
+            { performanceLevels: perfLevels, awardLevels: awards },
+          ).award;
+        }
+        students.push({ studentId: studentIdByParticipant.get(pid) ?? pid, award, levels });
+      }
+
+      const scoresOut: Record<string, number[]> = {};
+      for (const a of cycleAssessments) {
+        const key = subjectKeyByAssessment.get(a.id);
+        if (!key) continue;
+        const runId = latestRunByCycleAssessment.get(`${cycleId}|${a.id}`);
+        const list = runId ? (scoresByRun.get(runId) ?? []).map((s) => s.pct) : [];
+        (scoresOut[key] ??= []).push(...list);
+      }
+      return { students, scores: scoresOut };
+    };
+
+    // Group cycles into (centre, year) cells with their February / May sittings.
+    const cellByKey = new Map<string, OACell>();
+    const yearsPresent = new Set<number>();
+    for (const c of cycles) {
+      if (!c.year_id || !c.sitting) continue;
+      const y = yearById.get(c.year_id);
+      if (!y) continue;
+      const yearNum = Number(y.name.match(/(19|20)\d{2}/)?.[0] ?? y.name);
+      if (!Number.isFinite(yearNum)) continue;
+      const centre = centreNameById.get(y.test_centre_id) ?? "Unassigned";
+      const sitting = c.sitting === "february" ? "february" : "may";
+      const sit = buildSitting(c.id);
+      if (!sit) continue;
+      const key = `${centre}|${yearNum}`;
+      const cell = cellByKey.get(key) ?? { centre, year: yearNum, february: null, may: null };
+      // First non-empty sitting wins per slot (a re-run cycle shouldn't double it).
+      if (sitting === "february") cell.february ??= sit;
+      else cell.may ??= sit;
+      cellByKey.set(key, cell);
+      yearsPresent.add(yearNum);
+    }
+
+    const cells = [...cellByKey.values()].filter((c) => c.february !== null || c.may !== null);
+    if (cells.length === 0) return empty;
+
+    // Subjects in canonical order (classify order), union across the cells.
+    const orderOf = (name: string): number => classify(name).order;
+    const subjects = [...subjectByKey.values()].sort((a, b) => orderOf(a.name) - orderOf(b.name));
+    return { cells, subjects, years: [...yearsPresent].sort((a, b) => a - b) };
+  } catch {
+    return empty;
+  }
 }
 
 function stageIndexFromStatus(status: string): number {
