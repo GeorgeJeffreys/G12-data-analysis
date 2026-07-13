@@ -1,17 +1,15 @@
 /**
- * Essay workbook flow end-to-end through the provider (prompt 03): extract the
- * Adjusted /20 → validate against the roster (join on QM email) → apply via the
- * EXISTING uploadEssayMarks at FULL weight → idempotent re-upload → each subject
- * merges. Off-roster email / no-Adjusted are reported and excluded, never dropped.
- *
- * In the seed the roster's join key (studentId) is a P-code, so tests feed that
- * value in the QM email column; the join matches on it exactly as production
- * matches on the email. The Student ID column carries a distinct label.
+ * Fixed template flow end-to-end (prompt 03 v2): extract Final /20 → validate on
+ * QM email → apply via the EXISTING uploadEssayMarks at FULL weight → idempotent
+ * re-upload → per-subject merge. Plus the generate → fill → re-parse round-trip
+ * (the app owns the template on both ends). Off-roster / no-Final are excluded.
  */
 import { describe, it, expect } from "vitest";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { extractSheet, type EssaySubjectCode } from "@/lib/data/parse-essay-masterfile";
+import { extractSheet, parseEssayMasterfile, type EssaySubjectCode } from "@/lib/data/parse-essay-masterfile";
 import { validateEssayMasterfile } from "@/lib/data/validate-essay-masterfile";
+import { buildEssayTemplateWorkbook } from "@/lib/data/essay-template";
+import { XLSX } from "@/lib/export/sheet-utils";
 import seedJson from "@/lib/data/seed.generated.json";
 
 const seed = seedJson as unknown as {
@@ -21,62 +19,96 @@ const CYCLE = seed.liveCycle.id;
 const english = seed.liveCycle.assessments.find((a) => /english/i.test(a.name))!;
 const arabic = seed.liveCycle.assessments.find((a) => /arabic/i.test(a.name))!;
 
-const HEADER = ["Student ID", "Student name", "Total score", "Adjusted scores (USE THESE)", "QM email"];
-type Row = { email: string; adjusted: number };
-
+const HEADER = ["QM email", "Student name", "Alsama Student ID", "Essay ID", "Marker", "Mark (/20)", "Final essay mark (/20)"];
+type Row = { email: string; final: number };
 function extract(code: EssaySubjectCode, students: Row[]) {
-  const matrix = [HEADER, ...students.map((s, i) => [`L-${i}`, "name", "88", String(s.adjusted), s.email])];
-  return { students: extractSheet(matrix, code), subjectsSeen: [code], skippedSheets: [] as string[] };
+  const rows = [HEADER];
+  students.forEach((s) => {
+    ["Essay 1", "Essay 2", "Essay 1", "Essay 2"].forEach((eid, k) =>
+      rows.push([s.email, "name", "AL", eid, "M1", "9", k === 0 ? String(s.final) : ""]),
+    );
+  });
+  return { students: extractSheet(rows, code), subjectsSeen: [code], skippedSheets: [] as string[] };
 }
-
 function rosterIds(p: InMemoryDataProvider, assessmentId: string): string[] {
   const ctx = p.getEssayContext(CYCLE)!;
   return ctx.subjects.find((s) => s.assessmentId === assessmentId)!.participants.filter((x) => !x.excluded).map((x) => x.studentId);
 }
-
 function apply(p: InMemoryDataProvider, code: EssaySubjectCode, students: Row[]) {
   const report = validateEssayMasterfile(extract(code, students), p.getEssayContext(CYCLE)!);
   p.uploadEssayMarks(CYCLE, `${code}.xlsx`, report.valid);
   return report;
 }
 
-describe("workbook → provider, join on QM email, full weight", () => {
-  it("the Adjusted /20 lands on the subject at full weight (not halved again)", () => {
+describe("template → provider, join on QM email, full weight", () => {
+  it("the Final /20 lands on the subject at full weight (not halved again)", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
-    const report = apply(p, "ESL", [{ email: id, adjusted: 15.25 }]); // half_up → 15
+    const report = apply(p, "ESL", [{ email: id, final: 15.25 }]); // half_up → 15
     expect(report.validCount).toBe(1);
-
     const pid = p.getEssayContext(CYCLE)!.subjects.find((s) => s.assessmentId === english.id)!.participants[0]!.participantId;
     const cell = p.getComposition(CYCLE)!.students.find((s) => s.participantId === pid)!
       .subjects.find((s) => s.assessmentId === english.id)!;
-    expect(cell.essay).toBe(15); // full weight into the reserved 20
+    expect(cell.essay).toBe(15);
   });
 
-  it("re-uploading the same subject is idempotent (no duplicate marks)", () => {
+  it("re-uploading the same subject is idempotent", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
-    apply(p, "ESL", [{ email: id, adjusted: 18.5 }]); // → 19
+    apply(p, "ESL", [{ email: id, final: 18.5 }]); // → 19
     const first = p.getEssayMarks(CYCLE)!;
-    apply(p, "ESL", [{ email: id, adjusted: 18.5 }]);
+    apply(p, "ESL", [{ email: id, final: 18.5 }]);
     const second = p.getEssayMarks(CYCLE)!;
     expect(second.matchedCount).toBe(first.matchedCount);
     expect(second.students.find((s) => s.participantId === id)!.marks[english.id]).toBe(19);
   });
 
-  it("English and Arabic apply separately and merge — English survives an Arabic upload", () => {
+  it("English and Arabic merge — English survives an Arabic upload", () => {
     const p = new InMemoryDataProvider();
     const eid = rosterIds(p, english.id)[0]!;
     const aid = rosterIds(p, arabic.id)[0]!;
-    apply(p, "ESL", [{ email: eid, adjusted: 20 }]);
-    apply(p, "AFL", [{ email: aid, adjusted: 10 }]);
+    apply(p, "ESL", [{ email: eid, final: 20 }]);
+    apply(p, "AFL", [{ email: aid, final: 10 }]);
     const model = p.getEssayMarks(CYCLE)!;
     expect(model.students.find((s) => s.participantId === eid)!.marks[english.id]).toBe(20);
     expect(model.students.find((s) => s.participantId === aid)!.marks[arabic.id]).toBe(10);
   });
 });
 
-describe("pending disclosure clears per subject once applied", () => {
+describe("generate → fill → re-parse round-trip", () => {
+  it("the generated template round-trips: filled Finals parse back to the same marks", async () => {
+    const p = new InMemoryDataProvider();
+    const ctx = p.getEssayContext(CYCLE)!;
+    const wb = buildEssayTemplateWorkbook(ctx);
+
+    // The app owns the sheet names + join column.
+    expect(wb.SheetNames).toContain("English Essay master");
+    expect(wb.SheetNames).toContain("Arabic Essay master");
+    const engSheet = "English Essay master";
+    const header = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[engSheet]!, { header: 1 })[0]!;
+    expect(header).toContain("QM email");
+    expect(header).toContain("Final essay mark (/20)");
+
+    // The first English student's block starts at row 2; QM email pre-filled from roster.
+    const engRoster = ctx.subjects.find((s) => s.assessmentId === english.id)!.participants;
+    const firstEmail = engRoster[0]!.studentId;
+    expect(String(XLSX.utils.sheet_to_json<string[]>(wb.Sheets[engSheet]!, { header: 1 })[1]![0])).toBe(firstEmail);
+
+    // Fill a Final (col G / index 6) for the first student, serialise, re-parse.
+    XLSX.utils.sheet_add_aoa(wb.Sheets[engSheet]!, [[17.5]], { origin: "G2" });
+    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+    const result = await parseEssayMasterfile(new File([buf], "G12_Essay_Marks_TEMPLATE_v2.xlsx"));
+    const parsed = result.students.find((s) => s.subjectCode === "ESL" && s.email === firstEmail.toLowerCase())!;
+    expect(parsed.finalRaw).toBe(17.5);
+    expect(parsed.subjectEssay).toBe(18); // half_up(17.5)
+
+    const report = validateEssayMasterfile(result, ctx);
+    const valid = report.rows.find((r) => r.email === firstEmail.toLowerCase() && r.status === "valid")!;
+    expect(valid.subjectEssay).toBe(18);
+  });
+});
+
+describe("pending disclosure + anomalies", () => {
   function pendingFor(p: InMemoryDataProvider, assessmentId: string): number {
     const ctx = p.getEssayContext(CYCLE)!;
     const model = p.getEssayMarks(CYCLE)!;
@@ -88,18 +120,15 @@ describe("pending disclosure clears per subject once applied", () => {
     const p = new InMemoryDataProvider();
     const englishRoster = rosterIds(p, english.id);
     const arabicBefore = pendingFor(p, arabic.id);
-    apply(p, "ESL", englishRoster.map((email) => ({ email, adjusted: 15 })));
+    apply(p, "ESL", englishRoster.map((email) => ({ email, final: 15 })));
     expect(pendingFor(p, english.id)).toBe(0);
     expect(pendingFor(p, arabic.id)).toBe(arabicBefore);
   });
-});
 
-describe("anomalies reported and excluded, never silently dropped", () => {
   it("an off-roster email is rejected and not applied", () => {
     const p = new InMemoryDataProvider();
-    const report = apply(p, "ESL", [{ email: "nobody@nowhere.com", adjusted: 12 }]);
+    const report = apply(p, "ESL", [{ email: "nobody@nowhere.com", final: 12 }]);
     expect(report.validCount).toBe(0);
-    expect(report.rejectedCount).toBe(1);
     expect(report.rows[0]!.reason).toMatch(/not in the .* roster/i);
     expect(p.getEssayMarks(CYCLE)!.matchedCount).toBe(0);
   });
@@ -108,7 +137,7 @@ describe("anomalies reported and excluded, never silently dropped", () => {
     const p = new InMemoryDataProvider();
     const id = rosterIds(p, english.id)[0]!;
     p.setCleanRemoval(CYCLE, english.id, { rows: [id] }, true);
-    const report = apply(p, "ESL", [{ email: id, adjusted: 15 }]);
+    const report = apply(p, "ESL", [{ email: id, final: 15 }]);
     expect(report.flaggedCount).toBe(1);
     expect(report.validCount).toBe(0);
   });

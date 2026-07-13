@@ -6,13 +6,13 @@
  * "Essay marks" card. Marks fold into the scored subject totals at FULL weight
  * through the existing post-engine essay-marks layer (never as responses).
  *
- * Upload the marking team's essay WORKBOOK — an `.xlsx` with two sheets
- * (`English Essay master`, `Arabic Essay master`), or a single-language file. The
- * parser (`lib/data/parse-essay-masterfile.ts`) reads the moderated
- * `Adjusted scores (USE THESE)` column DIRECTLY (never recomputed), routes each
- * sheet to its subject by name, and joins on the QM email column. Validation
- * (`validate-essay-masterfile.ts`) rejects blank / off-roster emails and students
- * with no Adjusted value, and shows the matched participant beside each row.
+ * The app owns ONE fixed template on both ends: "Download template"
+ * (`lib/data/essay-template.ts`) emits an `.xlsx` with two sheets
+ * (`English Essay master`, `Arabic Essay master`), pre-filled with each student's
+ * QM email so the join key is never hand-typed. The team fills `Final essay
+ * mark (/20)`; the parser (`parse-essay-masterfile.ts`) reads ONLY the tab name
+ * (→ subject), the QM email, and the Final mark, joins on the email, and rejects
+ * blank / off-roster / no-Final / multiple-Final rows with a reason.
  *
  * Flow: upload → REVIEW the row-by-row valid/rejected report → apply. Nothing is
  * written until the operator confirms; only valid rows reach the existing
@@ -81,29 +81,29 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
         return;
       }
       {
-        // Essay workbook (two sheets) or single-language file. Read the moderated
-        // `Adjusted scores (USE THESE)` column directly, join on the QM email.
+        // The app's fixed template (two sheets). Read tab→subject, QM email, and
+        // Final essay mark; join on the QM email.
         const result = await parseEssayMasterfile(file);
         const report = validateEssayMasterfile(result, context);
         if (result.students.length === 0) {
-          setError("No essays found. Expected sheets named “English/Arabic Essay master” with an “Adjusted scores (USE THESE)” column and a QM email column.");
+          setError("No essays found. Upload the generated template — sheets “English/Arabic Essay master” with a QM email column and a Final essay mark column.");
           return;
         }
         const subjects = report.subjectsSeen.length ? report.subjectsSeen.join(" & ") : result.subjectsSeen.join(" & ");
         setStaged({
           fileName: file.name,
-          summary: `${subjects} · joined on QM email · Adjusted (USE THESE), rounding: ${ESSAY_MARK_ROUNDING}`,
+          summary: `${subjects} · joined on QM email · Final essay mark, rounding: ${ESSAY_MARK_ROUNDING}`,
           valid: report.valid,
           validCount: report.validCount,
           rejectedCount: report.rejectedCount,
           flaggedCount: report.flaggedCount,
           rows: report.rows.map((r) => ({
-            id: r.studentLabel || r.email || r.studentName,
+            id: r.matchedName ?? r.email,
             subject: r.subjectName ?? r.subjectCode,
             matched: r.matchedEmail ? `${r.matchedEmail}${r.matchedName ? ` — ${r.matchedName}` : ""}` : null,
             status: r.status,
             reason: r.reason,
-            value: r.subjectEssay ?? r.adjustedRaw,
+            value: r.subjectEssay ?? r.finalRaw,
           })),
         });
       }
@@ -140,12 +140,11 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
         onChange={(e) => onFile(e.target.files?.[0] ?? null)}
       />
       <div className="hf-sub" style={{ fontSize: 12, maxWidth: 680 }}>
-        Offline-marked essays for <b style={{ color: H.ink }}>English &amp; Arabic only</b>. Upload the marking team’s{" "}
-        <b style={{ color: H.ink }}>masterfile CSV — one file per language</b> (the language is read from the file name).
-        The double-marking is reconciled per policy: approved mark per essay = <span className="hf-mono" style={{ fontSize: 11 }}>Moderated</span>-else-
-        <span className="hf-mono" style={{ fontSize: 11 }}>Final</span>, then{" "}
-        <span className="hf-mono" style={{ fontSize: 11 }}>round_half_up(essay₁/2 + essay₂/2)</span>. Adds to the subject total at{" "}
-        <b style={{ color: H.ink }}>half weight</b>.
+        Offline-marked essays for <b style={{ color: H.ink }}>English &amp; Arabic only</b>.{" "}
+        <b style={{ color: H.ink }}>Download the template</b> (pre-filled with each student’s QM email so it’s never hand-typed),
+        have the team fill <span className="hf-mono" style={{ fontSize: 11 }}>Final essay mark (/20)</span>, then upload it back.
+        The app reads only the tab name (→ subject), <span className="hf-mono" style={{ fontSize: 11 }}>QM email</span>, and the
+        Final mark; it joins on the email and adds the <b style={{ color: H.ink }}>/20 at full weight</b>.
       </div>
 
       {staged ? (

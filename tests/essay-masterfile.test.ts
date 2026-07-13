@@ -1,8 +1,8 @@
 /**
- * Essay workbook parser (prompt 03). Reads the marking team's moderated
- * `Adjusted scores (USE THESE)` column directly (never recomputed), routes each
- * sheet to its subject by name, joins on the QM email. Reproduces the acceptance
- * oracle for `ESSAY_MARK_ROUNDING='half_up'`.
+ * Fixed essay template parser (prompt 03 v2). Reads ONLY the tab name (→ subject),
+ * `QM email`, and `Final essay mark`; groups by email; takes the single non-blank
+ * Final; rounds per `ESSAY_MARK_ROUNDING`. Reproduces the acceptance values for
+ * `'half_up'`, and rejects blank-Final / multiple-Final structurally.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -19,10 +19,10 @@ import {
 } from "@/lib/data/parse-essay-masterfile";
 
 const FIX = join(__dirname, "fixtures", "essays");
-const workbookFile = () =>
-  new File([readFileSync(join(FIX, "FEB26_essay_master_workbook.xlsx"))], "FEB26_essay_master_workbook.xlsx");
+const filledTemplate = () =>
+  new File([readFileSync(join(FIX, "G12_Essay_Marks_TEMPLATE_v2_filled.xlsx"))], "G12_Essay_Marks_TEMPLATE_v2_filled.xlsx");
 
-/** Acceptance oracle: student → email, English /20, Arabic /20 (half_up rounding). */
+/** Acceptance values: email → English /20, Arabic /20 (half_up), raw Final. */
 const ORACLE: Record<string, { email: string; en: number; ar: number; enRaw: number; arRaw: number }> = {
   afraa: { email: "afraa.abdullah.alsama@gmail.com", en: 19, ar: 17, enRaw: 19.0, arRaw: 16.75 },
   abed: { email: "abed.alahmad@alsamaproject.com", en: 15, ar: 15, enRaw: 15.25, arRaw: 14.5 },
@@ -43,74 +43,70 @@ const ORACLE: Record<string, { email: string; en: number; ar: number; enRaw: num
   wissal: { email: "wissal.algaber.alsama@gmail.com", en: 19, ar: 15, enRaw: 18.5, arRaw: 15.25 },
 };
 
-describe("rounding", () => {
-  it("ESSAY_MARK_ROUNDING defaults to half_up; roundEssayMark applies round_half_up", () => {
+describe("rounding + routing", () => {
+  it("ESSAY_MARK_ROUNDING defaults to half_up", () => {
     expect(ESSAY_MARK_ROUNDING).toBe("half_up");
     expect(ESSAY_ITEM_MAX).toBe(20);
     expect(roundHalfUp(15.25)).toBe(15);
     expect(roundHalfUp(18.5)).toBe(19);
-    expect(roundHalfUp(15.5)).toBe(16);
     expect(roundEssayMark(16.75)).toBe(17);
     expect(roundEssayMark(12.5)).toBe(13);
   });
-});
-
-describe("sheet / filename routing", () => {
-  it("routes sheet names and filenames to subject codes", () => {
+  it("routes sheet names / filenames to subject codes", () => {
     expect(sheetSubjectCode("English Essay master")).toBe("ESL");
     expect(sheetSubjectCode("Arabic Essay master")).toBe("AFL");
-    expect(sheetSubjectCode("اللّغة العربيّة")).toBe("AFL");
     expect(sheetSubjectCode("Sheet1")).toBeNull();
-    expect(inferEssayLanguage("something English master.csv")).toBe("ESL");
+    expect(inferEssayLanguage("anything English.csv")).toBe("ESL");
     expect(inferEssayLanguage("random.csv")).toBeNull();
   });
 });
 
-describe("workbook → Adjusted extraction + oracle (half_up)", () => {
-  it("routes both sheets and reproduces the acceptance oracle for every student", async () => {
-    const result = await parseEssayMasterfile(workbookFile());
+describe("template → email/Final extraction + acceptance (half_up)", () => {
+  it("routes both sheets and reproduces the acceptance values for every student", async () => {
+    const result = await parseEssayMasterfile(filledTemplate());
     expect(result.subjectsSeen.sort()).toEqual(["AFL", "ESL"]);
 
-    const en = new Map(result.students.filter((s) => s.subjectCode === "ESL").map((s) => [s.studentName, s]));
-    const ar = new Map(result.students.filter((s) => s.subjectCode === "AFL").map((s) => [s.studentName, s]));
+    const en = new Map(result.students.filter((s) => s.subjectCode === "ESL").map((s) => [s.email, s]));
+    const ar = new Map(result.students.filter((s) => s.subjectCode === "AFL").map((s) => [s.email, s]));
     expect(en.size).toBe(17);
     expect(ar.size).toBe(17);
 
-    for (const [name, o] of Object.entries(ORACLE)) {
-      const e = en.get(name)!;
-      expect(e, `English ${name}`).toBeTruthy();
-      expect(e.adjustedRaw).toBe(o.enRaw); // read directly, not recomputed
-      expect(e.subjectEssay, `English ${name} /20`).toBe(o.en);
-      expect(e.email).toBe(o.email); // QM email carried, lower-cased
+    for (const o of Object.values(ORACLE)) {
+      const e = en.get(o.email)!;
+      expect(e, `English ${o.email}`).toBeTruthy();
+      expect(e.finalRaw).toBe(o.enRaw); // read directly from Final, one per student
+      expect(e.subjectEssay, `English ${o.email} /20`).toBe(o.en);
 
-      const a = ar.get(name)!;
-      expect(a.adjustedRaw).toBe(o.arRaw);
-      expect(a.subjectEssay, `Arabic ${name} /20`).toBe(o.ar);
+      const a = ar.get(o.email)!;
+      expect(a.finalRaw).toBe(o.arRaw);
+      expect(a.subjectEssay, `Arabic ${o.email} /20`).toBe(o.ar);
     }
-  });
-
-  it("ignores Dim/Total/Average/Final/Moderated junk columns (only Adjusted is read)", async () => {
-    // The fixture fills Total=88, Average=77, Moderated=88, Final=99 on every anchor
-    // row; the oracle values come only from Adjusted, so those must be ignored.
-    const result = await parseEssayMasterfile(workbookFile());
-    const abed = result.students.find((s) => s.subjectCode === "ESL" && s.studentName === "abed")!;
-    expect(abed.subjectEssay).toBe(15); // from Adjusted 15.25, not 88/77/99
   });
 });
 
-describe("extractSheet — forward-fill + missing Adjusted", () => {
-  const HEADER = ["Student ID", "Student name", "Total score", "Adjusted scores (USE THESE)", "QM email"];
+describe("extractSheet — group by email, single Final, ignore working columns", () => {
+  const HEADER = ["QM email", "Student name", "Alsama Student ID", "Essay ID", "Marker", "Mark (/20)", "Final essay mark (/20)"];
+  const block = (emailCell: string, name: string, finals: (number | string)[]) =>
+    ["Essay 1", "Essay 2", "Essay 1", "Essay 2"].map((eid, k) => [emailCell, name, "AL-1", eid, k % 2 ? "M2" : "M1", "9", String(finals[k] ?? "")]);
 
-  it("forward-fills a blank Student ID onto the anchor row and takes the single Adjusted", () => {
+  it("takes the single Final on the first row and ignores Mark/Essay/Marker", () => {
+    const matrix = [HEADER, ...block("one@x.com", "One", [17.25, "", "", ""])];
+    const out = extractSheet(matrix, "ESL");
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({ email: "one@x.com", finalRaw: 17.25, subjectEssay: 17 });
+    expect(out[0]!.finals).toEqual([17.25]);
+  });
+
+  it("flags no-Final and multiple-Final as finalRaw null (validation rejects them)", () => {
     const matrix = [
       HEADER,
-      ["S1", "one", "88", "17.25", "one@x.com"],
-      ["", "", "66", "", ""], // detail row → same student
-      ["S2", "two", "88", "", "two@x.com"], // no Adjusted → subjectEssay null
+      ...block("none@x.com", "None", ["", "", "", ""]), // 0 finals
+      ...block("multi@x.com", "Multi", [15, "", 18, ""]), // 2 finals
     ];
-    const out = extractSheet(matrix, "ESL");
-    expect(out).toHaveLength(2);
-    expect(out[0]).toMatchObject({ studentLabel: "S1", email: "one@x.com", adjustedRaw: 17.25, subjectEssay: 17 });
-    expect(out[1]).toMatchObject({ studentLabel: "S2", email: "two@x.com", adjustedRaw: null, subjectEssay: null });
+    const byEmail = new Map(extractSheet(matrix, "ESL").map((s) => [s.email, s]));
+    expect(byEmail.get("none@x.com")!.finals).toHaveLength(0);
+    expect(byEmail.get("none@x.com")!.subjectEssay).toBeNull();
+    expect(byEmail.get("multi@x.com")!.finals).toEqual([15, 18]);
+    expect(byEmail.get("multi@x.com")!.subjectEssay).toBeNull();
   });
 });

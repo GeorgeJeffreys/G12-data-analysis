@@ -1,8 +1,7 @@
 /**
- * Email join for the essay workbook (prompt 03). Every student matches a roster
- * participant on the QM email column, case-insensitive exact. Blank email, an
- * off-roster email, and a student with no Adjusted value are each REJECTED with a
- * reason — never guessed.
+ * Email join for the fixed template (prompt 03 v2). Every student matches a roster
+ * participant on `QM email`, case-insensitive exact. Blank email, off-roster email,
+ * no-Final and multiple-Final are each REJECTED with a reason — never guessed.
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
@@ -12,10 +11,9 @@ import { validateEssayMasterfile } from "@/lib/data/validate-essay-masterfile";
 import type { EssayUploadContext, EssaySubjectContext } from "@/lib/data/types";
 
 const FIX = join(__dirname, "fixtures", "essays");
-const workbookFile = () =>
-  new File([readFileSync(join(FIX, "FEB26_essay_master_workbook.xlsx"))], "FEB26_essay_master_workbook.xlsx");
+const filledTemplate = () =>
+  new File([readFileSync(join(FIX, "G12_Essay_Marks_TEMPLATE_v2_filled.xlsx"))], "G12_Essay_Marks_TEMPLATE_v2_filled.xlsx");
 
-/** A synthetic roster keyed on the QM email (= the app's studentId field in prod). */
 function subject(code: "ESL" | "AFL", name: string, emails: string[]): EssaySubjectContext {
   return {
     assessmentId: code === "ESL" ? "eng" : "ara",
@@ -34,22 +32,19 @@ const ALL_EMAILS = [
   "safa.alomarii21@gmail.com", "wissal.algaber.alsama@gmail.com",
 ];
 
-describe("workbook email join — all 34 rows match (case-insensitive)", () => {
-  it("both subjects fully match the roster on the QM email", async () => {
-    // Roster emails in a DIFFERENT case, to prove the join is case-insensitive.
+describe("filled template — all 34 rows match on QM email (case-insensitive)", () => {
+  it("both subjects fully match the roster", async () => {
     const ctx: EssayUploadContext = {
       cycleId: "c",
       essayItemMax: 20,
       subjects: [
-        subject("ESL", "English as a 2nd Language", ALL_EMAILS.map((e) => e.toUpperCase())),
-        subject("AFL", "اللّغة العربيّة", ALL_EMAILS.map((e) => e.toUpperCase())),
+        subject("ESL", "English as a Second Language", ALL_EMAILS.map((e) => e.toUpperCase())),
+        subject("AFL", "Arabic as a First Language", ALL_EMAILS.map((e) => e.toUpperCase())),
       ],
     };
-    const report = validateEssayMasterfile(await parseEssayMasterfile(workbookFile()), ctx);
+    const report = validateEssayMasterfile(await parseEssayMasterfile(filledTemplate()), ctx);
     expect(report.validCount).toBe(34);
     expect(report.rejectedCount).toBe(0);
-    expect(report.valid.every((r) => r.participantId.includes("@"))).toBe(true);
-    // matched participant surfaced for sign-off
     const abedEn = report.rows.find((r) => r.subjectCode === "ESL" && r.email === "abed.alahmad@alsamaproject.com")!;
     expect(abedEn.status).toBe("valid");
     expect(abedEn.matchedEmail).toBe("ABED.ALAHMAD@ALSAMAPROJECT.COM");
@@ -57,36 +52,47 @@ describe("workbook email join — all 34 rows match (case-insensitive)", () => {
   });
 });
 
-describe("workbook — blank / off-roster / no-Adjusted are rejected", () => {
-  const HEADER = ["Student ID", "Student name", "Adjusted scores (USE THESE)", "QM email"];
+describe("filled template — blank / off-roster / no-Final / multiple-Final rejected", () => {
+  const HEADER = ["QM email", "Student name", "Alsama Student ID", "Essay ID", "Marker", "Mark (/20)", "Final essay mark (/20)"];
+  const block = (email: string, finals: (number | string)[]) =>
+    ["Essay 1", "Essay 2", "Essay 1", "Essay 2"].map((eid, k) => [email, "n", "AL", eid, "M1", "9", String(finals[k] ?? "")]);
 
   it("rejects each with a clear reason and matches the good one", () => {
     const ctx: EssayUploadContext = {
       cycleId: "c",
       essayItemMax: 20,
-      subjects: [subject("ESL", "English as a 2nd Language", ["real.student@alsamaproject.com"])],
+      subjects: [subject("ESL", "English as a Second Language", ["real.student@alsamaproject.com"])],
     };
     const matrix = [
       HEADER,
-      ["G1", "good", "16.0", "real.student@alsamaproject.com"], // → 16, valid
-      ["B2", "blank", "12.0", ""], // blank email → reject
-      ["O3", "off", "10.0", "nobody@nowhere.com"], // off-roster → reject
-      ["N4", "noadj", "", "real.student@alsamaproject.com"], // no Adjusted → reject
+      ...block("real.student@alsamaproject.com", [16.0, "", "", ""]), // valid → 16
+      ...block("", [12.0, "", "", ""]), // blank email → reject
+      ...block("off@nowhere.com", [10.0, "", "", ""]), // off-roster → reject
+      ...block("multi@alsamaproject.com", [15, "", 18, ""]), // multiple finals → reject (before roster)
     ];
     const report = validateEssayMasterfile({ students: extractSheet(matrix, "ESL"), subjectsSeen: ["ESL"], skippedSheets: [] }, ctx);
 
-    expect(report.validCount).toBe(1);
-    expect(report.valid[0]!.participantId).toBe("real.student@alsamaproject.com");
+    const by = new Map(report.rows.map((r) => [r.email, r]));
+    expect(by.get("real.student@alsamaproject.com")!.status).toBe("valid");
+    expect(report.valid).toHaveLength(1);
     expect(report.valid[0]!.totalScore).toBe(16);
+    expect(by.get("")!.status).toBe("rejected");
+    expect(by.get("")!.reason).toMatch(/blank qm email/i);
+    expect(by.get("off@nowhere.com")!.reason).toMatch(/not in the .* roster/i);
+    // multiple finals is rejected BEFORE the roster check
+    expect(by.get("multi@alsamaproject.com")!.reason).toMatch(/multiple final/i);
+    expect(by.get("off@nowhere.com")!.matchedEmail).toBeNull();
+  });
 
-    const by = new Map(report.rows.map((r) => [r.studentLabel, r]));
-    expect(by.get("B2")!.status).toBe("rejected");
-    expect(by.get("B2")!.reason).toMatch(/blank qm email/i);
-    expect(by.get("O3")!.status).toBe("rejected");
-    expect(by.get("O3")!.reason).toMatch(/not in the .* roster/i);
-    expect(by.get("N4")!.status).toBe("rejected");
-    expect(by.get("N4")!.reason).toMatch(/adjusted/i);
-    // nothing guessed onto a participant
-    expect(by.get("O3")!.matchedEmail).toBeNull();
+  it("a student with no Final is rejected (no final mark)", () => {
+    const ctx: EssayUploadContext = {
+      cycleId: "c",
+      essayItemMax: 20,
+      subjects: [subject("ESL", "English as a Second Language", ["real.student@alsamaproject.com"])],
+    };
+    const matrix = [HEADER, ...block("real.student@alsamaproject.com", ["", "", "", ""])];
+    const report = validateEssayMasterfile({ students: extractSheet(matrix, "ESL"), subjectsSeen: ["ESL"], skippedSheets: [] }, ctx);
+    expect(report.validCount).toBe(0);
+    expect(report.rows[0]!.reason).toMatch(/no final/i);
   });
 });

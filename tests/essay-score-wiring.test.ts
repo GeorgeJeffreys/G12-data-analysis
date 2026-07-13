@@ -78,10 +78,15 @@ const seed = seedJson as unknown as {
 const CYCLE = seed.liveCycle.id;
 const english = seed.liveCycle.assessments.find((a) => /english/i.test(a.name))!;
 
-const HEADER = ["Student ID", "Student name", "Adjusted scores (USE THESE)", "QM email"];
-function sheet(students: { email: string; adjusted: number }[]) {
-  const matrix = [HEADER, ...students.map((s, i) => [`L-${i}`, "name", String(s.adjusted), s.email])];
-  return { students: extractSheet(matrix, "ESL"), subjectsSeen: ["ESL" as const], skippedSheets: [] as string[] };
+const HEADER = ["QM email", "Student name", "Essay ID", "Marker", "Mark (/20)", "Final essay mark (/20)"];
+function sheet(students: { email: string; final: number }[]) {
+  const rows = [HEADER];
+  students.forEach((s) =>
+    ["Essay 1", "Essay 2", "Essay 1", "Essay 2"].forEach((eid, k) =>
+      rows.push([s.email, "name", eid, "M1", "9", k === 0 ? String(s.final) : ""]),
+    ),
+  );
+  return { students: extractSheet(rows, "ESL"), subjectsSeen: ["ESL" as const], skippedSheets: [] as string[] };
 }
 
 /** Mirror of supabase-hydrate `classify(name).subjectCode` for the round-trip. */
@@ -99,8 +104,8 @@ describe("essay → score wiring survives the persistence round-trip", () => {
     const join = eng.participants[0]!.studentId; // seed join key (= QM email in prod)
     const pid = eng.participants[0]!.participantId;
 
-    // Apply: moderated Adjusted 15.5 → half_up → 16.
-    const report = validateEssayMasterfile(sheet([{ email: join, adjusted: 15.5 }]), ctx);
+    // Apply: moderated Final 15.5 → half_up → 16.
+    const report = validateEssayMasterfile(sheet([{ email: join, final: 15.5 }]), ctx);
     p.uploadEssayMarks(CYCLE, "english.xlsx", report.valid);
 
     const cellApplied = p.getComposition(CYCLE)!.students.find((s) => s.participantId === pid)!
