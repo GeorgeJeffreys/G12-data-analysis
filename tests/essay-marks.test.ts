@@ -51,12 +51,16 @@ describe("essay marks — averaging + matching", () => {
     expect(model.unmatchedIds).toContain("A-A-999999");
   });
 
-  it("the labelled sample matches real roster students and lifts the Arabic max by 20", () => {
+  it("uploaded essay marks match real roster students and lift the Arabic max by 20", () => {
     const p = new InMemoryDataProvider();
     const before = p.getBoundaries(CYCLE, arabic.id)!; // before any essays
-    p.loadSampleEssayMarks(CYCLE);
+    const ids = seed.liveCycle.participants.slice(0, 10).map((x) => x.id);
+    const rows = ids.flatMap((sid, i) => [
+      { participantId: sid, subjectCode: "AFL" as const, totalScore: Math.min(20, 11 + (i % 7)) },
+      { participantId: sid, subjectCode: "AFL" as const, totalScore: Math.min(20, 12 + ((i + 3) % 6)) },
+    ]);
+    p.uploadEssayMarks(CYCLE, "essays.xlsx", rows);
     const model = p.getEssayMarks(CYCLE)!;
-    expect(model.sample).toBe(true);
     expect(model.matchedCount).toBeGreaterThan(0);
     // Arabic subject now scores out of (items + 20); its cohort mean shifts.
     const after = p.getBoundaries(CYCLE, arabic.id)!;

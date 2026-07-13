@@ -487,7 +487,6 @@ export interface DataProvider {
 
   // per-student technical exclusions (Student review)
   uploadTechnicalErrors(cycleId: string, fileName: string, rows: TechnicalErrorRow[]): void;
-  loadSampleTechnicalErrors(cycleId: string): void;
   clearTechnicalErrors(cycleId: string): void;
   setIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecision, reason?: string | null): void;
 
@@ -500,13 +499,11 @@ export interface DataProvider {
    */
   getEssayContext(cycleId: string): EssayUploadContext | null;
   uploadEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void;
-  loadSampleEssayMarks(cycleId: string): void;
   clearEssayMarks(cycleId: string): void;
 
   // incident log → alterations triage (Adjustments step)
   getAdjustments(cycleId: string): AdjustmentsModel | null;
   uploadIncidentLog(cycleId: string, fileName: string, rows: IncidentInput[]): void;
-  loadSampleIncidentLog(cycleId: string): void;
   clearIncidentLog(cycleId: string): void;
   /** Record (or clear) the human triage decision + alteration for one incident. */
   decideIncident(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void;
@@ -523,8 +520,6 @@ export interface DataProvider {
   getCgj(cycleId: string): CgjModel | null;
   /** Upload a centre expectations file (parsed client-side into rows). Audited. */
   uploadCgjFile(cycleId: string, fileName: string, rows: CgjUploadRow[]): void;
-  /** Load a small, clearly-labelled SAMPLE centre expectations set. */
-  loadSampleCgj(cycleId: string): void;
   /** Remove the uploaded centre expectations file. */
   clearCgj(cycleId: string): void;
   /** Speededness & timing diagnostics (informational; not part of grading). */
@@ -609,8 +604,6 @@ export interface DataProvider {
   ): void;
   /** Clear a cycle's imported incident rows (and any prior commit). Cycle role. */
   clearIncidentRows(cycleId: string): void;
-  /** Load a labelled sample incident set for the review surface (demo / no upload). */
-  loadSampleIncidentRows(cycleId: string): void;
   /** The per-student review surface: base + capped adjustment + breakdown. All
    *  roles may VIEW; `canApply` is admin-only. Null when the cycle is unknown. */
   getIncidentReview(cycleId: string): IncidentReviewModel | null;

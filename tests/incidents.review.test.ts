@@ -8,6 +8,7 @@
  * (it reconciles 1:1 with the raw oracle whether or not adjustments are applied).
  */
 import { describe, it, expect } from "vitest";
+import { seedIncidentRows } from "./helpers/incident-fixtures";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import type { CurrentUser } from "@/lib/data/types";
 
@@ -29,7 +30,7 @@ describe("incident review — model assembly", () => {
   it("decomposes every student into base + capped adjustment = adjusted", () => {
     const p = new InMemoryDataProvider();
     const id = liveId(p);
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     const review = p.getIncidentReview(id)!;
     expect(review.counts.incidents).toBeGreaterThan(0);
     for (const s of [...review.students, ...review.unmatched]) {
@@ -44,7 +45,7 @@ describe("incident review — model assembly", () => {
   it("surfaces per-code and per-student cap hits, and unclassified / unmatched rows", () => {
     const p = new InMemoryDataProvider();
     const id = liveId(p);
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     const review = p.getIncidentReview(id)!;
     expect(review.counts.perCodeCapHits).toBeGreaterThan(0);
     expect(review.counts.perStudentCapHits).toBeGreaterThan(0);
@@ -59,7 +60,7 @@ describe("incident review — model assembly", () => {
   it("grants zero for unclassified incidents (never applied)", () => {
     const p = new InMemoryDataProvider();
     const id = liveId(p);
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     const review = p.getIncidentReview(id)!;
     for (const s of review.students) {
       for (const c of s.contributions) {
@@ -75,7 +76,7 @@ describe("incident review — base scores are untouched by the layer", () => {
     const id = liveId(p);
     const baseBefore = p.getComposition(id)!.students.map((s) => ({ id: s.participantId, total: s.overall.total }));
 
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     p.applyIncidentAdjustments(id);
 
     const baseAfter = p.getComposition(id)!.students.map((s) => ({ id: s.participantId, total: s.overall.total }));
@@ -93,7 +94,7 @@ describe("incident review — commit gated on the `adjust` permission, explicit"
   it("apply/revert works, and denial follows the matrix (not the role)", () => {
     const p = new InMemoryDataProvider();
     const id = liveId(p);
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     expect(p.getIncidentReview(id)!.applied).toBe(false); // not automatic on import
 
     p.applyIncidentAdjustments(id);
@@ -109,7 +110,7 @@ describe("incident review — commit gated on the `adjust` permission, explicit"
     const v = new InMemoryDataProvider();
     v.setCurrentUser(VIEWER);
     const vid = liveId(v);
-    v.loadSampleIncidentRows(vid);
+    seedIncidentRows(v, vid);
     expect(v.getIncidentReview(vid)!.canApply).toBe(true);
     v.applyIncidentAdjustments(vid);
     expect(v.getIncidentReview(vid)!.applied).toBe(true);
@@ -129,7 +130,7 @@ describe("incident review — commit gated on the `adjust` permission, explicit"
     const p = new InMemoryDataProvider();
     p.setCurrentUser(VIEWER);
     const id = liveId(p);
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     const review = p.getIncidentReview(id)!;
     expect(review.counts.incidents).toBeGreaterThan(0);
     expect(review.students.length).toBeGreaterThan(0);

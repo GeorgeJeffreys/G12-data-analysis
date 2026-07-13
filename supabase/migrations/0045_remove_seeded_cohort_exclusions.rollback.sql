@@ -1,0 +1,13 @@
+-- Rollback for 0043_remove_seeded_cohort_exclusions.sql
+--
+-- Intentionally a NO-OP. The migration removed the identity-based staff/test
+-- exclusion SEED (rows with no human decider) so that production ingests exam
+-- data exactly as exported. Re-creating that seed would reintroduce hard-coded
+-- person emails and a person-level exclusion before Clean — the very thing the
+-- cutover removes — so the seed is deliberately NOT restored.
+--
+-- The mechanism (cohort_exclusions table + set_cohort_exclusion RPC) was never
+-- dropped, so any genuinely-needed exclusion is re-added as a human decision in
+-- the Clean step. Nothing to undo here.
+
+-- (no-op)

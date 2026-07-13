@@ -749,10 +749,6 @@ export class SupabaseDataProvider implements DataProvider {
     this.inner.uploadTechnicalErrors(cycleId, fileName, rows);
     this.bump();
   }
-  loadSampleTechnicalErrors(cycleId: string): void {
-    this.inner.loadSampleTechnicalErrors(cycleId);
-    this.bump();
-  }
   clearTechnicalErrors(cycleId: string): void {
     this.inner.clearTechnicalErrors(cycleId);
     this.bump();
@@ -775,11 +771,6 @@ export class SupabaseDataProvider implements DataProvider {
       p_file_ref: fileName,
       p_marks: this.inner.essayMarksForPersistence(cycleId),
     });
-  }
-  loadSampleEssayMarks(cycleId: string): void {
-    // Sample/demo data is not persisted to the live database.
-    this.inner.loadSampleEssayMarks(cycleId);
-    this.bump();
   }
   clearEssayMarks(cycleId: string): void {
     this.inner.clearEssayMarks(cycleId);
@@ -849,10 +840,6 @@ export class SupabaseDataProvider implements DataProvider {
     }));
     void this.rpcThenRehydrate("insert_incidents", { p_cycle: cycleId, p_rows });
   }
-  loadSampleIncidentLog(cycleId: string): void {
-    this.inner.loadSampleIncidentLog(cycleId);
-    this.bump();
-  }
   clearIncidentLog(cycleId: string): void {
     this.inner.clearIncidentLog(cycleId);
     this.bump();
@@ -864,10 +851,6 @@ export class SupabaseDataProvider implements DataProvider {
   // added later without touching the UI.
   uploadCgjFile(cycleId: string, fileName: string, rows: CgjUploadRow[]): void {
     this.inner.uploadCgjFile(cycleId, fileName, rows);
-    this.bump();
-  }
-  loadSampleCgj(cycleId: string): void {
-    this.inner.loadSampleCgj(cycleId);
     this.bump();
   }
   clearCgj(cycleId: string): void {
@@ -1098,7 +1081,6 @@ export class SupabaseDataProvider implements DataProvider {
     this.rpc("clear_incident_import_source", { p_cycle: cycleId });
     void this.rpcThenRehydrate("clear_incident_rows", { p_cycle: cycleId });
   }
-  loadSampleIncidentRows(cycleId: string): void { this.inner.loadSampleIncidentRows(cycleId); this.bump(); }
   applyIncidentAdjustments(cycleId: string): void {
     this.inner.applyIncidentAdjustments(cycleId);
     this.bump();

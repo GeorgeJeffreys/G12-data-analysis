@@ -4,6 +4,7 @@
  * admin sees the "Apply adjustments" commit control; a lower role sees "Admin only".
  */
 import { describe, it, expect, vi } from "vitest";
+import { seedIncidentRows } from "./helpers/incident-fixtures";
 import { createElement as e } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
@@ -29,19 +30,19 @@ async function render(cycleId: string): Promise<string> {
 const VIEWER: CurrentUser = { id: "v", name: "Vic", initials: "V", role: "viewer" };
 
 describe("Incident Adjustments review page", () => {
-  it("empty state offers to load a labelled sample", async () => {
+  it("empty state shows the import guidance and no synthetic sample affordance", async () => {
     const p = new InMemoryDataProvider();
     activeProvider = p;
     const html = await render(p.listCycles()[0]!.id);
     expect(html).toContain("Incident adjustments");
     expect(html).toContain("No incidents imported");
-    expect(html).toContain("Load sample");
+    expect(html).not.toContain("Load sample");
   });
 
   it("admin sees the per-student surface with the Apply control", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     activeProvider = p;
     const html = await render(id);
     expect(html).toContain("Base");
@@ -54,7 +55,7 @@ describe("Incident Adjustments review page", () => {
   it("without the `adjust` permission the surface is read-only (Admin only)", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentRows(id); // seeded as the default admin
+    seedIncidentRows(p, id); // seeded as the default admin
     // Revoke the Adjustments permission from team_member (grant-driven denial),
     // then view as one.
     p.setRoleAction("team_member", "incidents.apply", false);

@@ -15,6 +15,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import { assumedPldAwardMap, compareLevels, normalizePerformanceLevel } from "@/lib/data/cgj";
 import type { DataProvider } from "@/lib/data/provider";
+import { seedCentreExpectations, CGJ_FIXTURE_FILENAME } from "./helpers/cgj-fixtures";
 
 const PERF = [
   "Outstanding performance",
@@ -74,11 +75,10 @@ describe("provider: getCgj round-trip over the live sitting", () => {
     expect(m.counts.compared).toBe(0);
   });
 
-  it("the sample upload produces real expected-vs-actual comparisons", () => {
-    provider.loadSampleCgj(cycleId);
+  it("an uploaded centre file produces real expected-vs-actual comparisons", () => {
+    seedCentreExpectations(provider, cycleId);
     const m = provider.getCgj(cycleId)!;
     expect(m.uploaded).toBe(true);
-    expect(m.sample).toBe(true);
     expect(m.counts.studentsInFile).toBeGreaterThan(0);
     expect(m.counts.compared).toBeGreaterThan(0);
     // The deliberately-nudged sample yields at least one non-match somewhere.
@@ -139,11 +139,11 @@ describe("CGJ page", () => {
   it("renders the comparison table once a centre file is present", async () => {
     const provider = new InMemoryDataProvider();
     const cycleId = provider.listCycles()[0]!.id;
-    provider.loadSampleCgj(cycleId);
+    seedCentreExpectations(provider, cycleId);
     active = provider;
     const { default: CgjPage } = await import("@/app/cycles/[cycleId]/cgj/page");
     const out = renderToStaticMarkup(e(CgjPage, { params: { cycleId } }));
-    expect(out).toContain("sample_centre_expectations.xlsx");
+    expect(out).toContain(CGJ_FIXTURE_FILENAME);
     expect(out).toContain("Matches expectation");
     expect(out).toContain("Below expectation");
     // the comparison header row names the student column
