@@ -16,7 +16,7 @@ import type { ReliabilityModel, ReliabilityRow } from "@/lib/data/types";
 describe("Reliability UI renders without crashing", () => {
   it("renders the panel with the real provider model", () => {
     const provider = new InMemoryDataProvider();
-    const cycle = provider.getCompareCycles().cycles.find((c) => !c.mock)!;
+    const cycle = provider.listCycles().find((c) => !c.mock)!;
     const model = provider.getReliability(cycle.id)!;
     const subjectRow = model.rows.find((r) => r.level === "subject")!;
     const html = renderToStaticMarkup(

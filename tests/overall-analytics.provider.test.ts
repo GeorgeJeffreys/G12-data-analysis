@@ -61,11 +61,4 @@ describe("getOverallAnalytics — in-memory provider", () => {
     expect(sy!.feb).not.toBeNull();
     expect(sy!.may).not.toBeNull();
   });
-
-  it("does not disturb the existing Compare cycles read-model", () => {
-    const p = fresh();
-    const before = p.getAnalyticsCompare();
-    p.getOverallAnalytics();
-    expect(p.getAnalyticsCompare()).toEqual(before);
-  });
 });

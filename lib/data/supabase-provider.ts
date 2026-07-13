@@ -63,11 +63,9 @@ import type {
 import type { CleanResponse, ValidationReport } from "@/lib/ingest/types";
 import type { CanonicalModel } from "@/lib/ingest/qm";
 import type {
-  AnalyticsCompare,
   AnalyticsTrends,
   OverallAnalytics,
   OverallAnalyticsFilter,
-  CompareCyclesModel,
   AuditFilter,
   AuditModel,
   OverrideViewModel,
@@ -400,7 +398,6 @@ export class SupabaseDataProvider implements DataProvider {
   getAuditLog(cycleId: string | null, filter: AuditFilter, search: string): AuditModel { return this.inner.getAuditLog(cycleId, filter, search); }
   getOverrideView(cycleId: string): OverrideViewModel { return this.inner.getOverrideView(cycleId); }
   getAnalyticsTrends(): AnalyticsTrends { return this.inner.getAnalyticsTrends(); }
-  getAnalyticsCompare(): AnalyticsCompare { return this.inner.getAnalyticsCompare(); }
   /**
    * The Overall analytics read-model, computed from the LIVE multi-cycle
    * projection (persisted grades + scores across every centre × year × sitting)
@@ -426,7 +423,6 @@ export class SupabaseDataProvider implements DataProvider {
       realYears: this.overall.years,
     });
   }
-  getCompareCycles(cycleIds?: string[]): CompareCyclesModel { return this.inner.getCompareCycles(cycleIds); }
   getNewCycle(): NewCycleModel { return this.inner.getNewCycle(); }
   getEssayMarks(cycleId: string): EssayMarksModel | null { return this.inner.getEssayMarks(cycleId); }
   getEssayContext(cycleId: string): EssayUploadContext | null { return this.inner.getEssayContext(cycleId); }

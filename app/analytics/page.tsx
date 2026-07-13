@@ -15,7 +15,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useProviderData } from "@/lib/data/context";
 import { Shell } from "@/components/shell/Shell";
-import { analyticsSubnav } from "@/lib/ui/subnav";
 import { OVSlicerDropdowns, OVActiveSlice, OVAccordion, defaultFinalSlice, sanitizeSlice, finalToLegacy, type FinalSlice } from "@/components/ui/overall/slicer";
 
 const KEY = "g12_overall_slice";
@@ -61,7 +60,7 @@ export default function OverallPage() {
   const legacy = finalToLegacy(slice, universe);
 
   return (
-    <Shell active="Analytics" crumb={[{ label: "Analytics" }, { label: "Overall" }]} subnav={analyticsSubnav("overall")}>
+    <Shell active="Analytics" crumb={[{ label: "Analytics" }, { label: "Overall" }]}>
       <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
         <div style={{ display: "flex", flexDirection: "column", padding: "20px 26px 40px", gap: 18, maxWidth: 1400, width: "100%", margin: "0 auto" }}>
           <div className="hf-row" style={{ justifyContent: "space-between", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
