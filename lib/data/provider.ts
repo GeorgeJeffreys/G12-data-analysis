@@ -143,25 +143,23 @@ export interface CgjUploadRow {
   levels: Record<string, string>;
 }
 
-/** One essay row from the optional essay-marks spreadsheet (one per essay). */
+/** One resolved essay mark handed to `uploadEssayMarks` (one per student per subject). */
 export interface EssayUploadRow {
-  /** Real ParticipantID from the file (e.g. A-A-260506). */
+  /** The join key from the fixed template — the student's QM email (lower-cased). */
   participantId: string;
   /** Subject sheet code: AFL (Arabic 1st Language) or ESL (English 2nd Language). */
   subjectCode: "AFL" | "ESL";
   /**
-   * The mark this row contributes /20. For the per-essay template flow this is a
-   * single essay's mark (the provider averages a student's rows). For the essay
-   * WORKBOOK flow this is the ONE moderated subject essay /20 read directly from
-   * `Adjusted scores (USE THESE)` (after `ESSAY_MARK_ROUNDING`) — a single row per
-   * student, so the provider's averaging is identity and the value reaches the
-   * engine at full weight.
+   * The ONE subject essay /20 for this student, read directly from the template's
+   * `Final essay mark (/20)` column (after `ESSAY_MARK_ROUNDING`). Exactly one row
+   * per student, so the provider's averaging is identity and the value reaches the
+   * engine at FULL weight (against the reserved /20 max — never halved again).
    */
   totalScore: number;
   /**
    * How many essays this row represents, for the "pending" disclosure only. The
-   * workbook flow emits ONE row per student (essayCount 1); the per-essay flow
-   * omits it (each row = one essay). Never used as the averaging divisor.
+   * fixed-template flow emits ONE row per student (essayCount 1). Never used as the
+   * averaging divisor.
    */
   essayCount?: number;
 }

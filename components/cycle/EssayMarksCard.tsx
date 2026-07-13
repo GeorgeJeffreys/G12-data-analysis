@@ -49,6 +49,8 @@ type Staged = {
   rejectedCount: number;
   flaggedCount: number;
   rows: ReviewRow[];
+  /** Whole-sheet rejections (broken column contract), shown but never applied. */
+  sheetErrors: string[];
 };
 
 export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: EssayMarksModel | null }) {
@@ -85,8 +87,8 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
         // Final essay mark; join on the QM email.
         const result = await parseEssayMasterfile(file);
         const report = validateEssayMasterfile(result, context);
-        if (result.students.length === 0) {
-          setError("No essays found. Upload the generated template — sheets “English/Arabic Essay master” with a QM email column and a Final essay mark column.");
+        if (result.students.length === 0 && report.sheetErrors.length === 0) {
+          setError("No essays found. Upload the generated template — sheets “English/Arabic Essay master” with a QM email column and a Final essay mark (/20) column.");
           return;
         }
         const subjects = report.subjectsSeen.length ? report.subjectsSeen.join(" & ") : result.subjectsSeen.join(" & ");
@@ -105,6 +107,7 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
             reason: r.reason,
             value: r.subjectEssay ?? r.finalRaw,
           })),
+          sheetErrors: report.sheetErrors.map((e) => e.reason),
         });
       }
     } catch (e) {
@@ -123,11 +126,20 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
 
   const downloadTemplate = async () => {
     if (!context) return;
-    const [{ buildEssayTemplateWorkbook, ESSAY_TEMPLATE_FILENAME }, { downloadWorkbook }] = await Promise.all([
+    setError(null);
+    const [{ buildEssayTemplateWorkbook, ESSAY_TEMPLATE_FILENAME, ESSAY_TEMPLATE_ASSET_PATH }, { downloadWorkbook }] = await Promise.all([
       import("@/lib/data/essay-template"),
       import("@/lib/ui/export"),
     ]);
-    await downloadWorkbook(ESSAY_TEMPLATE_FILENAME, buildEssayTemplateWorkbook(context));
+    try {
+      // Clone the stored canonical template and pre-fill identity from the roster.
+      const res = await fetch(ESSAY_TEMPLATE_ASSET_PATH);
+      if (!res.ok) throw new Error(`asset ${res.status}`);
+      const stored = await res.arrayBuffer();
+      await downloadWorkbook(ESSAY_TEMPLATE_FILENAME, buildEssayTemplateWorkbook(stored, context));
+    } catch {
+      setError("Couldn’t load the template asset. Refresh and try again.");
+    }
   };
 
   return (
@@ -218,6 +230,16 @@ function ReviewPanel({ staged, onApply, onCancel }: { staged: Staged; onApply: (
         <span style={{ flex: 1 }} />
         <span className="hf-sub" style={{ fontSize: 11 }}>Nothing is written until you apply.</span>
       </div>
+
+      {staged.sheetErrors.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", background: H.warnSoft, borderBottom: `1px solid ${H.line}` }}>
+          {staged.sheetErrors.map((msg, i) => (
+            <span key={i} style={{ fontSize: 11.5, color: H.ink, display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <Mark kind="warn" size={14} /> {msg}
+            </span>
+          ))}
+        </div>
+      )}
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
         <thead><tr>

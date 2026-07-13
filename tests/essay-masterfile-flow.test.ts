@@ -5,12 +5,20 @@
  * (the app owns the template on both ends). Off-roster / no-Final are excluded.
  */
 import { describe, it, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
-import { extractSheet, parseEssayMasterfile, type EssaySubjectCode } from "@/lib/data/parse-essay-masterfile";
+import { extractSheet, parseEssayMasterfile, resolveColumns, type EssaySubjectCode } from "@/lib/data/parse-essay-masterfile";
 import { validateEssayMasterfile } from "@/lib/data/validate-essay-masterfile";
 import { buildEssayTemplateWorkbook } from "@/lib/data/essay-template";
 import { XLSX } from "@/lib/export/sheet-utils";
 import seedJson from "@/lib/data/seed.generated.json";
+
+/** The stored canonical asset the generator clones (blank structure). */
+const STORED_ASSET = () => {
+  const buf = readFileSync(join(__dirname, "..", "public", "templates", "G12_Essay_Marks_FIXED_TEMPLATE.xlsx"));
+  return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
+};
 
 const seed = seedJson as unknown as {
   liveCycle: { id: string; participants: { id: string; studentId: string }[]; assessments: { id: string; name: string }[] };
@@ -76,28 +84,33 @@ describe("template → provider, join on QM email, full weight", () => {
 });
 
 describe("generate → fill → re-parse round-trip", () => {
-  it("the generated template round-trips: filled Finals parse back to the same marks", async () => {
+  it("the cloned template round-trips: filled Finals parse back to the same marks", async () => {
     const p = new InMemoryDataProvider();
     const ctx = p.getEssayContext(CYCLE)!;
-    const wb = buildEssayTemplateWorkbook(ctx);
+    // Clone the stored canonical asset, pre-filling identity from the roster.
+    const wb = buildEssayTemplateWorkbook(STORED_ASSET(), ctx);
 
     // The app owns the sheet names + join column.
     expect(wb.SheetNames).toContain("English Essay master");
     expect(wb.SheetNames).toContain("Arabic Essay master");
     const engSheet = "English Essay master";
-    const header = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[engSheet]!, { header: 1 })[0]!;
+    const aoa = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[engSheet]!, { header: 1 });
+    const header = aoa[0]!;
     expect(header).toContain("QM email");
     expect(header).toContain("Final essay mark (/20)");
 
     // The first English student's block starts at row 2; QM email pre-filled from roster.
     const engRoster = ctx.subjects.find((s) => s.assessmentId === english.id)!.participants;
     const firstEmail = engRoster[0]!.studentId;
-    expect(String(XLSX.utils.sheet_to_json<string[]>(wb.Sheets[engSheet]!, { header: 1 })[1]![0])).toBe(firstEmail);
+    expect(String(aoa[1]![0])).toBe(firstEmail);
 
-    // Fill a Final (col G / index 6) for the first student, serialise, re-parse.
-    XLSX.utils.sheet_add_aoa(wb.Sheets[engSheet]!, [[17.5]], { origin: "G2" });
+    // Fill the Final in the CANONICAL column (exact header) for the first student.
+    const finalCol = resolveColumns(header).final;
+    const finalAddr = XLSX.utils.encode_cell({ r: 1, c: finalCol });
+    wb.Sheets[engSheet]![finalAddr] = { t: "n", v: 17.5 };
     const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
-    const result = await parseEssayMasterfile(new File([buf], "G12_Essay_Marks_TEMPLATE_v2.xlsx"));
+    const result = await parseEssayMasterfile(new File([buf], "G12_Essay_Marks_FIXED_TEMPLATE.xlsx"));
+    expect(result.sheetErrors).toHaveLength(0);
     const parsed = result.students.find((s) => s.subjectCode === "ESL" && s.email === firstEmail.toLowerCase())!;
     expect(parsed.finalRaw).toBe(17.5);
     expect(parsed.subjectEssay).toBe(18); // half_up(17.5)
