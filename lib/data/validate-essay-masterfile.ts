@@ -1,19 +1,18 @@
 /**
- * Pre-write review for the essay workbook. Joins each extracted student to a
- * roster participant on the QM email column — case-insensitive EXACT — and
- * produces a row-by-row valid/rejected report. NOTHING is written until the
- * operator confirms; only `valid` rows flow to `uploadEssayMarks`.
+ * Pre-write review for the essay template. Joins each extracted student to a
+ * roster participant on the QM email — case-insensitive EXACT — and produces a
+ * row-by-row valid/rejected report. NOTHING is written until the operator
+ * confirms; only `valid` rows flow to `uploadEssayMarks`.
  *
  * Rejection rules (row-by-row, nothing guessed):
- *  - no `Adjusted scores (USE THESE)` value for the student → REJECT;
- *  - blank QM email → REJECT (G12's cue to fill it);
+ *  - no `Final essay mark` for the student → REJECT (`no final mark`);
+ *  - more than one non-blank `Final` → REJECT (`multiple final marks`);
+ *  - blank QM email → REJECT;
  *  - email not in that subject's roster → REJECT (never guess a participant);
  *  - matched sitting already excluded on the Clean tab → FLAG (not applied).
  *
- * The Alsama Student ID is a display label only. Each row carries the MATCHED
- * participant (email + name) so a human signs off before apply. There is NO
- * identity mapping here — no DOB, no Student-ID resolution, no crosswalk. Pure +
- * engine-free.
+ * Each row carries the MATCHED participant (email + name) so a human signs off. No
+ * identity mapping — no DOB, no Student-ID resolution, no crosswalk. Pure.
  */
 import type { EssayUploadRow } from "./provider";
 import type { EssayUploadContext, EssaySubjectContext } from "./types";
@@ -24,10 +23,6 @@ export type EssayRowStatus = "valid" | "rejected" | "flagged";
 export interface MasterfileReviewRow {
   subjectCode: EssaySubjectCode;
   subjectName: string | null;
-  /** Alsama Student ID from the file — a display label. */
-  studentLabel: string;
-  /** Student name from the file. */
-  studentName: string;
   /** QM email from the file (join key), lower-cased; "" when blank. */
   email: string;
   /** MATCHED roster participant's name, once joined — else null. */
@@ -37,8 +32,8 @@ export interface MasterfileReviewRow {
   status: EssayRowStatus;
   /** The subject essay /20 (after ESSAY_MARK_ROUNDING) for a valid row, else null. */
   subjectEssay: number | null;
-  /** The raw Adjusted value /20 (may be fractional), for the review table. */
-  adjustedRaw: number | null;
+  /** The entered Final value /20 (may be fractional), for the review table. */
+  finalRaw: number | null;
   reason: string | null;
 }
 
@@ -72,17 +67,16 @@ function reviewOne(s: ExtractedEssayStudent, context: EssayUploadContext): Maste
   const base = {
     subjectCode: s.subjectCode,
     subjectName: subject?.name ?? null,
-    studentLabel: s.studentLabel,
-    studentName: s.studentName,
     email: s.email,
     matchedName: null as string | null,
     matchedEmail: null as string | null,
     subjectEssay: null as number | null,
-    adjustedRaw: s.adjustedRaw,
+    finalRaw: s.finalRaw,
   };
   if (!subject) return { ...base, status: "rejected", reason: `"${s.subjectCode}" has no essay component in this cycle.` };
-  if (s.subjectEssay == null) return { ...base, status: "rejected", reason: "No “Adjusted scores (USE THESE)” value for this student." };
   if (!s.email) return { ...base, status: "rejected", reason: "Blank QM email — cannot join to a participant (ask G12 to fill it)." };
+  if (s.finals.length === 0) return { ...base, status: "rejected", reason: "No Final essay mark for this student." };
+  if (s.finals.length > 1) return { ...base, status: "rejected", reason: `Multiple Final marks (${s.finals.join(", ")}) — expected one per student.` };
   const entry = findByEmail(subject, s.email);
   if (!entry) return { ...base, status: "rejected", reason: `QM email “${s.email}” is not in the ${subject.name} roster.` };
   const matched = { matchedName: entry.name, matchedEmail: entry.studentId ?? entry.participantId };
@@ -90,18 +84,13 @@ function reviewOne(s: ExtractedEssayStudent, context: EssayUploadContext): Maste
   return { ...base, ...matched, status: "valid", subjectEssay: s.subjectEssay, reason: null };
 }
 
-/** Validate a parsed workbook against the cycle's essay subjects + rosters. */
+/** Validate a parsed template against the cycle's essay subjects + rosters. */
 export function validateEssayMasterfile(
   result: EssayMasterfileResult,
   context: EssayUploadContext,
 ): MasterfileValidationReport {
   const rows = result.students.map((s) => reviewOne(s, context));
-  rows.sort(
-    (a, b) =>
-      a.subjectCode.localeCompare(b.subjectCode) ||
-      a.studentName.localeCompare(b.studentName) ||
-      a.studentLabel.localeCompare(b.studentLabel),
-  );
+  rows.sort((a, b) => a.subjectCode.localeCompare(b.subjectCode) || (a.matchedName ?? a.email).localeCompare(b.matchedName ?? b.email));
 
   const valid: EssayUploadRow[] = [];
   const subjectsSeen = new Set<string>();

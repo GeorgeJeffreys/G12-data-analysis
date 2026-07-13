@@ -17,11 +17,8 @@ import { readFileSync } from "node:fs";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import seedJson from "@/lib/data/seed.generated.json";
 import { validateEssayRows } from "@/lib/data/validate-essays";
-import { buildEssayTemplateWorkbook } from "@/lib/data/essay-template";
-import { parseEssayMarks, essaySubjectCode } from "@/lib/data/parse-essays";
 import { parseExport, ingestAndClean } from "@/lib/ingest";
 import { sampleExportPath } from "./fixtures";
-import { XLSX } from "@/lib/export/sheet-utils";
 
 const seed = seedJson as unknown as {
   liveCycle: { id: string; participants: { id: string }[]; assessments: { id: string; name: string }[] };
@@ -45,32 +42,6 @@ describe("getEssayContext", () => {
   it("returns null for an unknown cycle", () => {
     const p = new InMemoryDataProvider();
     expect(p.getEssayContext("no-such-cycle")).toBeNull();
-  });
-});
-
-describe("essay template", () => {
-  it("builds AFL/ESL sheets that round-trip through the existing parser", async () => {
-    const p = new InMemoryDataProvider();
-    const ctx = p.getEssayContext(CYCLE)!;
-    const wb = buildEssayTemplateWorkbook(ctx);
-    // sheets named by subject code so parseEssayMarks maps them
-    expect(wb.SheetNames.map((n) => essaySubjectCode(n)).sort()).toEqual(["AFL", "ESL"]);
-
-    // header shape
-    const first = XLSX.utils.sheet_to_json<string[]>(wb.Sheets[wb.SheetNames[0]!]!, { header: 1 })[0]!;
-    expect(first).toContain("ParticipantID");
-    expect(first).toContain("TotalScore");
-    expect(first).toContain("MaxMark");
-
-    // Fill a TotalScore into one row, serialise, and re-parse via parseEssayMarks.
-    const aflName = wb.SheetNames.find((n) => essaySubjectCode(n) === "AFL")!;
-    const ws = wb.Sheets[aflName]!;
-    XLSX.utils.sheet_add_aoa(ws, [[15]], { origin: "D2" }); // TotalScore col (4th), row 2
-    const buf = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
-    const file = new File([buf], "filled_template.xlsx");
-    const rows = await parseEssayMarks(file);
-    expect(rows.length).toBeGreaterThan(0);
-    expect(rows.some((r) => r.subjectCode === "AFL" && r.totalScore === 15)).toBe(true);
   });
 });
 

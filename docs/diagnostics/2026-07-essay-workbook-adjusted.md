@@ -1,3 +1,8 @@
+> **SUPERSEDED (2026-07-11).** The app no longer parses the markers' working
+> workbook or the `Adjusted scores` column. It now owns ONE fixed template on both
+> ends — generating it pre-filled and parsing only it (tab→subject, `QM email`,
+> `Final essay mark`). See `2026-07-essay-fixed-template-v2.md`. History only.
+
 # Essay marks — ingest the workbook natively (two sheets, Adjusted column, QM-email join)
 
 **Date:** 2026-07-10
