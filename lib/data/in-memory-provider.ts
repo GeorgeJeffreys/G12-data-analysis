@@ -702,6 +702,30 @@ export class InMemoryDataProvider implements DataProvider {
   }
 
   /**
+   * Pre-item-review-deletion subject scores for the Raw Scores view.
+   *
+   * The SAME engine score path as the final Score (`pctByParticipant`) — cleaned
+   * cohort, Clean-stage column removals, and the half-weighted essay component —
+   * but WITHOUT the item-review deletions (`excludedItemIds` here is Clean columns
+   * only, never the reviewed-item exclusions). So Raw = Score − the deletion step;
+   * on a cohort with no item-review deletions the two are identical. Alterations
+   * are deliberately NOT applied here: Raw stays the as-submitted (cleaned MCQ +
+   * essay) view, and manual mark adjustments belong to the downstream Score.
+   */
+  private rawSubjectScores(cycleId: string, a: SeedAssessment): Map<string, ParticipantScore> {
+    const cleanCols = this.cleanCols.get(`${cycleId}:${a.id}`);
+    const excluded = cleanCols && cleanCols.size ? [...cleanCols] : [];
+    const scores = engine.computeScores(this.responsesOf(a), excluded, {
+      essayMarks: this.essayMarksFor(cycleId, a.id),
+      essayAssessmentIds: this.essaySubjectIds(),
+      // Half-weighted essay max, derived from the subject's essay block (0 for a
+      // non-essay subject) — the SAME derivation the final Score uses.
+      essayMax: reservedEssayMax(a),
+      items: this.itemMetasFor(a),
+    });
+    return new Map(scores.map((s) => [s.participantId, s]));
+  }
+  /**
    * Assessment ids that carry an essay component (English + Arabic). Uses the one
    * shared, script-aware detector (lib/data/essays) so the Arabic-script subject
    * is recognised from its item data / name — not the old Latin-only regex.
@@ -1706,26 +1730,36 @@ export class InMemoryDataProvider implements DataProvider {
 
     const present = this.participantsIn(a);
     const cohortExcluded = this.cohortExcludedSet();
+    // Subject totals from the engine score path (retained MCQ + half-weighted
+    // essay), minus the item-review deletion step — so Raw carries the essay and
+    // equals the final Score on a cohort with no deletions. The per-element cells
+    // below stay the naive MCQ correct-counts (the topic breakdown), which need
+    // not sum to `raw` once the essay is folded into the total.
+    const hasEssay = new Set(this.essaySubjectIds()).has(a.id);
+    const subjectScores = this.rawSubjectScores(cycleId, a);
+    const subjectMax = subjectScores.size
+      ? [...subjectScores.values()][0]!.max
+      : mcqMax + (hasEssay ? reservedEssayMax(a) : 0);
     const students: NaiveStudentRow[] = this.seed.liveCycle.participants
       .filter((p) => present.has(p.id) && !remRows?.has(p.id) && !cohortExcluded.has(p.id))
       .map((p) => {
         const myScores = a.responses.filter((r) => r.p === p.id);
         const byId = new Map(myScores.map((r) => [r.i, r.s]));
-        let raw = 0;
-        for (const it of scoredItems) raw += byId.get(it.id) ?? 0;
         const perElement: Record<string, number> = {};
         for (const major of majors) {
           let got = 0;
           for (const id of itemsByMajor.get(major)!) got += byId.get(id) ?? 0;
           perElement[major] = got;
         }
+        const sc = subjectScores.get(p.id);
         return {
           id: p.id,
           studentId: p.studentId ?? p.id,
           name: p.label,
           perElement,
-          raw,
-          pct: mcqMax ? Math.round((raw / mcqMax) * 1000) / 10 : 0,
+          raw: sc ? sc.raw : 0,
+          pct: sc ? sc.pct : 0,
+          max: sc ? sc.max : subjectMax,
         };
       })
       .sort((x, y) => y.pct - x.pct);
@@ -1734,8 +1768,9 @@ export class InMemoryDataProvider implements DataProvider {
     return {
       assessment: refs.find((r) => r.id === assessmentId)!,
       assessments: refs,
-      hasEssay: new Set(this.essaySubjectIds()).has(a.id),
+      hasEssay,
       mcqItems: mcqMax,
+      subjectMax,
       totalItems: a.items.length,
       cohortAvgPct,
       elements,

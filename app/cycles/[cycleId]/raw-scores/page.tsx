@@ -109,7 +109,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
         </div>
 
         {model.hasEssay && (
-          <Alert tone="info">This subject includes an essay-scored element marked offline; it’s added later in Adjustments. The raw score here is the MCQ items only.</Alert>
+          <Alert tone="info">This subject includes an essay-scored element marked offline. The raw score below folds in the half-weighted essay mark; the per-element columns show the MCQ breakdown only.</Alert>
         )}
 
         {/* Key: the A–E columns are the paper's major elements (kept as short
@@ -157,7 +157,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
                     {model.elements.map((e) => (
                       <td key={e.major} className="hf-td hf-mono" style={{ textAlign: "center", color: H.ink2, fontSize: 12 }}>{s.perElement[e.major] ?? 0}</td>
                     ))}
-                    <td className="hf-td hf-mono" style={{ textAlign: "right", fontWeight: 600 }}>{s.raw}<span style={{ color: H.ink3, fontWeight: 400 }}> / {model.mcqItems}</span></td>
+                    <td className="hf-td hf-mono" style={{ textAlign: "right", fontWeight: 600 }}>{s.raw}<span style={{ color: H.ink3, fontWeight: 400 }}> / {s.max}</span></td>
                     <td className="hf-td">
                       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", alignItems: "center" }}>
                         <div style={{ width: 84, height: 7, background: H.tint2, borderRadius: 5, flex: "0 0 auto" }}><div style={{ width: `${s.pct}%`, height: "100%", background: H.bar, borderRadius: 5 }} /></div>

@@ -500,16 +500,26 @@ export interface NaiveStudentRow {
   id: string;
   studentId: string;
   name: string;
-  /** Raw correct count per major element. */
+  /** Raw correct count per major element (MCQ breakdown, display-only). */
   perElement: Record<string, number>;
+  /**
+   * Subject total on the SAME engine score path as the final Score, minus the
+   * item-review deletion step: retained-MCQ marks + the half-weighted essay mark
+   * (ESL/Arabic only). Equals the final Score on a cohort with no deletions.
+   */
   raw: number;
   pct: number;
+  /** Subject max the `raw` is out of = retained-MCQ max + reserved essay max. */
+  max: number;
 }
 export interface NaiveScoresModel {
   assessment: AssessmentRef;
   assessments: AssessmentRef[];
   hasEssay: boolean;
+  /** Count of scored MCQ items (the per-element breakdown denominator). */
   mcqItems: number;
+  /** Subject max the row totals are out of (retained-MCQ max + reserved essay max). */
+  subjectMax: number;
   totalItems: number;
   cohortAvgPct: number;
   elements: NaiveElementCol[];
