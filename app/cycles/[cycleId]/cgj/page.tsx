@@ -197,13 +197,12 @@ function UploadPrompt({ cycleId }: { cycleId: string }) {
       <div className="hf-h2">No centre file added</div>
       <div className="hf-sub" style={{ maxWidth: 540, lineHeight: 1.5 }}>
         Upload the partner centre's Excel of expected grades (one row per student, one column per subject). We line
-        each expectation up against the actual grade — or load a labelled sample to see how it works.
+        each expectation up against the actual grade.
       </div>
       <div style={{ display: "flex", gap: 9 }}>
         <Button variant="pri" disabled={busy} onClick={() => fileRef.current?.click()}>
           <Icon name="upload" color="#fff" size={14} />{busy ? "Reading…" : "Upload centre file"}
         </Button>
-        <Button onClick={() => provider.loadSampleCgj(cycleId)}>Load sample (labelled)</Button>
       </div>
       {error && <div className="hf-sub" style={{ fontSize: 11.5, color: H.bad, maxWidth: 520 }}>{error}</div>}
     </div>
@@ -219,10 +218,9 @@ function Comparison({ cycleId, model }: { cycleId: string; model: CgjModel }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {/* file chip */}
       <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: model.sample ? H.pinkSoft2 : H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
           <Mark kind="pass" size={16} />
           <span style={{ fontSize: 12.5, fontWeight: 600 }}>{model.fileName}</span>
-          {model.sample && <Badge tone="accent">SAMPLE</Badge>}
           <span style={{ flex: 1 }} />
           <span className="hf-sub" style={{ fontSize: 11.5 }}>
             {model.counts.studentsInFile} student{model.counts.studentsInFile === 1 ? "" : "s"} in file

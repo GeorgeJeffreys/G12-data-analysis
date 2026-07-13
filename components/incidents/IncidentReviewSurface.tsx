@@ -80,20 +80,15 @@ function StatRow({ review }: { review: IncidentReviewModel }) {
   );
 }
 
-// The imported source (real file or the labelled sample) with a Remove control and,
-// when it is the sample, a clear prompt for replacing it with real incident data.
+// The imported source (real incident file) with a Remove control.
 function SourceCard({ cycleId, review, showImporter }: { cycleId: string; review: IncidentReviewModel; showImporter: boolean }) {
   const provider = useProvider();
   const src = review.source!;
   return (
-    <div className="hf-card" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: src.sample ? H.pinkSoft2 : H.tint, flexWrap: "wrap" }}>
+    <div className="hf-card" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, flexWrap: "wrap" }}>
       <Mark kind="pass" size={16} />
       <span style={{ fontSize: 12.5, fontWeight: 600 }}>{src.fileName}</span>
-      {src.sample && <Badge tone="accent">SAMPLE</Badge>}
       <span style={{ flex: 1 }} />
-      {src.sample && showImporter && (
-        <span className="hf-sub" style={{ fontSize: 11 }}>Labelled sample — replace it by importing your real incident log.</span>
-      )}
       {showImporter && (
         <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.clearIncidentRows(cycleId)}>
           <Icon name="trash" size={13} />Remove
@@ -242,7 +237,6 @@ function Stat({ n, label, accent }: { n: string; label: string; accent?: boolean
 }
 
 function EmptyState({ cycleId, showImporter }: { cycleId: string; showImporter: boolean }) {
-  const provider = useProvider();
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 14, padding: "60px 30px", textAlign: "center" }}>
       <div style={{ width: 54, height: 54, borderRadius: 999, border: `1.5px dashed ${H.line2}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -251,15 +245,10 @@ function EmptyState({ cycleId, showImporter }: { cycleId: string; showImporter: 
       <div className="hf-h2">No incidents imported</div>
       <div className="hf-sub" style={{ maxWidth: 540, lineHeight: 1.5 }}>
         Import an incident log to auto-match each incident to a configured code
-        (Settings › Incident adjustments) and compute capped, add-only mark changes —
-        or load a labelled sample to see the surface. Nothing is applied to scores
-        until an admin commits it.
+        (Settings › Incident adjustments) and compute capped, add-only mark changes.
+        Nothing is applied to scores until an admin commits it.
       </div>
-      {showImporter ? (
-        <IncidentImporter cycleId={cycleId} />
-      ) : (
-        <Button onClick={() => provider.loadSampleIncidentRows(cycleId)}>Load sample (labelled)</Button>
-      )}
+      {showImporter && <IncidentImporter cycleId={cycleId} />}
     </div>
   );
 }
@@ -304,7 +293,6 @@ export function IncidentImporter({ cycleId }: { cycleId: string }) {
     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
       <Button onClick={() => fileRef.current?.click()} disabled={busy}><Icon name="upload" size={13} />{busy ? "Reading…" : "Import incident log"}</Button>
-      <Button variant="ghost" onClick={() => provider.loadSampleIncidentRows(cycleId)} disabled={busy}>Load sample (labelled)</Button>
       {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
     </div>
   );

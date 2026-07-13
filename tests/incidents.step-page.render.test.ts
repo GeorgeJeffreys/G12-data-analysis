@@ -5,6 +5,7 @@
  * the live provider. Display/nav only — engine parity is unaffected.
  */
 import { describe, it, expect, vi } from "vitest";
+import { seedIncidentRows } from "./helpers/incident-fixtures";
 import { createElement as e } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
@@ -50,7 +51,7 @@ describe("Incident step page — config-driven by default", () => {
   it("shows the per-student base + adjustment = adjusted decomposition once imported", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     activeProvider = p;
     const html = await renderStep(id);
     expect(html).toContain("Base");
@@ -62,7 +63,7 @@ describe("Incident step page — config-driven by default", () => {
   it("a team member sees the commit control under the default matrix (`adjust`)", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentRows(id);
+    seedIncidentRows(p, id);
     p.setCurrentUser(VIEWER); // team_member holds `adjust` by default
     activeProvider = p;
     const html = await renderStep(id);
@@ -73,7 +74,7 @@ describe("Incident step page — config-driven by default", () => {
   it("without the `adjust` permission the surface is read-only (Admin only)", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentRows(id); // seeded as the default admin
+    seedIncidentRows(p, id); // seeded as the default admin
     // Revoke the Adjustments permission from team_member (grant-driven denial),
     // then view as one.
     p.setRoleAction("team_member", "incidents.apply", false);
@@ -99,7 +100,11 @@ describe("Incident step — manual override retained", () => {
   it("the manual page keeps the This student / Whole subject / No action triage", async () => {
     const p = new InMemoryDataProvider();
     const id = p.listCycles()[0]!.id;
-    p.loadSampleIncidentLog(id); // the manual (old-world) incident log
+    // Populate the manual (old-world) incident log via the real upload path.
+    const stu = p.getIncidentRoster(id)[0]!;
+    p.uploadIncidentLog(id, "incident_log.xlsx", [
+      { source: "incident_log", studentName: stu.name, exam: "AM", issueType: "Calculator tool froze", actionTaken: "Allowed 4 extra minutes", questionsAffected: "Q12", staff: "Invigilator A" },
+    ]);
     activeProvider = p;
     const html = await renderManual(id);
     expect(html).toContain("Manual override");

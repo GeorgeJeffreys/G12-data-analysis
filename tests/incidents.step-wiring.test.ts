@@ -90,7 +90,7 @@ describe("incident step — config-driven import", () => {
     expect(review.students.length).toBe(0);
   });
 
-  it("tracks the imported source (real file vs sample) and clears it", () => {
+  it("tracks the imported source (real file) and clears it", () => {
     const p = new InMemoryDataProvider();
     const id = liveId(p);
     const stu = p.getIncidentRoster(id)[0]!;
@@ -100,11 +100,6 @@ describe("incident step — config-driven import", () => {
     ], "march_incidents.xlsx");
     let review = p.getIncidentReview(id)!;
     expect(review.source).toEqual({ fileName: "march_incidents.xlsx", sample: false });
-
-    // The labelled sample marks its source as a sample (so the UI can prompt to replace it).
-    p.loadSampleIncidentRows(id);
-    review = p.getIncidentReview(id)!;
-    expect(review.source?.sample).toBe(true);
 
     // Clearing removes the rows and the source.
     p.clearIncidentRows(id);

@@ -152,10 +152,9 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
         <ReviewPanel staged={staged} onApply={applyStaged} onCancel={() => setStaged(null)} />
       ) : model?.uploaded ? (
         <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: model.sample ? H.pinkSoft2 : H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
             <Mark kind="pass" size={16} />
             <span style={{ fontSize: 12.5, fontWeight: 600 }}>{model.fileName}</span>
-            {model.sample && <Badge tone="accent">SAMPLE</Badge>}
             <span style={{ flex: 1 }} />
             <span className="hf-sub" style={{ fontSize: 11.5 }}>{model.matchedCount} students matched · {model.subjects.map((s) => `${s.code} ${s.count}`).join(" · ")}</span>
             <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => fileRef.current?.click()} disabled={busy}><Icon name="upload" size={13} />Add / re-upload language</Button>
@@ -178,7 +177,6 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
           <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" }}>
             <Button onClick={() => fileRef.current?.click()} disabled={busy}><Icon name="upload" size={13} />{busy ? "Reading…" : "Add masterfile (CSV)"}</Button>
             <Button variant="ghost" onClick={downloadTemplate} disabled={!context || (context.subjects.length === 0)}><Icon name="download" size={13} />Download template (.xlsx)</Button>
-            <Button variant="ghost" onClick={() => provider.loadSampleEssayMarks(cycleId)} disabled={busy}>Load sample (labelled)</Button>
             {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
           </div>
         </>

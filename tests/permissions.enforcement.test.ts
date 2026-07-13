@@ -13,6 +13,7 @@
  * tests/migration.rpc-permission-gates.test.ts.
  */
 import { describe, it, expect } from "vitest";
+import { seedIncidentRows } from "./helpers/incident-fixtures";
 import { InMemoryDataProvider } from "@/lib/data/in-memory-provider";
 import { can, ACTION_KEYS, type ActionKey } from "@/lib/auth/actions";
 import type { CurrentUser } from "@/lib/data/types";
@@ -53,7 +54,7 @@ describe("read-model flags mirror the resolved grid, per role", () => {
       expect(p.getGrades(CYCLE)!.canLock).toBe(c.signoff); // general.signoff
       expect(p.getDistinctionSafeguard(CYCLE)!.canOverride).toBe(c.distinctionOverride); // general.override_distinction
       expect(p.getIncidentConfig().canEdit).toBe(c.configIncidents); // general.config_incidents
-      p.loadSampleIncidentRows(CYCLE);
+      seedIncidentRows(p, CYCLE);
       expect(p.getIncidentReview(CYCLE)!.canApply).toBe(c.apply); // incidents.apply
       expect(p.getOverrideView(CYCLE).canOverride).toBe(c.marksOverride); // general.override_marks
     });

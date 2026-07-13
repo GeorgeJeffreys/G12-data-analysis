@@ -2921,28 +2921,6 @@ export class InMemoryDataProvider implements DataProvider {
    * references a REAL seeded participant and item (so exclusions genuinely flow
    * into scoring); it is flagged `sample: true` everywhere it surfaces.
    */
-  loadSampleTechnicalErrors(cycleId: string): void {
-    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
-    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const label = (id: string) => this.seed.liveCycle.participants.find((p) => p.id === id)?.label ?? id;
-    const spec: { sid: string; item: string; error: string; decision: IncidentDecision; reason: string | null }[] = [
-      { sid: "P0010", item: "100002785246", error: "Calculator tool froze mid-question; ~4 min lost", decision: "excluded", reason: "Confirmed technical fault" },
-      { sid: "P0010", item: "100002785119", error: "Graph image failed to load on first attempt", decision: null, reason: null },
-      { sid: "P0013", item: "100002785560", error: "Audio clip would not play (listening item)", decision: null, reason: null },
-      { sid: "P0015", item: "100002785334", error: "النص العربي لم يظهر بشكل صحيح أثناء الاختبار", decision: null, reason: null },
-      { sid: "P0009", item: "100002785120", error: "Power outage in room B; session paused 8 min", decision: "excluded", reason: "Power outage" },
-      { sid: "P0013", item: "100002785374", error: "Tablet battery died; resumed on a new device", decision: "kept", reason: null },
-    ];
-    let seq = 0;
-    const incidents = spec.map((s) => {
-      void (seq += 1);
-      return this.buildIncident(s.sid, label(s.sid), s.item, s.item, s.error, s.decision, s.reason);
-    });
-    this.technicalErrors.set(cycleId, { uploaded: true, sample: true, fileName: "sample_technical_errors.csv", incidents });
-    this.audit("upload", "Loaded sample faults", `${incidents.length} labelled sample incidents (not from a real file)`, cycleId);
-    this.bump();
-  }
-
   clearTechnicalErrors(cycleId: string): void {
     if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
@@ -3078,23 +3056,6 @@ export class InMemoryDataProvider implements DataProvider {
    * subject totals); flagged `sample: true` everywhere it surfaces. Two essays
    * per student per subject exercise the averaging rule.
    */
-  loadSampleEssayMarks(cycleId: string): void {
-    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
-    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const ids = this.seed.liveCycle.participants.slice(0, 10).map((p) => p.id);
-    const rows: EssayUploadRow[] = [];
-    ids.forEach((sid, i) => {
-      // deterministic, plausible marks out of 20 (two essays each)
-      const afl = [11 + (i % 7), 12 + ((i + 3) % 6)];
-      const esl = [10 + ((i + 2) % 8), 13 + (i % 5)];
-      for (const s of afl) rows.push({ participantId: sid, subjectCode: "AFL", totalScore: Math.min(20, s) });
-      for (const s of esl) rows.push({ participantId: sid, subjectCode: "ESL", totalScore: Math.min(20, s) });
-    });
-    this.essayMarksByCycle.set(cycleId, this.buildEssayState(rows, true, "sample_essay_marks.xlsx"));
-    this.audit("upload", "Loaded sample essay marks", `${ids.length} students × 2 essay subjects (labelled sample, not from a real file)`, cycleId);
-    this.bump();
-  }
-
   clearEssayMarks(cycleId: string): void {
     if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
@@ -3382,24 +3343,6 @@ export class InMemoryDataProvider implements DataProvider {
    * subject-wide case; flagged `sample: true` everywhere it surfaces. Nothing is
    * auto-applied — every row still needs a human decision.
    */
-  loadSampleIncidentLog(cycleId: string): void {
-    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
-    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const label = (i: number) => this.seed.liveCycle.participants[i]?.label ?? `Student ${i}`;
-    const rows: IncidentInput[] = [
-      { source: "incident_log", studentName: label(0), exam: "AM", issueType: "Calculator tool froze", actionTaken: "Allowed 4 extra minutes", questionsAffected: "Q12", staff: "Invigilator A" },
-      { source: "incident_log", studentName: label(3), exam: "ESL", issueType: "Audio clip would not play", actionTaken: "Replayed on staff device", questionsAffected: "n/a", staff: "Invigilator B" },
-      { source: "incident_log", studentName: "All students", exam: "ST", issueType: "Projector flicker for 2 minutes", actionTaken: "Paused the room", questionsAffected: "n/a", staff: "Invigilation team" },
-      { source: "incident_log", studentName: label(8), exam: "AFL", issueType: "النص لم يظهر بشكل صحيح", actionTaken: "Reloaded the item", questionsAffected: "Q5, Q6", staff: "Invigilator C" },
-      { source: "complaint", studentName: label(5), email: "student5@example.org", school: "Alsama Shatila 1", description: "Felt the maths paper started late and was rushed at the end." },
-    ];
-    const incidents = rows.map((r) => this.buildTriageIncident(r));
-    this.incidentLogByCycle.set(cycleId, { uploaded: true, sample: true, fileName: "sample_incident_log.xlsx", incidents });
-    this.rebuildAlterations(cycleId);
-    this.audit("upload", "Loaded sample incident log", `${incidents.length} labelled sample incidents (not from a real file)`, cycleId);
-    this.bump();
-  }
-
   clearIncidentLog(cycleId: string): void {
     if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
@@ -3505,35 +3448,6 @@ export class InMemoryDataProvider implements DataProvider {
    * deliberately a mix (some match the actuals, some sit above/below) so the
    * comparison shows all four outcomes. Flagged `sample: true` everywhere.
    */
-  loadSampleCgj(cycleId: string): void {
-    if (!can(this.user, "cgj.upload", this.resolvedActions)) return;
-    if (cycleId !== this.seed.liveCycle.id || this.locked.has(cycleId)) return;
-    const grades = this.getGrades(cycleId);
-    const levels = this.grading.performanceLevels;
-    const assessments = this.seed.liveCycle.assessments;
-    // Build sample expectations off the ACTUAL grades of the first few students,
-    // nudging each subject up/down a rank so the file is not a trivial all-match.
-    const rows: CgjUploadRow[] = (grades?.rows ?? []).slice(0, 8).map((row, ri) => {
-      const out: Record<string, string> = {};
-      assessments.forEach((a, ai) => {
-        const actual = row.grades[a.id]?.level;
-        if (!actual) return;
-        const rank = levels.indexOf(actual);
-        if (rank < 0) return;
-        // Deterministic nudge: vary by student+subject so we get matches, a few
-        // above (centre expected less) and a few below (centre expected more).
-        const shift = ((ri + ai) % 3) - 1; // −1, 0, +1
-        const expectedRank = Math.min(levels.length - 1, Math.max(0, rank + shift));
-        out[a.shortName] = levels[expectedRank]!;
-      });
-      return { studentName: row.label, levels: out };
-    });
-    const students = this.buildCgjStudents(rows);
-    this.cgjByCycle.set(cycleId, { uploaded: true, sample: true, fileName: "sample_centre_expectations.xlsx", students });
-    this.audit("upload", "Loaded sample centre grade judgement", `${students.length} labelled sample expectations (not from a real file)`, cycleId);
-    this.bump();
-  }
-
   clearCgj(cycleId: string): void {
     if (!can(this.user, "cgj.upload", this.resolvedActions)) return;
     if (this.locked.has(cycleId)) return;
@@ -5249,63 +5163,6 @@ export class InMemoryDataProvider implements DataProvider {
    * whole-room fixed incident, an unclassified row (zero marks, surfaced), a
    * student pushed over the per-student global cap, and an unmatched row.
    */
-  loadSampleIncidentRows(cycleId: string): void {
-    if (!can(this.user, "incidents.upload", this.resolvedActions)) return;
-    if (this.locked.has(cycleId)) return;
-    const comp = this.getComposition(cycleId);
-    if (!comp) return;
-    const students = comp.students.slice(0, 3);
-    const rows: ResolvedIncidentRow[] = [];
-    let n = 0;
-    const push = (
-      pid: string | null,
-      name: string,
-      incidentType: string,
-      questionNumber: string,
-      durationMinutes: number | null,
-    ) => {
-      n += 1;
-      const matched = classifyIncidentType(incidentType, this.incidentConfig.codes);
-      const needsDuration = matched?.formula.kind === "per_duration";
-      const errors: string[] = [];
-      if (!pid) errors.push("No cohort participant matched this Student ID.");
-      const status: ResolvedIncidentRow["status"] =
-        needsDuration && durationMinutes === null ? "error" : matched ? "ok" : "unclassified";
-      rows.push({
-        rowNumber: n,
-        rawStudentId: pid ?? "UNKNOWN-042",
-        studentName: name,
-        incidentType,
-        questionNumber,
-        durationMinutes,
-        codeId: matched ? matched.id : null,
-        status,
-        errors,
-        participantInternalId: pid,
-        matched: pid !== null,
-      });
-    };
-    if (students[0]) {
-      // 22 min at "+0.5 / 5 min, block" = 4 units = 2.0 marks → clamped to the 3-mark
-      // per-code cap? No — 2.0 < 3. Use 40 min → 4.0 raw → capped to 3 (per-code hit).
-      push(students[0].participantId, students[0].name, "Calculator broke", "Q7", 40);
-      push(students[0].participantId, students[0].name, "Fire alarm", "—", null); // fixed +1
-    }
-    if (students[1]) {
-      // Several disruptions → sums over the per-student global cap (default 5).
-      push(students[1].participantId, students[1].name, "Fire alarm", "—", null);
-      push(students[1].participantId, students[1].name, "Power cut", "—", null);
-      push(students[1].participantId, students[1].name, "Calculator failure", "Q3", 60); // 6→cap 3
-      push(students[1].participantId, students[1].name, "Noise disruption", "—", null);
-    }
-    if (students[2]) {
-      push(students[2].participantId, students[2].name, "Spilled water on desk", "Q1", null); // unclassified
-    }
-    // An unmatched row (no cohort participant) — surfaced for manual attention.
-    push(null, "A. Nonymous", "Fire alarm", "—", null);
-    this.importIncidentRows(cycleId, rows, { fileName: "sample_incident_log.xlsx", sample: true });
-  }
-
   getIncidentReview(cycleId: string): IncidentReviewModel | null {
     const comp = this.getComposition(cycleId);
     if (!comp) return null;

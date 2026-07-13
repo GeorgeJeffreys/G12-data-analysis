@@ -1,20 +1,11 @@
 /**
  * Configurable known test / staff account emails for the Clean-stage
- * KNOWN_TEST_ACCOUNT flag.
+ * KNOWN_TEST_ACCOUNT suggestion.
  *
- * This is a supplementary heuristic ONLY. The authoritative staff/test exclusion
- * is data-driven — the per-cohort `cohort_exclusions` list applied via
- * `excludeParticipantFromCohort` (that is how Lavinia Cavalet's account is
- * already removed cohort-wide), never a constant baked into scoring. This list
- * exists so the Clean tab can *suggest* obvious test addresses that a reviewer
- * may not yet have excluded; edit it here (one place) to tune the suggestions.
- *
- * Matching is case-insensitive; keep entries lowercased.
+ * Production ships NO baked-in identities: exam data is ingested exactly as
+ * exported, and removing a row (staff/test/withdrawn) is a manual human action
+ * in the Clean step. This list is therefore empty by default — the flag never
+ * pre-judges an address. It stays as the single, case-insensitive configuration
+ * point should a workspace later choose to surface its own test-address hints.
  */
-export const KNOWN_TEST_ACCOUNT_EMAILS: readonly string[] = [
-  "test@test.com",
-  "test@example.com",
-  "demo@demo.com",
-  "qa@test.com",
-  "admin@test.com",
-];
+export const KNOWN_TEST_ACCOUNT_EMAILS: readonly string[] = [];

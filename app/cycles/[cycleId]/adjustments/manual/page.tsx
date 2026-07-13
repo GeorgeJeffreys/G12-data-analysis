@@ -98,8 +98,7 @@ function Triage({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
         <div className="hf-h2">No incident log added</div>
         <div className="hf-sub" style={{ maxWidth: 520, lineHeight: 1.5 }}>
           This override is optional. Import the incident log (<span className="hf-mono" style={{ fontSize: 11 }}>Incident_Log</span> +
-          Students Complaints) to triage faults and complaints into raw-mark alterations by hand, or load a labelled sample to
-          see how it works.
+          Students Complaints) to triage faults and complaints into raw-mark alterations by hand.
         </div>
         <IncidentUploader cycleId={cycleId} />
       </div>
@@ -117,7 +116,7 @@ function Triage({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
 
 /**
  * Import the incident log for manual triage. Reads a .xlsx with Incident_Log
- * (header on row 3) and/or Students Complaints sheets, or loads a labelled sample.
+ * (header on row 3) and/or Students Complaints sheets.
  * Rows are queued for human triage below — nothing is auto-applied here.
  */
 function IncidentUploader({ cycleId }: { cycleId: string }) {
@@ -146,21 +145,19 @@ function IncidentUploader({ cycleId }: { cycleId: string }) {
     <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
       <Button onClick={() => fileRef.current?.click()} disabled={busy}><Icon name="upload" size={13} />{busy ? "Reading…" : "Add incident log"}</Button>
-      <Button variant="ghost" onClick={() => provider.loadSampleIncidentLog(cycleId)} disabled={busy}>Load sample (labelled)</Button>
       {error && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>{error}</span>}
     </div>
   );
 }
 
-/** The imported incident-log source (file name + sample tag) with a Remove
+/** The imported incident-log source (file name) with a Remove
  *  control, shown above the triage list so the file can be replaced/cleared. */
 function IncidentSource({ cycleId, adj }: { cycleId: string; adj: AdjustmentsModel }) {
   const provider = useProvider();
   return (
-    <div className="hf-card" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: adj.sample ? H.pinkSoft2 : H.tint, flexWrap: "wrap" }}>
+    <div className="hf-card" style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, flexWrap: "wrap" }}>
       <Mark kind="pass" size={16} />
       <span style={{ fontSize: 12.5, fontWeight: 600 }}>{adj.fileName}</span>
-      {adj.sample && <Badge tone="accent">SAMPLE</Badge>}
       <span style={{ flex: 1 }} />
       <span className="hf-sub" style={{ fontSize: 11.5 }}>{adj.counts.incidents} incidents · {adj.counts.awaiting} awaiting triage</span>
       <Button variant="ghost" style={{ fontSize: 11 }} onClick={() => provider.clearIncidentLog(cycleId)}><Icon name="trash" size={13} />Remove</Button>

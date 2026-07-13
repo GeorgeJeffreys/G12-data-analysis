@@ -335,7 +335,6 @@ describe("grades workbook — canonical layout", () => {
   // per-exam D3 majority then makes some fall short).
   function makeInput(): GradesInput {
     const provider = new InMemoryDataProvider();
-    provider.loadSampleTechnicalErrors(CYCLE);
     provider.setBoundary(CYCLE, "overall", { cutIndex: 0, cutValue: 30 });
 
     const model = provider.getGrades(CYCLE)!;
