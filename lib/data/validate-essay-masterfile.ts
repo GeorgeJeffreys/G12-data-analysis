@@ -16,7 +16,7 @@
  */
 import type { EssayUploadRow } from "./provider";
 import type { EssayUploadContext, EssaySubjectContext } from "./types";
-import type { ExtractedEssayStudent, EssayMasterfileResult, EssaySubjectCode } from "./parse-essay-masterfile";
+import type { ExtractedEssayStudent, EssayMasterfileResult, EssaySubjectCode, EssaySheetError } from "./parse-essay-masterfile";
 
 export type EssayRowStatus = "valid" | "rejected" | "flagged";
 
@@ -46,6 +46,8 @@ export interface MasterfileValidationReport {
   flaggedCount: number;
   /** Distinct essay subject names referenced by valid rows (for the summary line). */
   subjectsSeen: string[];
+  /** Whole-sheet rejections (broken column contract) — surfaced, never applied. */
+  sheetErrors: EssaySheetError[];
 }
 
 /** Case-insensitive exact-email lookup against a subject roster (email = qm id). */
@@ -107,5 +109,6 @@ export function validateEssayMasterfile(
     rejectedCount: rows.filter((r) => r.status === "rejected").length,
     flaggedCount: rows.filter((r) => r.status === "flagged").length,
     subjectsSeen: [...subjectsSeen],
+    sheetErrors: result.sheetErrors ?? [],
   };
 }
