@@ -34,13 +34,6 @@ export function cyclesSubnav(
   ];
 }
 
-export function analyticsSubnav(active: "overall" | "compare"): SubnavItem[] {
-  return [
-    { label: "Overall", href: "/analytics", on: active === "overall" },
-    { label: "Compare cycles", href: "/analytics/compare", on: active === "compare" },
-  ];
-}
-
 export function settingsSubnav(
   active: "users" | "roles" | "centres" | "config" | "elements" | "incidents",
 ): SubnavItem[] {

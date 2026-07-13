@@ -118,7 +118,7 @@ vi.mock("@/lib/data/context", () => ({
   useProviderData: <T,>(selector: (p: DataProvider) => T) => selector(active),
 }));
 
-const CYCLE = new InMemoryDataProvider().getCompareCycles().cycles.find((c) => !c.mock)!.id;
+const CYCLE = new InMemoryDataProvider().listCycles().find((c) => !c.mock)!.id;
 const FIRST_ASSESSMENT = new InMemoryDataProvider().getCycle(CYCLE)!.assessments[0]!.id;
 
 function html(node: Parameters<typeof renderToStaticMarkup>[0]) {

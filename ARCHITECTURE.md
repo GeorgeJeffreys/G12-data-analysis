@@ -460,8 +460,7 @@ the shell.
 | Cycles | Diagnostics (speededness & timing) | `/cycles/[cycleId]/diagnostics` |
 | Cycles | Audit log | `/cycles/[cycleId]/audit` |
 | Cycles | Certificates / documents | `/cycles/[cycleId]/documents` |
-| Analytics | Trends | `/analytics` |
-| Analytics | Compare cycles | `/analytics/compare` |
+| Analytics | Overall | `/analytics` |
 | Settings | Users & access | `/settings/users` |
 | Settings | Roles & permissions | `/settings/roles` |
 | Settings | Configuration | `/settings/config` |
@@ -486,7 +485,7 @@ from the batch-1 and batch-2 design (`design/hf*.jsx`).
   resolution, new cycle — writes an entry via the provider's internal `audit(...)`.
   A few seeded entries (flagged `seeded`/"example") populate the list before any
   session action.
-- **Analytics** (`getAnalyticsTrends` / `getAnalyticsCompare`): the **live
+- **Analytics** (`getOverallAnalytics`): the **live
   cycle's aggregates are REAL** (computed from the engine — participants, cohort
   mean/median/σ, items excluded, mean item quality, award distribution,
   per-assessment means); **prior cycles are clearly-labelled MOCK** (a "MOCK
