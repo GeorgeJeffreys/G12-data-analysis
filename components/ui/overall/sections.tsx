@@ -190,7 +190,8 @@ export function S1Participation({ analytics, slice }: { analytics: OverallAnalyt
 export function S2Performance({ analytics, slice }: { analytics: OverallAnalytics; slice: LegacySlice }) {
   const eff = sliceEffects(slice, analytics);
   const { ys, cur, prev } = resolveYears(slice, analytics);
-  const subjects = analytics.subjects;
+  // Only the SELECTED subjects are shown / focusable (the slicer's multi-select).
+  const subjects = analytics.subjects.filter((s) => slice.subjects.includes(s.key));
   const first = subjects[0]?.key ?? "";
   const [localSubj, setLocalSubj] = useState<string>(slice.subject || first);
   useEffect(() => {
@@ -419,10 +420,12 @@ export function S4Centres({ analytics, slice }: { analytics: OverallAnalytics; s
   const minAdv = Math.min(...advVals.map((r) => r.v));
   const dumbRows = advVals.map((r) => ({ k: r.c, v: r.v, hi: r.v === maxAdv, lo: r.v === minAdv }));
 
-  const rows = analytics.subjects.map((su) => {
-    const d = analytics.centreSubjectSpread[su.key] ?? {};
-    return { su, a: prev != null ? d[prev] ?? null : null, b: d[cur] ?? { mean: 0, best: 0, worst: 0, sd: 0 } };
-  });
+  const rows = analytics.subjects
+    .filter((su) => slice.subjects.includes(su.key))
+    .map((su) => {
+      const d = analytics.centreSubjectSpread[su.key] ?? {};
+      return { su, a: prev != null ? d[prev] ?? null : null, b: d[cur] ?? { mean: 0, best: 0, worst: 0, sd: 0 } };
+    });
   const allVals = rows.flatMap((r) => [r.b.worst, r.b.best]);
   const gmin = Math.max(0, Math.floor((Math.min(...allVals, 100) - 5) / 5) * 5);
   const gmax = Math.min(100, Math.ceil((Math.max(...allVals, 0) + 5) / 5) * 5);
@@ -514,16 +517,18 @@ export function partHeadline(analytics: OverallAnalytics, slice: LegacySlice): H
 export function perfHeadline(analytics: OverallAnalytics, slice: LegacySlice): Headline {
   const eff = sliceEffects(slice, analytics);
   const { cur, prev } = resolveYears(slice, analytics);
-  const subs = analytics.subjects;
-  const n = Math.max(1, subs.length);
+  // Aggregate over the SELECTED subjects only (falls back to all if none match).
+  const subs = analytics.subjects.filter((s) => slice.subjects.includes(s.key));
+  const used = subs.length ? subs : analytics.subjects;
+  const n = Math.max(1, used.length);
   if (eff.s2Levels) {
-    const curV = Math.round(subs.reduce((acc, s) => acc + levelPass(analytics.perf[s.key]?.[cur]?.levels ?? { out: 0, exc: 0, meet: 0, not: 0 }), 0) / n);
-    const prevV = prev != null ? Math.round(subs.reduce((acc, s) => acc + levelPass(analytics.perf[s.key]?.[prev]?.levels ?? { out: 0, exc: 0, meet: 0, not: 0 }), 0) / n) : null;
+    const curV = Math.round(used.reduce((acc, s) => acc + levelPass(analytics.perf[s.key]?.[cur]?.levels ?? { out: 0, exc: 0, meet: 0, not: 0 }), 0) / n);
+    const prevV = prev != null ? Math.round(used.reduce((acc, s) => acc + levelPass(analytics.perf[s.key]?.[prev]?.levels ?? { out: 0, exc: 0, meet: 0, not: 0 }), 0) / n) : null;
     return { value: `${curV}%`, label: "at Meets or above", delta: prevV != null ? deltaStr(curV - prevV) : null, deltaGood: true, spark: [prevV ?? curV, curV] };
   }
   const sit = eff.examSitting;
-  const curV = Math.round(subs.reduce((acc, s) => acc + (analytics.perf[s.key]?.[cur]?.[sit]?.mean ?? 0), 0) / n);
-  const prevV = prev != null ? Math.round(subs.reduce((acc, s) => acc + (analytics.perf[s.key]?.[prev]?.[sit]?.mean ?? 0), 0) / n) : null;
+  const curV = Math.round(used.reduce((acc, s) => acc + (analytics.perf[s.key]?.[cur]?.[sit]?.mean ?? 0), 0) / n);
+  const prevV = prev != null ? Math.round(used.reduce((acc, s) => acc + (analytics.perf[s.key]?.[prev]?.[sit]?.mean ?? 0), 0) / n) : null;
   return { value: `${curV}%`, label: "average subject mean", delta: prevV != null ? deltaStr(curV - prevV) : null, deltaGood: true, spark: [prevV ?? curV, curV] };
 }
 

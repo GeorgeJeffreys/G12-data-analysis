@@ -46,7 +46,8 @@ export function sanitizeSlice(raw: unknown, a: OverallAnalytics): FinalSlice {
   const exams = Array.isArray(r.exams) ? r.exams.filter((e) => ["February", "May", "Combined"].includes(e)) : [];
   return {
     years: years.length ? [...years].sort((x, y) => x - y) : def.years,
-    exams: exams.length ? exams : def.exams,
+    // Exam is single-select: keep exactly one lens.
+    exams: exams.length ? [exams[0]!] : def.exams,
     centres: centres.length ? centres : def.centres,
     subjects: subjects.length ? subjects : def.subjects,
   };
@@ -62,9 +63,12 @@ export function subjectsSummary(s: string[], subjects: OverallAnalytics["subject
   return `${s.length} subjects`;
 }
 
-/** Adapt the checkbox slice into the shape the four sections consume. */
+/** Adapt the checkbox slice into the shape the four sections consume. Exam is a
+ *  single-select (one of the three mutually-exclusive lenses); the full subject
+ *  multi-select flows through as `subjects`, so the sections honour every
+ *  dimension rather than collapsing to a single value. */
 export function finalToLegacy(s: FinalSlice, a: OverallAnalytics): LegacySlice {
-  const exam = s.exams.includes("Combined") ? "Combined" : s.exams[0] || "Combined";
+  const exam = s.exams[0] || "Combined";
   const years = [...s.years].sort((x, y) => x - y);
   const latest = a.years[a.years.length - 1] ?? 0;
   const year: number | "trend" = years.length >= 2 ? "trend" : years[0] ?? latest;
@@ -74,8 +78,9 @@ export function finalToLegacy(s: FinalSlice, a: OverallAnalytics): LegacySlice {
       : s.centres.length === 1
         ? { mode: "single", sel: [...s.centres] }
         : { mode: "subset", sel: [...s.centres] };
-  const subject = s.subjects.length === 1 ? s.subjects[0]! : null;
-  return { exam, year, centre, subject, years };
+  const subjects = s.subjects.length ? [...s.subjects] : a.subjects.map((x) => x.key);
+  const subject = subjects.length === 1 ? subjects[0]! : null;
+  return { exam, year, centre, subjects, subject, years };
 }
 
 /** min-1 multi-select toggle. */
@@ -97,7 +102,7 @@ function OVCheckDropdown({
 }: {
   label: string;
   summary: string;
-  count: number;
+  count?: number;
   total?: number;
   open: boolean;
   onToggle: () => void;
@@ -117,7 +122,7 @@ function OVCheckDropdown({
         style={{ padding: "7px 11px", cursor: "pointer", minWidth: 150, borderColor: open ? H.pink : H.line2, boxShadow: open ? `0 0 0 3px ${H.pinkSoft}` : "none", transition: ".12s" }}
       >
         <span style={{ fontSize: 12.5, fontWeight: 600, color: H.ink, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{summary}</span>
-        {total != null && count < total && <span className="hf-mono" style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: H.pink, borderRadius: 999, padding: "1px 6px" }}>{count}</span>}
+        {total != null && count != null && count < total && <span className="hf-mono" style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: H.pink, borderRadius: 999, padding: "1px 6px" }}>{count}</span>}
         <span style={{ transform: open ? "rotate(180deg)" : "none", transition: ".15s" }}><Icon name="chev" size={13} color={H.ink3} /></span>
       </div>
       {open && (
@@ -215,12 +220,11 @@ export function OVSlicerDropdowns({
 
         <div style={{ width: 1, alignSelf: "stretch", background: H.line2 }} />
 
-        {/* EXAM TYPE */}
-        <OVCheckDropdown label="Exam type" summary={examsSummary(slice.exams)} count={slice.exams.length} total={3} open={open === "exams"} onToggle={() => toggle("exams")} width={230}>
+        {/* EXAM TYPE — single-select (three mutually-exclusive lenses) */}
+        <OVCheckDropdown label="Exam type" summary={examsSummary(slice.exams)} open={open === "exams"} onToggle={() => toggle("exams")} width={230}>
           {EXAM_OPTIONS.map(([e, hint]) => (
-            <OVCheckRow key={e} on={slice.exams.includes(e)} label={e} hint={hint} onClick={() => set({ exams: flip(slice.exams, e) })} />
+            <OVCheckRow key={e} on={slice.exams[0] === e} label={e} hint={hint} onClick={() => set({ exams: [e] })} />
           ))}
-          <OVMenuFooter onAll={() => set({ exams: ["February", "May", "Combined"] })} onClear={() => set({ exams: ["Combined"] })} />
         </OVCheckDropdown>
 
         <div style={{ width: 1, alignSelf: "stretch", background: H.line2 }} />

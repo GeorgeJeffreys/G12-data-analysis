@@ -36,6 +36,7 @@ import type {
   AnalyticsCompare,
   AnalyticsTrends,
   OverallAnalytics,
+  OverallAnalyticsFilter,
   CompareCyclesModel,
   AuditFilter,
   AuditModel,
@@ -366,8 +367,13 @@ export interface DataProvider {
    * sitting × subject. Every figure is a roll-up of already-signed-off per-sitting
    * outputs (best-of-two via `rollupOverall`; no scoring re-run). `hasComparison`
    * is true only when ≥ 2 real years exist.
+   *
+   * `filter.centres` re-pools every figure (participation / perf / awardDist /
+   * spreads) from just those centres — the cells are filtered by centre name and
+   * `computeOverallAnalytics` re-run — so a centre subset re-slices the headline
+   * numbers, not only the per-centre columns. Omit it for the full programme view.
    */
-  getOverallAnalytics(): OverallAnalytics;
+  getOverallAnalytics(filter?: OverallAnalyticsFilter): OverallAnalytics;
   /**
    * Compare cycles › per-subject, multi-cycle comparison. `cycleIds` selects the
    * cycles (defaults to the two most recent). Read-only: every figure is an
