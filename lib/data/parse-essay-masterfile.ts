@@ -86,6 +86,12 @@ export interface ExtractedEssayStudent {
   subjectCode: EssaySubjectCode;
   /** QM email (the join key), lower-cased; "" when the row carried no email. */
   email: string;
+  /**
+   * `Student name` from the sheet (first non-blank in the group), trimmed; "" when
+   * absent. DISPLAY ONLY — the review shows this (else the email) as one consistent
+   * identifier across valid and rejected rows. Never a join key.
+   */
+  studentName: string;
   /** All non-blank `Final essay mark` values in this student's group. */
   finals: number[];
   /** The single Final /20 if exactly one, else null (0 or >1 → rejected). */
@@ -136,19 +142,24 @@ export function normalizeHeader(h: unknown): string {
 interface SheetColumns {
   email: number;
   final: number;
+  /** `Student name` — resolved for DISPLAY only, never part of the read contract. */
+  name: number;
 }
 
 /**
  * Resolve the ONLY two columns the app reads — `QM email` and `Final essay mark
  * (/20)` — by EXACT normalized header. -1 when absent. The Final column is matched
  * exactly (never by substring) so the decoy `Individual final scores (/10)` /
- * `Indvidual final scores (/20)` columns are never picked up.
+ * `Indvidual final scores (/20)` columns are never picked up. `Student name` is
+ * resolved alongside for DISPLAY only (the review's identifier) and is not part of
+ * the contract — a sheet without it still parses.
  */
 export function resolveColumns(headers: unknown[]): SheetColumns {
   const h = headers.map(normalizeHeader);
   return {
     email: h.indexOf(EMAIL_HEADER),
     final: h.indexOf(FINAL_HEADER),
+    name: h.indexOf("student name"),
   };
 }
 
@@ -173,14 +184,16 @@ export function extractSheet(matrix: unknown[][], subjectCode: EssaySubjectCode)
   const cols = resolveColumns(matrix[0] ?? []);
   if (cols.final < 0) return []; // no canonical column → nothing to extract
 
-  const groups = new Map<string, { email: string; finals: number[]; order: number }>();
+  const groups = new Map<string, { email: string; studentName: string; finals: number[]; order: number }>();
   let seq = 0;
   for (const row of matrix.slice(1)) {
     const email = cols.email >= 0 ? String(row[cols.email] ?? "").trim().toLowerCase() : "";
     const final = numOrNull(row[cols.final]);
     if (!email && final == null) continue; // blank/detail row
-    const g = groups.get(email) ?? { email, finals: [], order: seq++ };
+    const g = groups.get(email) ?? { email, studentName: "", finals: [], order: seq++ };
     if (final != null) g.finals.push(final);
+    // Display identifier only — keep the first non-blank Student name in the group.
+    if (!g.studentName && cols.name >= 0) g.studentName = String(row[cols.name] ?? "").trim();
     groups.set(email, g);
   }
 
@@ -189,6 +202,7 @@ export function extractSheet(matrix: unknown[][], subjectCode: EssaySubjectCode)
     .map((g) => ({
       subjectCode,
       email: g.email,
+      studentName: g.studentName,
       finals: g.finals,
       finalRaw: g.finals.length === 1 ? g.finals[0]! : null,
       subjectEssay: g.finals.length === 1 ? roundEssayMark(g.finals[0]!) : null,

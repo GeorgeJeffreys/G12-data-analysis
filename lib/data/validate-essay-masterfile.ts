@@ -4,15 +4,18 @@
  * row-by-row valid/rejected report. NOTHING is written until the operator
  * confirms; only `valid` rows flow to `uploadEssayMarks`.
  *
- * Rejection rules (row-by-row, nothing guessed):
- *  - no `Final essay mark` for the student → REJECT (`no final mark`);
+ * ONE row per student (grouped by QM email upstream) — never per essay or per
+ * marker. Rejection rules (row-by-row, nothing guessed):
+ *  - no `Final essay mark` for the student → REJECT (unmarked);
  *  - more than one non-blank `Final` → REJECT (`multiple final marks`);
  *  - blank QM email → REJECT;
  *  - email not in that subject's roster → REJECT (never guess a participant);
  *  - matched sitting already excluded on the Clean tab → FLAG (not applied).
  *
- * Each row carries the MATCHED participant (email + name) so a human signs off. No
- * identity mapping — no DOB, no Student-ID resolution, no crosswalk. Pure.
+ * Each row carries the MATCHED participant (email + name) so a human signs off, plus
+ * the sheet's `Student name` as a consistent display identifier across valid and
+ * rejected rows. No identity mapping — no DOB, no Student-ID resolution, no
+ * crosswalk. Pure.
  */
 import type { EssayUploadRow } from "./provider";
 import type { EssayUploadContext, EssaySubjectContext } from "./types";
@@ -25,6 +28,12 @@ export interface MasterfileReviewRow {
   subjectName: string | null;
   /** QM email from the file (join key), lower-cased; "" when blank. */
   email: string;
+  /**
+   * `Student name` from the sheet (display only) — the ONE identifier the review
+   * shows across valid AND rejected rows (falling back to the email when blank), so
+   * the grain is consistent regardless of whether the row joined to the roster.
+   */
+  studentName: string | null;
   /** MATCHED roster participant's name, once joined — else null. */
   matchedName: string | null;
   /** MATCHED roster participant's canonical email, once joined — else null. */
@@ -70,6 +79,7 @@ function reviewOne(s: ExtractedEssayStudent, context: EssayUploadContext): Maste
     subjectCode: s.subjectCode,
     subjectName: subject?.name ?? null,
     email: s.email,
+    studentName: s.studentName || null,
     matchedName: null as string | null,
     matchedEmail: null as string | null,
     subjectEssay: null as number | null,
@@ -77,7 +87,7 @@ function reviewOne(s: ExtractedEssayStudent, context: EssayUploadContext): Maste
   };
   if (!subject) return { ...base, status: "rejected", reason: `"${s.subjectCode}" has no essay component in this cycle.` };
   if (!s.email) return { ...base, status: "rejected", reason: "Blank QM email — cannot join to a participant (ask G12 to fill it)." };
-  if (s.finals.length === 0) return { ...base, status: "rejected", reason: "No Final essay mark for this student." };
+  if (s.finals.length === 0) return { ...base, status: "rejected", reason: "No Final essay mark — this student is unmarked." };
   if (s.finals.length > 1) return { ...base, status: "rejected", reason: `Multiple Final marks (${s.finals.join(", ")}) — expected one per student.` };
   const entry = findByEmail(subject, s.email);
   if (!entry) return { ...base, status: "rejected", reason: `QM email “${s.email}” is not in the ${subject.name} roster.` };
