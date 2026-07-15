@@ -39,11 +39,49 @@ export interface MasterfileReviewRow {
   /** MATCHED roster participant's canonical email, once joined — else null. */
   matchedEmail: string | null;
   status: EssayRowStatus;
+  /**
+   * True when this row is rejected SOLELY because the student has no Final mark yet
+   * (the subject sheet is not filled in for them). These are collapsed into a
+   * per-subject "not yet marked" pending line rather than listed as red rejects —
+   * genuine problems (off-roster, double final, blank email) are never `unmarked`.
+   */
+  unmarked: boolean;
   /** The subject essay /20 (after ESSAY_MARK_ROUNDING) for a valid row, else null. */
   subjectEssay: number | null;
   /** The entered Final value /20 (may be fractional), for the review table. */
   finalRaw: number | null;
   reason: string | null;
+}
+
+/**
+ * One essay subject's slice of the review — its own header, its own counts. The
+ * review renders ONE of these per subject (never a single header spanning both), so
+ * a row's subject is always unambiguous and a possible cross-subject mis-route can
+ * never hide behind an aggregate label again.
+ */
+export interface SubjectReviewGroup {
+  code: EssaySubjectCode;
+  /** Subject name (roster) when the code has an essay component this cycle, else null. */
+  name: string | null;
+  /** Students on this subject's sheet (all statuses). */
+  total: number;
+  validCount: number;
+  flaggedCount: number;
+  /** Rejected solely for being unmarked (no Final yet) — collapsed into the pending line. */
+  unmarkedCount: number;
+  /** Genuine per-student rejects (off-roster, double final, blank email, no-component). */
+  problemCount: number;
+  /**
+   * The whole subject has no Final marks yet (Arabic today): every row is unmarked,
+   * none valid/flagged, no genuine problems. The review shows this as a single
+   * "not yet marked (0 of N)" pending line, NOT N identical red rejects.
+   */
+  notYetMarked: boolean;
+  /**
+   * Rows to LIST individually — valid first, then flagged, then genuine problem
+   * rejects. Unmarked rows are excluded (they are summarised by `unmarkedCount`).
+   */
+  rows: MasterfileReviewRow[];
 }
 
 export interface MasterfileValidationReport {
@@ -55,8 +93,12 @@ export interface MasterfileValidationReport {
   flaggedCount: number;
   /** Distinct essay subject names referenced by valid rows (for the summary line). */
   subjectsSeen: string[];
+  /** The review, split PER SUBJECT — one card each, so no single header hides a mis-route. */
+  subjects: SubjectReviewGroup[];
   /** Whole-sheet rejections (broken column contract) — surfaced, never applied. */
   sheetErrors: EssaySheetError[];
+  /** Sheet names present but not routable to an essay subject — surfaced, never defaulted. */
+  skippedSheets: string[];
 }
 
 /** Case-insensitive exact-email lookup against a subject roster (email = qm id). */
@@ -82,12 +124,13 @@ function reviewOne(s: ExtractedEssayStudent, context: EssayUploadContext): Maste
     studentName: s.studentName || null,
     matchedName: null as string | null,
     matchedEmail: null as string | null,
+    unmarked: false,
     subjectEssay: null as number | null,
     finalRaw: s.finalRaw,
   };
   if (!subject) return { ...base, status: "rejected", reason: `"${s.subjectCode}" has no essay component in this cycle.` };
   if (!s.email) return { ...base, status: "rejected", reason: "Blank QM email — cannot join to a participant (ask G12 to fill it)." };
-  if (s.finals.length === 0) return { ...base, status: "rejected", reason: "No Final essay mark — this student is unmarked." };
+  if (s.finals.length === 0) return { ...base, status: "rejected", unmarked: true, reason: "No Final essay mark — this student is unmarked." };
   if (s.finals.length > 1) return { ...base, status: "rejected", reason: `Multiple Final marks (${s.finals.join(", ")}) — expected one per student.` };
   const entry = findByEmail(subject, s.email);
   if (!entry) return { ...base, status: "rejected", reason: `QM email “${s.email}” is not in the ${subject.name} roster.` };
@@ -119,6 +162,44 @@ export function validateEssayMasterfile(
     rejectedCount: rows.filter((r) => r.status === "rejected").length,
     flaggedCount: rows.filter((r) => r.status === "flagged").length,
     subjectsSeen: [...subjectsSeen],
+    subjects: groupBySubject(rows, context),
     sheetErrors: result.sheetErrors ?? [],
+    skippedSheets: result.skippedSheets ?? [],
   };
+}
+
+/**
+ * Partition the review rows into one group per essay subject, in the cycle's subject
+ * order (context first), then any orphan codes seen only in the file. Each group
+ * collapses its unmarked rows into a count and lists valid / flagged / genuine-problem
+ * rows individually — so an unmarked subject reads as "0 of N pending", not N rejects.
+ */
+function groupBySubject(rows: MasterfileReviewRow[], context: EssayUploadContext): SubjectReviewGroup[] {
+  const order: EssaySubjectCode[] = [];
+  const push = (c: EssaySubjectCode) => { if (!order.includes(c)) order.push(c); };
+  for (const s of context.subjects) push(s.code);
+  for (const r of rows) push(r.subjectCode);
+
+  return order
+    .map((code) => {
+      const group = rows.filter((r) => r.subjectCode === code);
+      if (group.length === 0) return null; // subject with no rows in this file — omit
+      const valid = group.filter((r) => r.status === "valid");
+      const flagged = group.filter((r) => r.status === "flagged");
+      const unmarked = group.filter((r) => r.status === "rejected" && r.unmarked);
+      const problems = group.filter((r) => r.status === "rejected" && !r.unmarked);
+      const name = group.find((r) => r.subjectName)?.subjectName ?? null;
+      return {
+        code,
+        name,
+        total: group.length,
+        validCount: valid.length,
+        flaggedCount: flagged.length,
+        unmarkedCount: unmarked.length,
+        problemCount: problems.length,
+        notYetMarked: valid.length === 0 && flagged.length === 0 && problems.length === 0 && unmarked.length > 0,
+        rows: [...valid, ...flagged, ...problems],
+      } satisfies SubjectReviewGroup;
+    })
+    .filter((g): g is SubjectReviewGroup => g !== null);
 }

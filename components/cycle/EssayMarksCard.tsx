@@ -32,12 +32,26 @@ import type { EssayMarksModel, EssayUploadContext } from "@/lib/data/types";
 /** A unified review row shown in the pre-apply panel (from either flow). */
 type ReviewRow = {
   id: string;
-  subject: string | null;
   /** The matched participant (email + name) a human signs off on, when joined. */
   matched: string | null;
   status: "valid" | "rejected" | "flagged";
   reason: string | null;
   value: number | null;
+};
+
+/** One subject's slice of the review — its own header + counts (never a shared header). */
+type StagedGroup = {
+  code: "AFL" | "ESL";
+  name: string;
+  total: number;
+  validCount: number;
+  flaggedCount: number;
+  /** Students with no Final yet — collapsed into one "not yet marked" pending line. */
+  unmarkedCount: number;
+  /** The whole subject is unmarked (pending), not a genuine failure. */
+  notYetMarked: boolean;
+  /** Rows listed individually (valid, flagged, genuine problems) — unmarked excluded. */
+  rows: ReviewRow[];
 };
 
 /** Everything staged for review; nothing is written until `valid` is applied. */
@@ -48,9 +62,12 @@ type Staged = {
   validCount: number;
   rejectedCount: number;
   flaggedCount: number;
-  rows: ReviewRow[];
+  /** The review, split per subject so each subject's rows carry their own header. */
+  groups: StagedGroup[];
   /** Whole-sheet rejections (broken column contract), shown but never applied. */
   sheetErrors: string[];
+  /** Sheet names that routed to no essay subject — surfaced, never defaulted. */
+  skippedSheets: string[];
 };
 
 export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: EssayMarksModel | null }) {
@@ -91,26 +108,36 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
           setError("No essays found. Upload the generated template — sheets “English/Arabic Essay master” with a QM email column and a Final essay mark (/20) column.");
           return;
         }
-        const subjects = report.subjectsSeen.length ? report.subjectsSeen.join(" & ") : result.subjectsSeen.join(" & ");
+        const subjectNames = report.subjects.map((g) => g.name ?? g.code);
+        const summarySubjects = subjectNames.length ? subjectNames.join(" · ") : result.subjectsSeen.join(" · ");
         setStaged({
           fileName: file.name,
-          summary: `${subjects} · joined on QM email · Final essay mark, rounding: ${ESSAY_MARK_ROUNDING}`,
+          summary: `${summarySubjects} · joined on QM email · Final essay mark, rounding: ${ESSAY_MARK_ROUNDING}`,
           valid: report.valid,
           validCount: report.validCount,
           rejectedCount: report.rejectedCount,
           flaggedCount: report.flaggedCount,
-          rows: report.rows.map((r) => ({
-            // One consistent identifier across valid AND rejected rows: the sheet's
-            // Student name when present, else the QM email (never the roster name,
-            // which only exists on matched rows and made the grain inconsistent).
-            id: r.studentName || r.email,
-            subject: r.subjectName ?? r.subjectCode,
-            matched: r.matchedEmail ? `${r.matchedEmail}${r.matchedName ? ` — ${r.matchedName}` : ""}` : null,
-            status: r.status,
-            reason: r.reason,
-            value: r.subjectEssay ?? r.finalRaw,
+          groups: report.subjects.map((g) => ({
+            code: g.code,
+            name: g.name ?? g.code,
+            total: g.total,
+            validCount: g.validCount,
+            flaggedCount: g.flaggedCount,
+            unmarkedCount: g.unmarkedCount,
+            notYetMarked: g.notYetMarked,
+            rows: g.rows.map((r) => ({
+              // One consistent identifier across valid AND rejected rows: the sheet's
+              // Student name when present, else the QM email (never the roster name,
+              // which only exists on matched rows and made the grain inconsistent).
+              id: r.studentName || r.email,
+              matched: r.matchedEmail ? `${r.matchedEmail}${r.matchedName ? ` — ${r.matchedName}` : ""}` : null,
+              status: r.status,
+              reason: r.reason,
+              value: r.subjectEssay ?? r.finalRaw,
+            })),
           })),
           sheetErrors: report.sheetErrors.map((e) => e.reason),
+          skippedSheets: report.skippedSheets,
         });
       }
     } catch (e) {
@@ -213,73 +240,111 @@ function PendingNote({ total, bySubject }: { total: number; bySubject: { name: s
   );
 }
 
-/** Review-before-apply: the row-by-row validation report; nothing is written yet. */
+/** Review-before-apply: the validation report, split into ONE card per subject. */
 function ReviewPanel({ staged, onApply, onCancel }: { staged: Staged; onApply: () => void; onCancel: () => void }) {
-  // Show valid rows FIRST (matched participant + computed /20 to sign off on),
-  // then the problems, so a human confirms every join before applying.
-  const ordered = [
-    ...staged.rows.filter((r) => r.status === "valid"),
-    ...staged.rows.filter((r) => r.status !== "valid"),
-  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
+          <Icon name="eye" size={15} />
+          <span style={{ fontSize: 12.5, fontWeight: 600 }}>Review {staged.fileName}</span>
+          {staged.summary && <span className="hf-sub hf-mono" style={{ fontSize: 11 }}>{staged.summary}</span>}
+          <span style={{ flex: 1 }} />
+          <span className="hf-sub" style={{ fontSize: 11 }}>Nothing is written until you apply.</span>
+        </div>
+
+        {staged.sheetErrors.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", background: H.warnSoft, borderBottom: `1px solid ${H.line}` }}>
+            {staged.sheetErrors.map((msg, i) => (
+              <span key={i} style={{ fontSize: 11.5, color: H.ink, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                <Mark kind="warn" size={14} /> {msg}
+              </span>
+            ))}
+          </div>
+        )}
+        {staged.skippedSheets.length > 0 && (
+          <div className="hf-sub" style={{ fontSize: 11, padding: "8px 14px", borderBottom: `1px solid ${H.line}` }}>
+            Skipped {staged.skippedSheets.length} sheet(s) that map to no essay subject:{" "}
+            <span className="hf-mono">{staged.skippedSheets.join(", ")}</span> — nothing was read from them.
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 9, alignItems: "center", padding: "10px 14px", flexWrap: "wrap" }}>
+          <Button variant="pri" onClick={onApply} disabled={staged.validCount === 0}>
+            Apply {staged.validCount} mark{staged.validCount === 1 ? "" : "s"}
+          </Button>
+          <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+          {staged.validCount === 0 && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>No valid rows to apply — fix the file and re-upload.</span>}
+          {staged.flaggedCount > 0 && (
+            <span className="hf-sub" style={{ fontSize: 11.5 }}>Flagged rows (excluded sittings) will not be applied.</span>
+          )}
+        </div>
+      </div>
+
+      {staged.groups.map((g) => (
+        <SubjectReviewCard key={g.code} group={g} />
+      ))}
+    </div>
+  );
+}
+
+/** One subject's review — its own header, its own valid/rejected counts, its own rows. */
+function SubjectReviewCard({ group }: { group: StagedGroup }) {
   return (
     <div className="hf-card" style={{ overflow: "hidden", borderColor: H.line2 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 11, padding: "10px 14px", background: H.tint, borderBottom: `1px solid ${H.line2}`, flexWrap: "wrap" }}>
-        <Icon name="eye" size={15} />
-        <span style={{ fontSize: 12.5, fontWeight: 600 }}>Review {staged.fileName}</span>
-        {staged.summary && <span className="hf-sub hf-mono" style={{ fontSize: 11 }}>{staged.summary}</span>}
-        <Badge tone="good">{staged.validCount} valid</Badge>
-        {staged.rejectedCount > 0 && <Badge tone="bad">{staged.rejectedCount} rejected</Badge>}
-        {staged.flaggedCount > 0 && <Badge tone="warn">{staged.flaggedCount} flagged</Badge>}
-        <span style={{ flex: 1 }} />
-        <span className="hf-sub" style={{ fontSize: 11 }}>Nothing is written until you apply.</span>
-      </div>
-
-      {staged.sheetErrors.length > 0 && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "10px 14px", background: H.warnSoft, borderBottom: `1px solid ${H.line}` }}>
-          {staged.sheetErrors.map((msg, i) => (
-            <span key={i} style={{ fontSize: 11.5, color: H.ink, display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <Mark kind="warn" size={14} /> {msg}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
-        <thead><tr>
-          <th className="hf-th" style={{ padding: "7px 12px" }}>Student</th>
-          <th className="hf-th" style={{ padding: "7px 12px" }}>Matched participant (QM email)</th>
-          <th className="hf-th" style={{ padding: "7px 12px" }}>Essay /20</th>
-          <th className="hf-th" style={{ padding: "7px 12px" }}>Status</th>
-          <th className="hf-th" style={{ padding: "7px 12px" }}>Reason</th>
-        </tr></thead>
-        <tbody>
-          {ordered.slice(0, 40).map((r, i) => (
-            <tr key={i}>
-              <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.id}</td>
-              <td className="hf-td" style={{ padding: "7px 12px", color: r.matched ? H.ink2 : H.bad }}>{r.matched ?? "— no match —"}</td>
-              <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.value ?? "—"}</td>
-              <td className="hf-td" style={{ padding: "7px 12px" }}>
-                <Badge tone={r.status === "valid" ? "good" : r.status === "rejected" ? "bad" : "warn"}>{r.status}</Badge>
-              </td>
-              <td className="hf-td" style={{ padding: "7px 12px", color: H.ink2 }}>{r.reason}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {ordered.length > 40 && (
-        <div className="hf-sub" style={{ fontSize: 11, padding: "6px 14px" }}>…and {ordered.length - 40} more.</div>
-      )}
-
-      <div style={{ display: "flex", gap: 9, alignItems: "center", padding: "10px 14px", borderTop: `1px solid ${H.line}`, flexWrap: "wrap" }}>
-        <Button variant="pri" onClick={onApply} disabled={staged.validCount === 0}>
-          Apply {staged.validCount} mark{staged.validCount === 1 ? "" : "s"}
-        </Button>
-        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
-        {staged.validCount === 0 && <span className="hf-sub" style={{ fontSize: 11.5, color: H.bad }}>No valid rows to apply — fix the file and re-upload.</span>}
-        {staged.flaggedCount > 0 && (
-          <span className="hf-sub" style={{ fontSize: 11.5 }}>Flagged rows (excluded sittings) will not be applied.</span>
+        <span style={{ fontSize: 12.5, fontWeight: 600 }}>{group.name}</span>
+        {group.validCount > 0 && <Badge tone="good">{group.validCount} valid</Badge>}
+        {group.flaggedCount > 0 && <Badge tone="warn">{group.flaggedCount} flagged</Badge>}
+        {group.rows.filter((r) => r.status === "rejected").length > 0 && (
+          <Badge tone="bad">{group.rows.filter((r) => r.status === "rejected").length} rejected</Badge>
         )}
+        {group.unmarkedCount > 0 && <Badge tone="neutral">{group.unmarkedCount} awaiting marks</Badge>}
       </div>
+
+      {group.notYetMarked ? (
+        // A whole subject with no Finals reads as PENDING, not N identical red rejects.
+        <div style={{ display: "flex", gap: 10, padding: "12px 14px", alignItems: "center" }}>
+          <Mark kind="warn" size={15} />
+          <span style={{ fontSize: 12, color: H.ink }}>
+            <b>{group.name} — not yet marked ({group.validCount} of {group.total}).</b>{" "}
+            These essays are marked offline; upload this subject once the team fills in the Final marks.
+          </span>
+        </div>
+      ) : (
+        <>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
+            <thead><tr>
+              <th className="hf-th" style={{ padding: "7px 12px" }}>Student</th>
+              <th className="hf-th" style={{ padding: "7px 12px" }}>Matched participant (QM email)</th>
+              <th className="hf-th" style={{ padding: "7px 12px" }}>Essay /20</th>
+              <th className="hf-th" style={{ padding: "7px 12px" }}>Status</th>
+              <th className="hf-th" style={{ padding: "7px 12px" }}>Reason</th>
+            </tr></thead>
+            <tbody>
+              {group.rows.slice(0, 40).map((r, i) => (
+                <tr key={i}>
+                  <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.id}</td>
+                  <td className="hf-td" style={{ padding: "7px 12px", color: r.matched ? H.ink2 : H.bad }}>{r.matched ?? "— no match —"}</td>
+                  <td className="hf-td hf-mono" style={{ padding: "7px 12px", color: H.ink2 }}>{r.value ?? "—"}</td>
+                  <td className="hf-td" style={{ padding: "7px 12px" }}>
+                    <Badge tone={r.status === "valid" ? "good" : r.status === "rejected" ? "bad" : "warn"}>{r.status}</Badge>
+                  </td>
+                  <td className="hf-td" style={{ padding: "7px 12px", color: H.ink2 }}>{r.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {group.rows.length > 40 && (
+            <div className="hf-sub" style={{ fontSize: 11, padding: "6px 14px" }}>…and {group.rows.length - 40} more.</div>
+          )}
+          {group.unmarkedCount > 0 && (
+            <div className="hf-sub" style={{ fontSize: 11, padding: "8px 14px", borderTop: `1px solid ${H.line}` }}>
+              {group.unmarkedCount} more student(s) not yet marked for {group.name} — awaiting Final marks, not shown as rejects.
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
