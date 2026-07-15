@@ -35,7 +35,10 @@ import {
 // ── small shared helpers ─────────────────────────────────────────────────────
 const ZERO_PART: ParticipationYear = { centres: 0, satFeb: 0, satMay: 0, both: 0, passFeb: 0, passMay: 0, passComb: 0 };
 const deltaStr = (n: number): string => (n >= 0 ? `+${round(n)}` : `−${Math.abs(round(n))}`);
-const round = (n: number): number => Math.round(n * 10) / 10;
+export const round = (n: number): number => Math.round(n * 10) / 10;
+/** Explicit-sign render (− for negatives) preserving the value's own precision —
+ *  mirrors OVDelta's `{up ? "+" : "−"}{Math.abs(v)}` for non-delta figures. */
+export const signed = (n: number): string => `${n >= 0 ? "+" : "−"}${Math.abs(n)}`;
 
 /** Resolve the selected live years to a sorted list + cur/prev pointers. */
 function resolveYears(slice: LegacySlice, analytics: OverallAnalytics): { ys: number[]; cur: number; prev: number | null } {
@@ -45,8 +48,10 @@ function resolveYears(slice: LegacySlice, analytics: OverallAnalytics): { ys: nu
   return { ys, cur, prev };
 }
 
-/** A padded, clamped 0–100 range that frames the given values with headroom. */
-function niceRange(values: number[], pad = 5): { min: number; max: number } {
+/** A padded, clamped 0–100 range that frames the given values with headroom.
+ *  Guaranteed to contain every finite input (min ≤ every value ≤ max), so a
+ *  chart driven by this domain can never plot a point outside the plot area. */
+export function niceRange(values: number[], pad = 5): { min: number; max: number } {
   const vs = values.filter((v) => Number.isFinite(v));
   if (!vs.length) return { min: 0, max: 100 };
   const lo = Math.max(0, Math.floor((Math.min(...vs) - pad) / 5) * 5);
@@ -213,6 +218,21 @@ export function S2Performance({ analytics, slice }: { analytics: OverallAnalytic
   const sb = b[sitting];
   const sa = a ? a[sitting] : null;
 
+  // Trend y-domains are derived from the data (never a hardcoded floor), so a
+  // below-floor value (e.g. 20.4% Meets+) stays inside the plot area. The mean
+  // domain includes the band's hi/lo so the shaded range can't escape either.
+  const meetsPts = ys.map((y) => levelPass(yr[y]?.levels ?? emptyLevels));
+  const meetsRange = niceRange(meetsPts);
+  // Domain spans exactly what the mean chart plots (mean/median line + hi/lo
+  // band), including the `?? 0` fallback for a year missing this sitting, so no
+  // plotted point can fall outside the plot area.
+  const meanRange = niceRange(
+    ys.flatMap((y) => {
+      const s = yr[y]?.[sitting];
+      return [s?.mean ?? 0, s?.median ?? 0, s?.high ?? 0, s?.low ?? 0];
+    }),
+  );
+
   return (
     <div className="hf-col" style={{ gap: 16 }}>
       <div className="hf-row" style={{ gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -232,7 +252,7 @@ export function S2Performance({ analytics, slice }: { analytics: OverallAnalytic
                 <div key={yl} className="hf-col" style={{ gap: 6 }}>
                   <div className="hf-row" style={{ justifyContent: "space-between" }}>
                     <span className="hf-mono" style={{ fontSize: 11, color: H.ink2 }}>{yl}</span>
-                    <span className="hf-mono" style={{ fontSize: 11, color: H.pink, fontWeight: 700 }}>{levelPass(d)}% Meets+</span>
+                    <span className="hf-mono" style={{ fontSize: 11, color: H.pink, fontWeight: 700 }}>{round(levelPass(d))}% Meets+</span>
                   </div>
                   <OVStackBar dist={d} ramp={plRamp} h={26} labels />
                 </div>
@@ -284,19 +304,20 @@ export function S2Performance({ analytics, slice }: { analytics: OverallAnalytic
             <OVLine
               w={340}
               h={200}
-              yMin={40}
-              yMax={100}
+              yMin={meetsRange.min}
+              yMax={meetsRange.max}
               xLabels={ys.map(String)}
-              fmt={(v) => `${v}%`}
-              series={[{ pts: ys.map((y) => levelPass(yr[y]?.levels ?? emptyLevels)), color: H.pink, width: 2.6 }]}
+              fmt={(v) => `${round(v)}%`}
+              series={[{ pts: meetsPts, color: H.pink, width: 2.6 }]}
             />
           ) : (
             <OVLine
               w={340}
               h={200}
-              yMin={15}
-              yMax={100}
+              yMin={meanRange.min}
+              yMax={meanRange.max}
               xLabels={ys.map(String)}
+              fmt={(v) => `${round(v)}%`}
               band={{ hi: ys.map((y) => yr[y]?.[sitting]?.high ?? 0), lo: ys.map((y) => yr[y]?.[sitting]?.low ?? 0), color: H.tint2 }}
               series={[
                 { pts: ys.map((y) => yr[y]?.[sitting]?.mean ?? 0), color: H.pink, width: 2.6 },
@@ -317,9 +338,9 @@ export function S2Performance({ analytics, slice }: { analytics: OverallAnalytic
           {b.change ? (
             <div className="hf-col" style={{ gap: 18, marginTop: 4 }}>
               <div className="hf-col" style={{ gap: 3 }}>
-                <span className="hf-mono" style={{ fontSize: 32, fontWeight: 600, color: H.pink, lineHeight: 1 }}>+{b.change.gain}</span>
+                <span className="hf-mono" style={{ fontSize: 32, fontWeight: 600, color: H.pink, lineHeight: 1 }}>{signed(b.change.gain)}</span>
                 <span className="hf-lbl">avg performance levels</span>
-                {a?.change && <span className="hf-sub" style={{ fontSize: 11 }}>up from +{a.change.gain} in {prev}</span>}
+                {a?.change && <span className="hf-sub" style={{ fontSize: 11 }}>{b.change.gain >= a.change.gain ? "up from" : "down from"} {signed(a.change.gain)} in {prev}</span>}
               </div>
               <div className="hf-col" style={{ gap: 6 }}>
                 <div className="hf-row" style={{ justifyContent: "space-between", alignItems: "baseline" }}>
@@ -355,7 +376,7 @@ export function S3Award({ analytics, slice }: { analytics: OverallAnalytics; sli
   const overTimeYears = eff.singleCentre ? (prev != null ? [prev, cur] : [cur]) : ys;
   const overTimeData: Record<string, Record<string, number>> = {};
   for (const y of overTimeYears) {
-    if (eff.singleCentre && y === cur) overTimeData[String(y)] = asRec((singleName && analytics.awardByCentre[singleName]) || analytics.awardDist[y]);
+    if (eff.singleCentre && y === cur) overTimeData[String(y)] = asRec((singleName && analytics.awardByCentre[cur]?.[singleName]) || analytics.awardDist[y]);
     else overTimeData[String(y)] = asRec(analytics.awardDist[y]);
   }
 
@@ -378,7 +399,7 @@ export function S3Award({ analytics, slice }: { analytics: OverallAnalytics; sli
         style={{ minWidth: 320 }}
         right={<OVRampLegend ramp={ramp} />}
       >
-        <OVStackCols years={centreNames} data={(name) => asRec(analytics.awardByCentre[name as string] || analytics.awardDist[cur])} ramp={ramp} h={220} colW={centreNames.length > 4 ? 52 : 66} labelYear={(name) => (String(name).length > 10 ? String(name).slice(0, 10) + "…" : String(name))} />
+        <OVStackCols years={centreNames} data={(name) => asRec(analytics.awardByCentre[cur]?.[name as string] || analytics.awardDist[cur])} ramp={ramp} h={220} colW={centreNames.length > 4 ? 52 : 66} labelYear={(name) => (String(name).length > 10 ? String(name).slice(0, 10) + "…" : String(name))} />
       </OVCard>
     </div>
   );
@@ -410,15 +431,26 @@ export function S4Centres({ analytics, slice }: { analytics: OverallAnalytics; s
   const range0 = s0 ? round(s0.best - s0.worst) : null;
   const bandYears = prev != null ? [prev, cur] : [cur];
 
-  // Per-centre "Advanced+" (Distinction + Advanced) for the current year.
+  // View A answers the consistency question on ONE measure: the per-centre pass
+  // rate (award above the lowest band = Secondary Achievement or above). The
+  // line/band is the best/worst/mean of that rate (centreAwardSpread); the
+  // dumbbell is the same rate per centre — so the gap + convergence copy and the
+  // chart all describe the same thing. Domain is derived from the plotted values.
+  const bandRange = niceRange(
+    bandYears.flatMap((y) => {
+      const s = spread[y];
+      return s ? [s.best, s.worst, s.mean] : [];
+    }),
+  );
   const centres = activeCentres(slice, analytics);
-  const advVals = centres.map((c) => {
-    const d = analytics.awardByCentre[c];
-    return { c, v: (d?.dist ?? 0) + (d?.adv ?? 0) };
+  const passVals = centres.map((c) => {
+    const d = analytics.awardByCentre[cur]?.[c];
+    // Above the lowest band = Distinction + Advanced + Secondary Achievement.
+    return { c, v: d ? round(d.dist + d.adv + d.sec) : 0 };
   });
-  const maxAdv = Math.max(...advVals.map((r) => r.v));
-  const minAdv = Math.min(...advVals.map((r) => r.v));
-  const dumbRows = advVals.map((r) => ({ k: r.c, v: r.v, hi: r.v === maxAdv, lo: r.v === minAdv }));
+  const maxPass = Math.max(...passVals.map((r) => r.v));
+  const minPass = Math.min(...passVals.map((r) => r.v));
+  const dumbRows = passVals.map((r) => ({ k: r.c, v: r.v, hi: r.v === maxPass, lo: r.v === minPass }));
 
   const rows = analytics.subjects
     .filter((su) => slice.subjects.includes(su.key))
@@ -430,14 +462,16 @@ export function S4Centres({ analytics, slice }: { analytics: OverallAnalytics; s
   const gmin = Math.max(0, Math.floor((Math.min(...allVals, 100) - 5) / 5) * 5);
   const gmax = Math.min(100, Math.ceil((Math.max(...allVals, 0) + 5) / 5) * 5);
   const pos = (v: number) => ((v - gmin) / ((gmax - gmin) || 1)) * 100;
+  // Visible scale ticks for View B, so dumbbell positions can be read as %.
+  const scaleTicks = [gmin, Math.round((gmin + gmax) / 2), gmax];
 
   return (
     <div className="hf-row" style={{ gap: 14, alignItems: "stretch", flexWrap: "wrap" }}>
       {/* View A */}
-      <OVCard title="View A · by award level" sub="% reaching Advanced Achievement or above, across centres." flex={1} style={{ minWidth: 340 }} right={eff.s4Count < analytics.centres.length ? <OVNote>{eff.s4Count} centres</OVNote> : undefined}>
+      <OVCard title="View A · pass rate across centres" sub={`% of students achieving a pass (Secondary Achievement or above), per centre — best, worst & mean. ${cur}.`} flex={1} style={{ minWidth: 340 }} right={eff.s4Count < analytics.centres.length ? <OVNote>{eff.s4Count} centres</OVNote> : undefined}>
         <div className="hf-row" style={{ gap: 18, alignItems: "stretch", flexWrap: "wrap" }}>
           <div className="hf-col" style={{ flex: 1, minWidth: 260 }}>
-            <OVRangeBand years={bandYears} best={bandYears.map((y) => (spread[y]?.best ?? 0))} worst={bandYears.map((y) => (spread[y]?.worst ?? 0))} mean={bandYears.map((y) => (spread[y]?.mean ?? 0))} w={330} h={196} yMin={Math.max(0, gmin - 10)} yMax={Math.min(100, gmax)} />
+            <OVRangeBand years={bandYears} best={bandYears.map((y) => (spread[y]?.best ?? 0))} worst={bandYears.map((y) => (spread[y]?.worst ?? 0))} mean={bandYears.map((y) => (spread[y]?.mean ?? 0))} w={330} h={196} yMin={bandRange.min} yMax={bandRange.max} />
             <div className="hf-row" style={{ gap: 12, justifyContent: "center", marginTop: 4, flexWrap: "wrap" }}>
               {[["Best centre", H.slate], ["Worst centre", H.bar], ["Mean", H.pink]].map(([k, c]) => (
                 <span key={k} className="hf-row" style={{ gap: 5, fontSize: 10.5, color: H.ink2 }}><span style={{ width: 14, height: 3, background: c, borderRadius: 2 }} />{k}</span>
@@ -447,7 +481,7 @@ export function S4Centres({ analytics, slice }: { analytics: OverallAnalytics; s
           <div className="hf-col" style={{ flex: 1, gap: 12, borderLeft: `1px solid ${H.line}`, paddingLeft: 18, minWidth: 240 }}>
             <div className="hf-row" style={{ gap: 12, alignItems: "baseline" }}>
               <div className="hf-col" style={{ gap: 2 }}>
-                <span className="hf-mono" style={{ fontSize: 30, fontWeight: 600, color: H.good }}>{range1}<span style={{ fontSize: 15 }}>pts</span></span>
+                <span className="hf-mono" style={{ fontSize: 30, fontWeight: 600, color: range0 == null ? H.ink : range1 <= range0 ? H.good : H.bad }}>{range1}<span style={{ fontSize: 15 }}>pts</span></span>
                 <span className="hf-lbl" style={{ fontSize: 8.5 }}>best–worst gap, {cur}</span>
               </div>
               {range0 != null && <span className="hf-mono" style={{ fontSize: 12, color: range1 <= range0 ? H.good : H.bad }}>{range1 <= range0 ? "▼" : "▲"} from {range0}pts</span>}
@@ -457,18 +491,39 @@ export function S4Centres({ analytics, slice }: { analytics: OverallAnalytics; s
                 The gap {range1 <= range0 ? "narrowed" : "widened"} <span className="hf-mono" style={{ color: H.ink }}>{range0} → {range1}</span> points{range1 <= range0 ? " — convergence" : ""}, with the weakest centre {s0 && s1.worst >= s0.worst ? "rising" : "moving"} ({s0?.worst ?? "—"}% → {s1.worst}%).
               </div>
             )}
-            <span className="hf-lbl" style={{ fontSize: 8.5, marginTop: 2 }}>Centres, {cur} (Advanced+)</span>
-            <OVDumbbell rows={dumbRows} min={Math.max(0, minAdv - 10)} max={Math.min(100, maxAdv + 10)} />
+            <span className="hf-lbl" style={{ fontSize: 8.5, marginTop: 2 }}>Pass rate by centre, {cur} (Secondary Achievement or above)</span>
+            <OVDumbbell rows={dumbRows} min={Math.max(0, minPass - 10)} max={Math.min(100, maxPass + 10)} />
           </div>
         </div>
       </OVCard>
       {/* View B */}
-      <OVCard title="View B · by subject" sub={`Mean centre score, best & worst centre, spread (σ across centres) — ${cur}${prev != null ? ` vs ${prev}` : ""}.`} flex={1} style={{ minWidth: 340 }}>
+      <OVCard title="View B · pass rate by subject" sub={`Per centre, % of students at Meets or above for each subject — mean, best & worst centre, and spread (SD across centres). ${cur}${prev != null ? ` vs ${prev}` : ""}.`} flex={1} style={{ minWidth: 340 }}>
         <div className="hf-col" style={{ gap: 0 }}>
-          <div className="hf-row" style={{ gap: 12, padding: "0 0 8px", borderBottom: `1px solid ${H.line2}` }}>
+          {/* Legend: what each mark means, and which year each bar draws. */}
+          <div className="hf-row" style={{ gap: 12, padding: "0 0 6px" }}>
             <span style={{ width: 96, flex: "0 0 auto" }} />
-            <span className="hf-lbl" style={{ flex: 1, fontSize: 8.5 }}>worst ——— mean ● ——— best</span>
-            <span className="hf-lbl" style={{ width: 116, flex: "0 0 auto", fontSize: 8.5, textAlign: "right" }}>σ across centres</span>
+            <div className="hf-row" style={{ flex: 1, gap: 12, flexWrap: "wrap", fontSize: 10, color: H.ink2 }}>
+              <span className="hf-row" style={{ gap: 4 }}><span style={{ width: 3, height: 8, background: H.bar }} />worst</span>
+              <span className="hf-row" style={{ gap: 4 }}><span style={{ width: 9, height: 9, borderRadius: 999, background: H.pink, border: "1.5px solid #fff", boxShadow: "0 1px 2px rgba(0,0,0,.15)" }} />mean</span>
+              <span className="hf-row" style={{ gap: 4 }}><span style={{ width: 3, height: 8, background: H.slate }} />best</span>
+              {prev != null && <span className="hf-row" style={{ gap: 4 }}><span style={{ width: 14, height: 3, borderRadius: 2, background: H.line2 }} />{prev}</span>}
+              <span className="hf-row" style={{ gap: 4 }}><span style={{ width: 14, height: 5, borderRadius: 3, background: H.tint2 }} />{cur}</span>
+            </div>
+            <span className="hf-lbl" style={{ width: 116, flex: "0 0 auto", fontSize: 8.5, textAlign: "right" }}>SD across centres</span>
+          </div>
+          {/* Scale: % ticks so the dumbbell positions are interpretable. */}
+          <div className="hf-row" style={{ gap: 12, padding: "0 0 8px", borderBottom: `1px solid ${H.line2}` }}>
+            <span className="hf-lbl" style={{ width: 96, flex: "0 0 auto", fontSize: 8, textAlign: "right", color: H.ink3 }}>% at Meets+</span>
+            <div style={{ flex: 1, position: "relative", height: 15 }}>
+              <div style={{ position: "absolute", top: 4, left: 0, right: 0, height: 1, background: H.line }} />
+              {scaleTicks.map((t) => (
+                <div key={t} style={{ position: "absolute", top: 0, left: `${pos(t)}%`, transform: "translateX(-50%)", textAlign: "center" }}>
+                  <div style={{ width: 1, height: 5, background: H.line2, margin: "0 auto" }} />
+                  <span className="hf-mono" style={{ fontSize: 8.5, color: H.ink3 }}>{t}%</span>
+                </div>
+              ))}
+            </div>
+            <span style={{ width: 116, flex: "0 0 auto" }} />
           </div>
           {rows.map(({ su, a, b }, i) => (
             <div key={su.key} className="hf-row" style={{ gap: 12, padding: "12px 0", borderBottom: i < rows.length - 1 ? `1px solid ${H.line}` : "none" }}>
@@ -478,9 +533,9 @@ export function S4Centres({ analytics, slice }: { analytics: OverallAnalytics; s
                 <div style={{ position: "absolute", top: 15, left: `${pos(b.worst)}%`, width: `${Math.max(0, pos(b.best) - pos(b.worst))}%`, height: 5, borderRadius: 3, background: H.tint2 }} />
                 <div style={{ position: "absolute", top: 14.5, left: `${pos(b.worst)}%`, width: 3, height: 6, background: H.bar }} />
                 <div style={{ position: "absolute", top: 14.5, left: `${pos(b.best)}%`, width: 3, height: 6, background: H.slate }} />
-                <div style={{ position: "absolute", top: 12, left: `${pos(b.mean)}%`, width: 10, height: 10, marginLeft: -5, borderRadius: 999, background: H.pink, border: "2px solid #fff", boxShadow: "0 1px 2px rgba(0,0,0,.15)" }} title={`mean ${b.mean}`} />
-                <span className="hf-mono" style={{ position: "absolute", top: 0, left: `${pos(b.worst)}%`, transform: "translateX(-50%)", fontSize: 9.5, color: H.ink3 }}>{b.worst}</span>
-                <span className="hf-mono" style={{ position: "absolute", top: 0, left: `${pos(b.best)}%`, transform: "translateX(-50%)", fontSize: 9.5, color: H.ink3 }}>{b.best}</span>
+                <div style={{ position: "absolute", top: 12, left: `${pos(b.mean)}%`, width: 10, height: 10, marginLeft: -5, borderRadius: 999, background: H.pink, border: "2px solid #fff", boxShadow: "0 1px 2px rgba(0,0,0,.15)" }} title={`mean ${b.mean}%`} />
+                <span className="hf-mono" style={{ position: "absolute", top: 0, left: `${pos(b.worst)}%`, transform: "translateX(-50%)", fontSize: 9.5, color: H.ink3 }}>{b.worst}%</span>
+                <span className="hf-mono" style={{ position: "absolute", top: 0, left: `${pos(b.best)}%`, transform: "translateX(-50%)", fontSize: 9.5, color: H.ink3 }}>{b.best}%</span>
               </div>
               <div className="hf-row" style={{ width: 116, flex: "0 0 auto", gap: 8, justifyContent: "flex-end", alignItems: "baseline" }}>
                 <span className="hf-mono" style={{ fontSize: 15, fontWeight: 600, color: H.ink }}>{b.sd}</span>

@@ -92,7 +92,10 @@ describe("Overall analytics UI renders with live data", () => {
     const html = renderToStaticMarkup(e(S4Centres, { analytics, slice: legacy() }));
     expect(html).toContain("View A");
     expect(html).toContain("View B");
-    expect(html).toContain("Advanced+");
+    // View A + B both describe the per-centre pass rate (one consistent measure).
+    expect(html).toContain("Secondary Achievement or above");
+    expect(html).toContain("SD across centres"); // not the uppercased "Σ"
+    expect(html).not.toContain("Σ across centres");
   });
 
   it("§1 · a single selected year shows the single-year note instead of a trend", () => {

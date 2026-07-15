@@ -1320,8 +1320,8 @@ export interface OverallAnalytics {
   perf: Record<string, Record<number, SubjectYear>>;
   /** Overall (best-of-two) award distribution per year: `[year]`. */
   awardDist: Record<number, AwardDistYear>;
-  /** Overall award distribution per centre, for the latest year: `[centreName]`. */
-  awardByCentre: Record<string, AwardDistYear>;
+  /** Overall award distribution per centre, per year: `[year][centreName]`. */
+  awardByCentre: Record<number, Record<string, AwardDistYear>>;
   /** Best/worst/mean pass rate across centres per year: `[year]`. */
   centreAwardSpread: Record<number, CentreSpreadYear>;
   /** Per-subject best/worst/mean/SD across centres per year: `[subjectKey][year]`. */

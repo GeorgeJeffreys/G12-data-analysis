@@ -124,9 +124,9 @@ describe("computeOverallAnalytics — centre spread", () => {
     expect(out.centreAwardSpread[2026]).toEqual({ best: 100, worst: 0, mean: 50 });
   });
 
-  it("award distribution per centre for the latest year", () => {
-    expect(out.awardByCentre["A"]).toEqual({ dist: 50, adv: 25, sec: 25, rol: 0 });
-    expect(out.awardByCentre["B"]).toEqual({ dist: 0, adv: 0, sec: 0, rol: 100 });
+  it("award distribution per centre, keyed by year", () => {
+    expect(out.awardByCentre[2026]!["A"]).toEqual({ dist: 50, adv: 25, sec: 25, rol: 0 });
+    expect(out.awardByCentre[2026]!["B"]).toEqual({ dist: 0, adv: 0, sec: 0, rol: 100 });
   });
 
   it("per-subject spread across centres carries an SD", () => {
@@ -135,6 +135,23 @@ describe("computeOverallAnalytics — centre spread", () => {
     expect(spread.worst).toBe(0); // centre B subject pass
     expect(spread.mean).toBe(50);
     expect(spread.sd).toBeGreaterThan(0);
+  });
+});
+
+describe("computeOverallAnalytics — awardByCentre respects the selected year", () => {
+  // Centre A is all Record-of-Learning in 2025 but top-heavy in 2026; the
+  // per-centre distribution must differ by year (not always show the latest).
+  const cellA2025: OACell = {
+    centre: "A",
+    year: 2025,
+    february: { students: [stu("a1", "Not", "RoL"), stu("a2", "Not", "RoL")], scores: scoresUniform([20, 25]) },
+    may: { students: [stu("a1", "Not", "RoL"), stu("a2", "Not", "RoL")], scores: scoresUniform([22, 28]) },
+  };
+  const out = computeOverallAnalytics(base([cellA2025, CELL_A_2026], [2025, 2026]));
+
+  it("keys the per-centre award distribution by year", () => {
+    expect(out.awardByCentre[2025]!["A"]).toEqual({ dist: 0, adv: 0, sec: 0, rol: 100 });
+    expect(out.awardByCentre[2026]!["A"]).toEqual({ dist: 50, adv: 25, sec: 25, rol: 0 });
   });
 });
 

@@ -148,7 +148,7 @@ export function OVLine({
   const sy = (v: number) => pad.t + ih - ((v - yMin) / ((yMax - yMin) || 1)) * ih;
   const line = (pts: number[]) => pts.map((v, i) => `${i ? "L" : "M"}${sx(i).toFixed(1)} ${sy(v).toFixed(1)}`).join(" ");
   return (
-    <svg width={w} height={h} style={{ display: "block", overflow: "visible", maxWidth: "100%" }} viewBox={`0 0 ${w} ${h}`}>
+    <svg width={w} height={h} style={{ display: "block", overflow: "hidden", maxWidth: "100%" }} viewBox={`0 0 ${w} ${h}`}>
       {ovTicks(yMin, yMax, ticks).map((t, i) => (
         <g key={i}>
           <line x1={pad.l} x2={w - pad.r} y1={sy(t)} y2={sy(t)} stroke={H.line} strokeWidth="1" />
@@ -183,7 +183,9 @@ export function OVLine({
             <path d={line(s.pts)} fill="none" stroke={s.color} strokeWidth={s.width || 2.4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={s.dashed ? "4 4" : "none"} opacity={s.dim ? 0.5 : 1} />
             {dots && s.pts.map((v, i) => <circle key={i} cx={sx(i)} cy={sy(v)} r={i === s.pts.length - 1 ? 3.4 : 2.6} fill={s.color} opacity={s.dim ? 0.5 : 1} />)}
             {lastTag && s.tag !== false && s.pts.length > 0 && (
-              <text x={sx(s.pts.length - 1) + 7} y={sy(s.pts[s.pts.length - 1]!) + 3.5} fontFamily="var(--font-mono)" fontSize="11" fontWeight="700" fill={s.color}>{fmt(s.pts[s.pts.length - 1]!)}{yUnit}</text>
+              // Anchored to the LEFT of the final point so the tag stays inside
+              // the plot (the SVG clips to its box; a right-hand tag would escape).
+              <text x={sx(s.pts.length - 1) - 6} y={sy(s.pts[s.pts.length - 1]!) + 3.5} textAnchor="end" fontFamily="var(--font-mono)" fontSize="11" fontWeight="700" fill={s.color}>{fmt(s.pts[s.pts.length - 1]!)}{yUnit}</text>
             )}
           </g>
         ))}

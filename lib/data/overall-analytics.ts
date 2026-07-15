@@ -299,17 +299,18 @@ export function computeOverallAnalytics(args: ComputeOverallAnalyticsArgs): Over
     return out;
   }
 
-  // ── Award distribution per centre, for the LATEST year ──────────────────────
-  const awardByCentre: Record<string, AwardDistYear> = {};
-  const latestYear = years[years.length - 1];
-  if (latestYear !== undefined) {
-    for (const d of byYear(latestYear)) {
-      const existing = awardByCentre[d.cell.centre];
-      const dist = awardDistOf(d.overall.map((r) => r.award));
+  // ── Award distribution per centre, keyed by year ────────────────────────────
+  // Every year is materialised so Section 4 can render the per-centre award
+  // distribution under the SELECTED year's label (not always the latest).
+  const awardByCentre: Record<number, Record<string, AwardDistYear>> = {};
+  for (const y of years) {
+    const perCentre: Record<string, AwardDistYear> = {};
+    for (const d of byYear(y)) {
       // A centre appears once per (centre, year); if a centre had multiple cells
-      // in the latest year (shouldn't happen), keep the first non-empty.
-      if (!existing) awardByCentre[d.cell.centre] = dist;
+      // in a year (shouldn't happen), keep the first non-empty.
+      if (!perCentre[d.cell.centre]) perCentre[d.cell.centre] = awardDistOf(d.overall.map((r) => r.award));
     }
+    awardByCentre[y] = perCentre;
   }
 
   // ── Centre award spread (per-centre combined pass rate) per year ─────────────
