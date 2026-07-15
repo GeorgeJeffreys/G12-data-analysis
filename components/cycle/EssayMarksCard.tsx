@@ -100,7 +100,10 @@ export function EssayMarksCard({ cycleId, model }: { cycleId: string; model: Ess
           rejectedCount: report.rejectedCount,
           flaggedCount: report.flaggedCount,
           rows: report.rows.map((r) => ({
-            id: r.matchedName ?? r.email,
+            // One consistent identifier across valid AND rejected rows: the sheet's
+            // Student name when present, else the QM email (never the roster name,
+            // which only exists on matched rows and made the grain inconsistent).
+            id: r.studentName || r.email,
             subject: r.subjectName ?? r.subjectCode,
             matched: r.matchedEmail ? `${r.matchedEmail}${r.matchedName ? ` — ${r.matchedName}` : ""}` : null,
             status: r.status,
@@ -243,7 +246,7 @@ function ReviewPanel({ staged, onApply, onCancel }: { staged: Staged; onApply: (
 
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11.5 }}>
         <thead><tr>
-          <th className="hf-th" style={{ padding: "7px 12px" }}>Student ID</th>
+          <th className="hf-th" style={{ padding: "7px 12px" }}>Student</th>
           <th className="hf-th" style={{ padding: "7px 12px" }}>Matched participant (QM email)</th>
           <th className="hf-th" style={{ padding: "7px 12px" }}>Essay /20</th>
           <th className="hf-th" style={{ padding: "7px 12px" }}>Status</th>

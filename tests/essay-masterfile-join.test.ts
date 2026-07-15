@@ -13,6 +13,8 @@ import type { EssayUploadContext, EssaySubjectContext } from "@/lib/data/types";
 const FIX = join(__dirname, "fixtures", "essays");
 const filledTemplate = () =>
   new File([readFileSync(join(FIX, "G12_Essay_Marks_TEMPLATE_v2_filled.xlsx"))], "G12_Essay_Marks_TEMPLATE_v2_filled.xlsx");
+const fixedTemplate = () =>
+  new File([readFileSync(join(FIX, "G12_Essay_Marks_FIXED_TEMPLATE.xlsx"))], "G12_Essay_Marks_FIXED_TEMPLATE.xlsx");
 
 function subject(code: "ESL" | "AFL", name: string, emails: string[]): EssaySubjectContext {
   return {
@@ -52,6 +54,30 @@ describe("filled template — all 34 rows match on QM email (case-insensitive)",
   });
 });
 
+describe("fixed template — ONE row per student (English marked, Arabic unmarked)", () => {
+  it("English → 17 valid, Arabic → 17 unmarked rejects, exactly one row each (not per essay)", async () => {
+    const ctx: EssayUploadContext = {
+      cycleId: "c",
+      essayItemMax: 20,
+      subjects: [
+        subject("ESL", "English as a Second Language", ALL_EMAILS),
+        subject("AFL", "Arabic as a First Language", ALL_EMAILS),
+      ],
+    };
+    const report = validateEssayMasterfile(await parseEssayMasterfile(fixedTemplate()), ctx);
+    const en = report.rows.filter((r) => r.subjectCode === "ESL");
+    const ar = report.rows.filter((r) => r.subjectCode === "AFL");
+    // One row per student per subject — 17 + 17, never 34 + 34.
+    expect(en).toHaveLength(17);
+    expect(ar).toHaveLength(17);
+    expect(en.every((r) => r.status === "valid")).toBe(true);
+    // Arabic is entirely unmarked → 17 rejects, each once, reason "unmarked".
+    expect(ar.every((r) => r.status === "rejected" && /unmarked/i.test(r.reason ?? ""))).toBe(true);
+    expect(report.validCount).toBe(17);
+    expect(report.rejectedCount).toBe(17);
+  });
+});
+
 describe("filled template — blank / off-roster / no-Final / multiple-Final rejected", () => {
   const HEADER = ["QM email", "Student name", "Alsama Student ID", "Essay ID", "Marker", "Mark (/20)", "Final essay mark (/20)"];
   const block = (email: string, finals: (number | string)[]) =>
@@ -84,7 +110,7 @@ describe("filled template — blank / off-roster / no-Final / multiple-Final rej
     expect(by.get("off@nowhere.com")!.matchedEmail).toBeNull();
   });
 
-  it("a student with no Final is rejected (no final mark)", () => {
+  it("a student with no Final is rejected once as unmarked (not per essay)", () => {
     const ctx: EssayUploadContext = {
       cycleId: "c",
       essayItemMax: 20,
@@ -93,6 +119,35 @@ describe("filled template — blank / off-roster / no-Final / multiple-Final rej
     const matrix = [HEADER, ...block("real.student@alsamaproject.com", ["", "", "", ""])];
     const report = validateEssayMasterfile({ students: extractSheet(matrix, "ESL"), subjectsSeen: ["ESL"], skippedSheets: [] }, ctx);
     expect(report.validCount).toBe(0);
+    // ONE reject for the whole 4-row block, not one per essay/row.
+    expect(report.rejectedCount).toBe(1);
+    expect(report.rows).toHaveLength(1);
     expect(report.rows[0]!.reason).toMatch(/no final/i);
+    expect(report.rows[0]!.reason).toMatch(/unmarked/i);
+  });
+
+  it("the review identifier is the sheet Student name (else email) on valid AND rejected rows", () => {
+    const named = (email: string, name: string, finals: (number | string)[]) =>
+      ["Essay 1", "Essay 2", "Essay 1", "Essay 2"].map((eid, k) => [email, name, "AL", eid, "M1", "9", String(finals[k] ?? "")]);
+    const ctx: EssayUploadContext = {
+      cycleId: "c",
+      essayItemMax: 20,
+      subjects: [subject("ESL", "English as a Second Language", ["marked@alsamaproject.com", "unmarked@alsamaproject.com"])],
+    };
+    const matrix = [
+      HEADER,
+      ...named("marked@alsamaproject.com", "Amal", [15, "", "", ""]), // valid
+      ...named("unmarked@alsamaproject.com", "Safa", ["", "", "", ""]), // unmarked reject
+      ...named("noname@alsamaproject.com", "", [12, "", "", ""]), // valid-but-off-roster, no sheet name → email
+    ];
+    const report = validateEssayMasterfile({ students: extractSheet(matrix, "ESL"), subjectsSeen: ["ESL"], skippedSheets: [] }, ctx);
+    const by = new Map(report.rows.map((r) => [r.email, r]));
+    // The sheet Student name is carried on BOTH valid and rejected rows.
+    expect(by.get("marked@alsamaproject.com")!.studentName).toBe("Amal");
+    expect(by.get("marked@alsamaproject.com")!.status).toBe("valid");
+    expect(by.get("unmarked@alsamaproject.com")!.studentName).toBe("Safa");
+    expect(by.get("unmarked@alsamaproject.com")!.status).toBe("rejected");
+    // No sheet name → the identifier falls back to the email (studentName null).
+    expect(by.get("noname@alsamaproject.com")!.studentName).toBeNull();
   });
 });
