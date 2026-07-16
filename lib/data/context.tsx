@@ -83,7 +83,12 @@ function AccessGate({ children }: { children: ReactNode }) {
   const status = useAccessStatus();
   const pathname = usePathname();
   const router = useRouter();
-  const exempt = pathname?.startsWith("/signin") || pathname?.startsWith("/access-denied");
+  const exempt =
+    pathname?.startsWith("/signin") ||
+    pathname?.startsWith("/access-denied") ||
+    pathname?.startsWith("/forgot-password") ||
+    pathname?.startsWith("/update-password") ||
+    pathname?.startsWith("/auth/auth-code-error");
 
   useEffect(() => {
     if (exempt) return;
