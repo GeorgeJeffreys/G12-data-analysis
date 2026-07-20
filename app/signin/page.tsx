@@ -79,7 +79,12 @@ function SignInForm() {
           style={{ marginTop: 6, marginBottom: 14 }}
         />
 
-        <label className="hf-sub" style={{ fontSize: 12, fontWeight: 600 }}>Password</label>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+          <label className="hf-sub" style={{ fontSize: 12, fontWeight: 600 }}>Password</label>
+          <Link href="/forgot-password" className="hf-sub" style={{ fontSize: 11, color: H.ink3 }}>
+            Forgot password?
+          </Link>
+        </div>
         <input
           type="password"
           autoComplete="current-password"
