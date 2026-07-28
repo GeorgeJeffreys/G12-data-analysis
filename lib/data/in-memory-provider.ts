@@ -226,6 +226,7 @@ import {
   DEFAULT_ELEMENT_LABELS,
   validateElementLabels,
   labelMapForSubject,
+  resolveEssayWritingLabel,
   type ElementLabelsConfig,
   type ResolvedElementLabel,
 } from "./element-labels";
@@ -252,6 +253,11 @@ import {
  *  and the seed:supabase script reuses this provider over freshly-ingested data. */
 const DEFAULT_SEED = seedJson as unknown as Seed;
 const engine = getEngine();
+
+/** Synthetic `perElement` / element-column key for the display-only essay
+ *  ("Writing") column on the Raw Scores view. Namespaced so it can never collide
+ *  with a real QuestionMajorElement value from the data. */
+const ESSAY_ELEMENT_MAJOR = "__essay_writing__";
 
 interface BoundaryState {
   mode: BoundaryMode;
@@ -1740,6 +1746,18 @@ export class InMemoryDataProvider implements DataProvider {
     const subjectMax = subjectScores.size
       ? [...subjectScores.values()][0]!.max
       : mcqMax + (hasEssay ? reservedEssayMax(a) : 0);
+
+    // Essay subjects (English/Arabic) surface the offline essay mark as a DISPLAY-ONLY
+    // "Writing" column (its /20 is already folded into `raw` by the engine — this adds
+    // no scoring). The per-participant mark drives the cell; a missing mark renders 0
+    // via the same `?? 0` the MCQ element cells use. Never added for non-essay subjects.
+    const essayMax = hasEssay ? reservedEssayMax(a) : 0;
+    const essayMarkByPid = new Map<string, number>();
+    if (hasEssay && essayMax > 0) {
+      for (const m of this.essayMarksFor(cycleId, a.id)) essayMarkByPid.set(m.participantId, m.mark);
+      const writing = resolveEssayWritingLabel(this.elementLabels, a.name);
+      elements.push({ major: ESSAY_ELEMENT_MAJOR, shortId: writing.letter, items: 0, label: writing.label, essayMax });
+    }
     const students: NaiveStudentRow[] = this.seed.liveCycle.participants
       .filter((p) => present.has(p.id) && !remRows?.has(p.id) && !cohortExcluded.has(p.id))
       .map((p) => {
@@ -1751,6 +1769,10 @@ export class InMemoryDataProvider implements DataProvider {
           for (const id of itemsByMajor.get(major)!) got += byId.get(id) ?? 0;
           perElement[major] = got;
         }
+        // Display-only essay ("Writing") cell — the /20 mark already inside `raw`.
+        // Left unset when the participant has no mark, so the table's `?? 0` renders
+        // it exactly like a missing MCQ element.
+        if (essayMarkByPid.has(p.id)) perElement[ESSAY_ELEMENT_MAJOR] = essayMarkByPid.get(p.id)!;
         const sc = subjectScores.get(p.id);
         return {
           id: p.id,

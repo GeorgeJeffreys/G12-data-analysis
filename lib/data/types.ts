@@ -495,6 +495,13 @@ export interface NaiveElementCol {
   items: number;
   /** Configured display label (falls back to `major` when unconfigured). */
   label?: string;
+  /**
+   * Set ONLY on the offline essay ("Writing") column for essay subjects (English /
+   * Arabic): the mark's max, i.e. the reserved /20. Its header shows `/essayMax`
+   * instead of an item count, and its cell is the participant's essay mark already
+   * folded into `raw`. Display-only — never present on non-essay subjects.
+   */
+  essayMax?: number;
 }
 export interface NaiveStudentRow {
   id: string;

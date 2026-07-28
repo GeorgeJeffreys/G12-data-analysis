@@ -127,6 +127,27 @@ export function labelMapForSubject(
   return out;
 }
 
+/**
+ * Resolve the offline essay ("Writing") element's letter + label for an essay
+ * subject from the configured element labels — the same source A/B are resolved
+ * from. Picks the subject's entry whose match key or label is the writing element;
+ * falls back to `{ letter: "C", label: "Writing" }` when unconfigured. Display-only
+ * (the essay mark is already folded into the raw total by the engine).
+ */
+export function resolveEssayWritingLabel(
+  config: ElementLabelsConfig,
+  subjectName: string,
+): ResolvedElementLabel {
+  const subjectKey = normalizeSubjectKey(subjectName);
+  const entries =
+    config[subjectName] ??
+    Object.entries(config).find(([k]) => normalizeSubjectKey(k) === subjectKey)?.[1];
+  const hit = entries?.find(
+    (e) => normalizeElementKey(e.matchKey).includes("writing") || normalizeElementKey(e.label).includes("writing"),
+  );
+  return hit ? { letter: hit.letter, label: hit.label } : { letter: "C", label: "Writing" };
+}
+
 /** Validate an edited config: every label non-empty, letters unique per subject. */
 export function validateElementLabels(config: ElementLabelsConfig): string | null {
   for (const [subject, entries] of Object.entries(config)) {
