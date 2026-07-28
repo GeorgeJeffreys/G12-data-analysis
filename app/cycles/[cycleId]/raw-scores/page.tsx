@@ -109,7 +109,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
         </div>
 
         {model.hasEssay && (
-          <Alert tone="info">This subject includes an essay-scored element marked offline. The raw score below folds in the half-weighted essay mark; the per-element columns show the MCQ breakdown only.</Alert>
+          <Alert tone="info">This subject includes an essay-scored element marked offline. The raw score below folds in the essay mark, shown in its own <b>Writing /20</b> column; the other element columns are the MCQ breakdown.</Alert>
         )}
 
         {/* Key: the A–E columns are the paper's major elements (kept as short
@@ -120,8 +120,8 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
             {model.elements.map((e) => (
               <span key={e.major} style={{ display: "inline-flex", alignItems: "baseline", gap: 5, fontSize: 12 }}>
                 <span className="hf-mono" style={{ fontWeight: 700, color: H.ink }}>{e.shortId}</span>
-                <span style={{ color: H.ink2 }}>{e.major}</span>
-                <span className="hf-mono" style={{ color: H.ink3 }}>/{e.items}</span>
+                <span style={{ color: H.ink2 }}>{e.essayMax != null ? (e.label ?? "Writing") : e.major}</span>
+                <span className="hf-mono" style={{ color: H.ink3 }}>/{e.essayMax ?? e.items}</span>
               </span>
             ))}
           </div>
@@ -136,7 +136,7 @@ export default function RawScoresPage({ params }: { params: { cycleId: string } 
                   <th className="hf-th" style={{ position: "sticky", top: 0 }}>Participant</th>
                   {model.elements.map((e) => (
                     <th key={e.major} className="hf-th" style={{ position: "sticky", top: 0, textAlign: "center", minWidth: 52 }} title={e.label ?? e.major}>
-                      {e.shortId} <span style={{ color: H.ink3, fontWeight: 400 }}>/{e.items}</span>
+                      {e.shortId} <span style={{ color: H.ink3, fontWeight: 400 }}>/{e.essayMax ?? e.items}</span>
                     </th>
                   ))}
                   <th className="hf-th" style={{ position: "sticky", top: 0, textAlign: "right" }}>Raw score</th>
