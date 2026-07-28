@@ -265,11 +265,18 @@ export class SupabaseDataProvider implements DataProvider {
       const cuts = s.bands.slice(0, -1).map((b) => b.min);
       p.setBoundary(cid, s.scope, { mode: s.method === "fixed_pct" ? "pct" : "cuts", cuts });
     }
-    if (d.essays.length) p.uploadEssayMarks(cid, "essay_marks.xlsx", d.essays);
+    // Hydration, NOT interactive edits: load persisted DB truth through the UNGATED
+    // hydrate setters. The interactive uploadEssayMarks/uploadIncidentLog/decideIncident
+    // are guarded on can("incidents.*"), which resolves against the role grid that
+    // isn't applied until applyRolesAndActions below — so routing replay through them
+    // silently drops the data for any real (role_id-carrying) session user, and would
+    // also drop it for any legitimately read-only viewer. Hydrate setters bypass the
+    // guard the same way hydrateExamIncidents already does.
+    if (d.essays.length) p.hydrateEssayMarks(cid, "essay_marks.xlsx", d.essays);
     if (d.incidents.length) {
-      p.uploadIncidentLog(cid, "incident_log.xlsx", d.incidents);
+      p.hydrateIncidentLog(cid, "incident_log.xlsx", d.incidents);
       d.incidentDecisions.forEach((dec, i) => {
-        if (dec) p.decideIncident(cid, `inc-${i + 1}`, dec);
+        if (dec) p.hydrateIncidentDecision(cid, `inc-${i + 1}`, dec);
       });
     }
     if (d.distinctionConfirmed) p.confirmDistinctionCaps(cid);
