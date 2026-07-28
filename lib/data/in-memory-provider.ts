@@ -3184,6 +3184,49 @@ export class InMemoryDataProvider implements DataProvider {
     this.examIncidentsByCycle.set(cycleId, map);
   }
 
+  /** Hydration setter (Supabase replay): load persisted essay marks into the read
+   *  model. UNGATED — this is DB truth replayed, not an interactive upload, so it
+   *  must NOT go through the `incidents.upload` guard on `uploadEssayMarks` (that
+   *  guard resolves against a role grid that isn't populated until later in replay,
+   *  and a read-only viewer must still see essay-inclusive scores). Produces the
+   *  same `essayMarksByCycle` state a successful `uploadEssayMarks` produces. */
+  hydrateEssayMarks(cycleId: string, fileName: string, rows: EssayUploadRow[]): void {
+    if (rows.length === 0) return;
+    const incoming = this.buildEssayState(rows, false, fileName);
+    const touched = this.essaySubjectsTouched(rows);
+    const prev = this.essayMarksByCycle.get(cycleId);
+    const st = prev && prev.uploaded ? this.mergeEssayState(prev, incoming, touched) : incoming;
+    this.essayMarksByCycle.set(cycleId, st);
+  }
+
+  /** Hydration setter (Supabase replay): load a persisted incident log. UNGATED for
+   *  the same reason as `hydrateEssayMarks` — the `incidents.upload` guard on the
+   *  interactive `uploadIncidentLog` would silently drop the replay before the role
+   *  grid is applied. */
+  hydrateIncidentLog(cycleId: string, fileName: string, rows: IncidentInput[]): void {
+    if (rows.length === 0) return;
+    const incidents = rows.map((r) => this.buildTriageIncident(r));
+    this.incidentLogByCycle.set(cycleId, { uploaded: true, sample: false, fileName, incidents });
+    this.rebuildAlterations(cycleId);
+  }
+
+  /** Hydration setter (Supabase replay): re-apply a persisted incident decision.
+   *  UNGATED twin of `decideIncident` (its `incidents.triage` guard would otherwise
+   *  drop the replayed decision, leaving the alteration unapplied to scores). */
+  hydrateIncidentDecision(cycleId: string, incidentId: string, decision: IncidentDecisionInput): void {
+    const st = this.incidentLogByCycle.get(cycleId);
+    const inc = st?.incidents.find((i) => i.id === incidentId);
+    if (!inc) return;
+    inc.applyTo = decision.applyTo;
+    inc.studentId = decision.applyTo === "student" ? decision.studentId ?? null : null;
+    inc.subjectId = decision.subjectId ?? inc.subjectId;
+    inc.marks = decision.applyTo === "none" ? 0 : Math.trunc(decision.marks ?? 0);
+    inc.reason = decision.reason ?? null;
+    inc.decidedBy = this.user.name;
+    inc.decidedAt = new Date().toISOString();
+    this.rebuildAlterations(cycleId);
+  }
+
   getEssayMarks(cycleId: string): EssayMarksModel | null {
     if (cycleId !== this.seed.liveCycle.id) return null;
     const st = this.essayMarksByCycle.get(cycleId);
